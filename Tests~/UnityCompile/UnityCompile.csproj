@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Unity を開かずに、Runtime と Editor のスクリプトが Unity 2022.3 / VRChat SDK の API でコンパイルできるかを確かめる。
+       UdonSharp と TextMeshPro は Stubs.cs の最小限の代わりを使う(U# 特有の制約までは調べられない)。 dotnet build -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <NoWarn>CS0414;CS0169;CS0649;CS1701;CS1702;MSB3277</NoWarn>
+    <UnityManaged>C:\Program Files\Unity\Hub\Editor\2022.3.22f1\Editor\Data\Managed</UnityManaged>
+    <VrcPlugins>..\..\..\com.vrchat.base\Runtime\VRCSDK\Plugins</VrcPlugins>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Stubs.cs" />
+    <Compile Include="../../Runtime/Scripts/**/*.cs" />
+    <Compile Include="../../Editor/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="$(UnityManaged)\UnityEngine\*.dll" Private="false" />
+    <Reference Include="$(VrcPlugins)\VRCSDKBase.dll" Private="false" />
+    <Reference Include="$(VrcPlugins)\VRCCore-Standalone.dll" Private="false" />
+  </ItemGroup>
+</Project>
