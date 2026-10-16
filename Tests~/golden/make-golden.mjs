@@ -72,6 +72,7 @@ const CONFIGS = [
   { level: 'strong', rules: {} },
   { level: 'normal', rules: { doraPerFlip: 2, furiten: 'strict', hayashi: 'menzen', kanjunMode: 'perMeld', renchan: 'any', kataRonPenalty: 1, ronTileCount: 8 } },
   { level: 'normal', rules: { furiten: 'loose', kanjunMode: 'perTwo', useUra: false, agariYame: false, tobiEnd: false } },
+  { level: 'easy', rules: {} },
 ];
 
 function playOne(index) {

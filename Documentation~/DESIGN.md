@@ -54,5 +54,5 @@
 - ブラウザ版 js/engine の移植。状態はすべて数値の配列(手牌は牌ごとの枚数、副露・河・選択肢は決まった幅の数値の並び)
 - 使い方: `SetDefaultRules()` → `NewMatch(seed)` → `pendKind` が `PEND_NONE` なら `Advance()`、それ以外は `BuildLegal(seat)` で選択肢を得て `ApplyAction(act)`
 - アクション・選択肢は `OPT` 個の int(`O_TYPE`・`O_SEAT`・`O_MODE`… の位置)
-- NPC(ブラウザ版の js/cpu)はまだ移植していない
+- NPC は SqmNpc(ブラウザ版 js/cpu の移植)。`SetSeat(席, 強さ, 性格)` で決めて、`Decide(席, シード)` で選んだ手が `action` に入る。シードはブラウザ版と同じく `HashSeed("試合のシード:step:席")`
 - Udon は普通の C# よりかなり遅いので、和了判定・待ちの計算が重い場面(打牌ごとのロン判定など)は、実機で測って必要なら数フレームに分ける

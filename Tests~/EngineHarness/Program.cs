@@ -22,6 +22,7 @@ static class Program
         string dir = Path.Combine(AppContext.BaseDirectory, "../../../../golden/out");
         var files = args.Length > 0 ? args : Directory.GetFiles(dir, "*.jsonl").OrderBy(f => f).ToArray();
         int okFiles = 0, totalOps = 0;
+        npcChecks = 0;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         foreach (var f in files)
         {
@@ -31,7 +32,13 @@ static class Program
             var e = new SqmEngine();
             e.SetDefaultRules();
             ApplyRules(e, meta.GetProperty("rules"));
-            e.NewMatchFromString(meta.GetProperty("seed").GetString());
+            string seedStr = meta.GetProperty("seed").GetString();
+            e.NewMatchFromString(seedStr);
+            // NPC: 席ごとの強さと性格(ブラウザ版と同じ決め方)
+            var npc = new SqmNpc { engine = e };
+            int level = Array.IndexOf(new[] { "easy", "normal", "strong" }, meta.GetProperty("level").GetString());
+            int[] styles = PickStyles(e, seedStr);
+            for (int s = 0; s < 8; s++) npc.SetSeat(s, level, styles[s]);
             bool ok = Check(e, rows[1], 0, f);
             for (int k = 2; ok && k < rows.Length; k++)
             {
@@ -41,6 +48,24 @@ static class Program
                 {
                     int last = row.LastIndexOf(' ');
                     var act = ToAction(JsonDocument.Parse(row.Substring(2, last - 2)).RootElement);
+                    // NPC の判断もブラウザ版と同じか(局の終わりの「次へ」はテスト側で決めているので除く)
+                    if (act[SqmEngine.O_TYPE] != SqmEngine.A_NEXT)
+                    {
+                        int seat = e.pendSeats[0];
+                        uint nseed = e.HashSeed(e.seed.ToString() + ":" + e.step + ":" + seat);
+                        npc.Decide(seat, nseed);
+                        string want = CanonAct(act), got = CanonAct(npc.action);
+                        npcChecks++;
+                        if (want != got)
+                        {
+                            Console.WriteLine($"✖ {Path.GetFileName(f)} 操作{k - 1}: NPC の判断が違う (席{seat})");
+                            Console.WriteLine($"  JS: {want}");
+                            Console.WriteLine($"  C#: {got}");
+                            Console.WriteLine(Canon(e));
+                            ok = false;
+                            break;
+                        }
+                    }
                     if (!e.ApplyAction(act))
                     {
                         Console.WriteLine($"✖ {Path.GetFileName(f)} 操作{k - 1}: C# で適用できない: {e.lastError}\n  {row}");
@@ -55,8 +80,34 @@ static class Program
             if (ok) { okFiles++; Console.WriteLine($"✔ {Path.GetFileName(f)}: {rows.Length - 2} 操作すべて一致"); }
             else return 1;
         }
-        Console.WriteLine($"{okFiles}/{files.Length} 試合・{totalOps} 操作が一致 ({sw.ElapsedMilliseconds} ms)");
+        Console.WriteLine($"{okFiles}/{files.Length} 試合・{totalOps} 操作が一致、NPC の判断 {npcChecks} 回が一致 ({sw.ElapsedMilliseconds} ms)");
         return okFiles == files.Length ? 0 : 1;
+    }
+
+    static int npcChecks;
+
+    /// <summary>その試合の8人の性格(ブラウザ版 pickStyles と同じ: 10人を seed で混ぜて先頭8人)</summary>
+    static int[] PickStyles(SqmEngine e, string seedStr)
+    {
+        int[] a = Enumerable.Range(0, 10).ToArray();
+        uint x = e.HashSeed(seedStr + ":styles");
+        for (int i = a.Length - 1; i > 0; i--)
+        {
+            x = unchecked(x * 1664525u + 1013904223u);
+            int j = (int)(x % (uint)(i + 1));
+            (a[i], a[j]) = (a[j], a[i]);
+        }
+        return a.Take(8).ToArray();
+    }
+
+    /// <summary>アクションの比べる部分(打牌は牌の順番とリーチ、ほかは選択肢の中身)</summary>
+    static string CanonAct(int[] a)
+    {
+        int ty = a[SqmEngine.O_TYPE];
+        if (ty == SqmEngine.A_DISCARD)
+            return $"discard {a[SqmEngine.O_SEAT]} [{Lst(a, 0, SqmEngine.O_TAKEN, SqmEngine.O_TAKE)}] riichi={(a[SqmEngine.O_MODE] == 1 ? 1 : 0)}";
+        return string.Join(",", TypeNames[ty], a[SqmEngine.O_SEAT], a[SqmEngine.O_MODE], a[SqmEngine.O_TILE], a[SqmEngine.O_RONIDX],
+            a[SqmEngine.O_MELDTYPE], a[SqmEngine.O_START], Lst(a, 0, SqmEngine.O_TAKEN, SqmEngine.O_TAKE), Lst(a, 0, SqmEngine.O_GIVEN, SqmEngine.O_GIVE));
     }
 
     static bool Check(SqmEngine e, string row, int opIndex, string file)
