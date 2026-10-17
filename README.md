@@ -79,9 +79,9 @@ Unity を開くと、U# のコンパイルが自動で走ります。Console に
    - 何も選ばずに実行すると、DSEG のフォントを作ります
    - 源ノ明朝は、Project ウィンドウで `.otf` を選んでから実行します(Medium と Bold で1回ずつ)
    - できた TMP フォント(`〇〇_SDF`)は、元のフォントと同じ所に保存されます
-3. メニュー **`Tools > 平方麻雀 > 動的フォールバックを作る`** を実行する
-   - 漢字を含むユーザー名も表示できるようにするための予備のフォントです
-   - **ワールドの容量が約 24MB 増えます**。漢字の名前が □ になってもよければ、省いてもかまいません
+3. メニュー **`Tools > 平方麻雀 > 動的フォールバックを作る`** を実行する(何も選ばなくて大丈夫です)
+   - 漢字や記号を含むユーザー名も表示できるようにするための、予備のフォントです
+   - パッケージに同梱した **SqmFallback-Medium**(源ノ明朝から、JIS 第1・第2水準の漢字・かな・記号など約 8,800 字を残して小さくしたもの)を使います。**ワールドの容量は約 3MB 増えます**
    - TMP フォントを作り直したときは、このメニューももう一度実行してください
 
 卓を置くとき、フォントは名前で自動的に選ばれます。
@@ -145,9 +145,9 @@ Unity を開くと、U# のコンパイルが自動で走ります。Console に
 
 - 企画・ルール・デザイン・声: **SavannaMonaka**(MonakaLabo)
 - プログラム: SavannaMonaka with Claude(Anthropic)
-- フォント(パッケージには含みません。各自で入手してください)
-  - 源ノ明朝 / Source Han Serif © Adobe — SIL Open Font License 1.1
-  - DSEG © keshikan — SIL Open Font License 1.1
+- フォント
+  - 源ノ明朝 / Source Han Serif © Adobe — SIL Open Font License 1.1(各自で入手。同梱の SqmFallback-Medium は、これを間引いて名前を変えたもの。`Runtime/Fonts/SqmFallback-OFL.txt`)
+  - DSEG © keshikan — SIL Open Font License 1.1(各自で入手)
 
 ## 利用規約
 

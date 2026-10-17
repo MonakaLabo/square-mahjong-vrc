@@ -30,7 +30,9 @@ Copyright (c) 2026 SavannaMonaka (MonakaLabo)
 
 ## フォントについて
 
-本パッケージにはフォントは含まれていません。表示に使うフォントは、それぞれのライセンスに従って各自で入手してください。
+表示に使うフォント(源ノ明朝・DSEG)は、それぞれのライセンスに従って各自で入手してください。
+
+ただし、ユーザー名の表示用に `Runtime/Fonts/SqmFallback-Medium.otf` を同梱しています。これは源ノ明朝を間引いて名前を変えたもので、**この規約ではなく SIL Open Font License 1.1 に従います**(`Runtime/Fonts/SqmFallback-OFL.txt`)。
 
 - 源ノ明朝 / Source Han Serif © Adobe — SIL Open Font License 1.1
 - DSEG © keshikan — SIL Open Font License 1.1
@@ -43,4 +45,4 @@ Copyright (c) 2026 SavannaMonaka (MonakaLabo)
 
 - **Allowed**: placing it in your own VRChat worlds (**public worlds included**), modifying it for use in your own worlds, and showing/streaming worlds that use it. Credit is appreciated but not required.
 - **Not allowed**: redistributing the package (original or modified, free or paid), selling it, and **extracting its voices, sound effects, images or other assets for any other use**.
-- Provided as-is, without warranty. Fonts are not included; obtain them under their own licenses (SIL OFL 1.1).
+- Provided as-is, without warranty. Obtain the display fonts (Source Han Serif, DSEG) under their own licenses (SIL OFL 1.1). The bundled `Runtime/Fonts/SqmFallback-Medium.otf` (a renamed subset of Source Han Serif) is licensed under the SIL OFL 1.1, not these terms.

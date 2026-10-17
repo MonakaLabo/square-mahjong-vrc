@@ -57,9 +57,11 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
         /// <summary>
         /// メニュー「Tools/平方麻雀/動的フォールバックを作る」: ユーザー名の漢字など、静的なフォントに無い文字を、その場で作って出すためのフォント。
-        /// Project で選んだフォント(選んでいなければ Assets の SourceHanSerif-Medium)から「元の名前_Dynamic.asset」を作り、
+        /// Project で選んだフォント(選んでいなければ Assets の、名前に Fallback を含むフォント → Medium を含むフォント)から「元の名前_Dynamic.asset」を作り、
         /// Assets にある卓用の TMP フォント(DSEG を除く)すべての予備(Fallback)に入れる。
-        /// 元のフォントがビルドに入るので、ワールドは重くなる(源ノ明朝で約 24MB)。ビルドの前に、作った文字は消す(Clear Dynamic Data on Build)。
+        /// 元のフォントがビルドに入るので、その分ワールドは重くなる(源ノ明朝そのままだと約 24MB)。
+        /// Tools~/make-fallback-font.py で間引いたフォント(SqmFallback-Medium.otf、約 3MB)を使うと軽い。
+        /// ほかの「〇〇_Dynamic」は予備から外す(前に作った重いものが残らないように)。ビルドの前に、作った文字は消す(Clear Dynamic Data on Build)。
         /// </summary>
         [MenuItem("Tools/平方麻雀/動的フォールバックを作る")]
         public static void MakeFallback()
@@ -68,12 +70,14 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             foreach (var o in Selection.objects) if (o is Font f && !f.name.ToLowerInvariant().Contains("dseg")) { src = f; break; }
             if (src == null)
             {
-                foreach (var guid in AssetDatabase.FindAssets("t:Font", new[] { "Assets" }))
+                // パッケージに同梱した SqmFallback-Medium(約 3MB)があれば、それを使う
+                foreach (var guid in AssetDatabase.FindAssets("t:Font", new[] { "Assets", "Packages/jp.monakalabo.square-mahjong/Runtime/Fonts" }))
                 {
                     var f = AssetDatabase.LoadAssetAtPath<Font>(AssetDatabase.GUIDToAssetPath(guid));
                     if (f == null) continue;
                     string lower = f.name.ToLowerInvariant();
                     if (lower.Contains("dseg")) continue;
+                    if (lower.Contains("fallback")) { src = f; break; }
                     if (src == null || lower.Contains("medium")) src = f;
                 }
             }
@@ -83,7 +87,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 return;
             }
             string srcPath = AssetDatabase.GetAssetPath(src);
-            string outPath = Path.Combine(Path.GetDirectoryName(srcPath), src.name + "_Dynamic.asset").Replace('\\', '/');
+            // 作ったフォントは Assets に置く(VCC で入れたパッケージの中には書き込めないことがあるため)
+            string outDir = srcPath.StartsWith("Assets/") ? Path.GetDirectoryName(srcPath).Replace('\\', '/') : "Assets/Fonts";
+            if (!AssetDatabase.IsValidFolder(outDir)) { Directory.CreateDirectory(outDir); AssetDatabase.Refresh(); }
+            string outPath = outDir + "/" + src.name + "_Dynamic.asset";
             var dyn = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(outPath);
             if (dyn == null)
             {
@@ -113,6 +120,9 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 var fa = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(AssetDatabase.GUIDToAssetPath(guid));
                 if (fa == null || fa == dyn || fa.name.ToLowerInvariant().Contains("dseg")) continue;
                 if (fa.fallbackFontAssetTable == null) fa.fallbackFontAssetTable = new List<TMP_FontAsset>();
+                // ほかの動的フォールバック(前に作ったもの)と、消えたものは外す
+                int removed = fa.fallbackFontAssetTable.RemoveAll(x => x == null || (x != dyn && x.name.EndsWith("_Dynamic")));
+                if (removed > 0) EditorUtility.SetDirty(fa);
                 if (fa.fallbackFontAssetTable.Contains(dyn)) continue;
                 fa.fallbackFontAssetTable.Add(dyn);
                 EditorUtility.SetDirty(fa);
