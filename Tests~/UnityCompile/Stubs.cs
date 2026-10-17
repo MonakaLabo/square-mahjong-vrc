@@ -28,7 +28,17 @@ namespace UdonSharpEditor
 }
 namespace TMPro
 {
-    public class TMP_FontAsset : UnityEngine.ScriptableObject { }
+    public enum AtlasPopulationMode { Static, Dynamic }
+    public class TMP_Character { }
+    public class TMP_FontAsset : UnityEngine.ScriptableObject
+    {
+        public static TMP_FontAsset CreateFontAsset(UnityEngine.Font font, int samplingPointSize, int atlasPadding, UnityEngine.TextCore.LowLevel.GlyphRenderMode renderMode, int atlasWidth, int atlasHeight, AtlasPopulationMode atlasPopulationMode = AtlasPopulationMode.Dynamic, bool enableMultiAtlasSupport = true) => null;
+        public bool TryAddCharacters(string characters, out string missingCharacters, bool includeFontFeatures = false) { missingCharacters = null; return true; }
+        public AtlasPopulationMode atlasPopulationMode { get; set; }
+        public UnityEngine.Texture2D[] atlasTextures;
+        public UnityEngine.Material material;
+        public System.Collections.Generic.List<TMP_Character> characterTable;
+    }
     public enum TextAlignmentOptions { Center, Right }
     public enum TextOverflowModes { Overflow, Ellipsis }
     public class TextMeshPro : UnityEngine.MonoBehaviour
