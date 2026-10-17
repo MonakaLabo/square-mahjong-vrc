@@ -126,6 +126,7 @@ namespace MonakaLabo.SquareMahjong
         public const int MAXWINS = 8, MAXYAKU = 24;
         [System.NonSerialized] public int winsN;
         [System.NonSerialized] public int[] winSeat, winRole, winType, winFrom, winHan, winTotal, winBase, winM10, winHonba, winStick, winYakuN, winYakuId, winYakuHan, winDeltas, winRonTile, winForm;
+        [System.NonSerialized] public int[] winTileA, winTileB;   // 和了牌(表示用。ツモはツモ牌、ロンは取った牌。無ければ -1)
         [System.NonSerialized] public bool[] winYakuman, winRiichi;
 
         // 終局の順位: [順位-1]
@@ -177,6 +178,7 @@ namespace MonakaLabo.SquareMahjong
             winSeat = new int[MAXWINS]; winRole = new int[MAXWINS]; winType = new int[MAXWINS]; winFrom = new int[MAXWINS];
             winHan = new int[MAXWINS]; winTotal = new int[MAXWINS]; winBase = new int[MAXWINS]; winM10 = new int[MAXWINS];
             winHonba = new int[MAXWINS]; winStick = new int[MAXWINS]; winYakuN = new int[MAXWINS]; winRonTile = new int[MAXWINS]; winForm = new int[MAXWINS];
+            winTileA = new int[MAXWINS]; winTileB = new int[MAXWINS];
             winYakuId = new int[MAXWINS * MAXYAKU]; winYakuHan = new int[MAXWINS * MAXYAKU]; winDeltas = new int[MAXWINS * NP];
             winYakuman = new bool[MAXWINS]; winRiichi = new bool[MAXWINS];
             mrSeat = new int[NP]; mrScore = new int[NP]; mrUma = new int[NP]; mrFinal10 = new int[NP];
@@ -1856,6 +1858,8 @@ namespace MonakaLabo.SquareMahjong
             kyotaku = 0;
             winDeltas[wi * NP + s] += stick;
             for (int q = 0; q < NP; q++) score[q] += winDeltas[wi * NP + q];
+            if (wtype == WT_TSUMO) { winTileA[wi] = drawnLen[s] > 0 ? drawn[s * MAXDRAWN + drawnLen[s] - 1] : -1; winTileB[wi] = drawnLen[s] > 1 ? drawn[s * MAXDRAWN + drawnLen[s] - 2] : -1; }
+            else { winTileA[wi] = wcRonTakenN > 0 ? wcRonTaken[0] : -1; winTileB[wi] = wcRonTakenN > 1 ? wcRonTaken[1] : -1; }
             outRole[s] = role;
             for (int t = 0; t < NT; t++) handC[s * NT + t] = tmpC[t];
             handLen[s] = SumC(tmpC);

@@ -53,8 +53,16 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] holoCellFrame, holoCellFill;   // 見取り図のマス 8(枠・中)
         public TextMeshPro[] holoCellWind, holoCellName, holoCellScore;
         public Material holoMatLine, holoMatRed, holoMatYellow, holoMatFill, holoMatTurn;
-        public GameObject holoResultPanel;   // 局の結果・終局
-        public TextMeshPro holoResult;
+        // 結果の画面(和了・流局・終局)。出ているあいだは holoPlay を隠す
+        public GameObject resultRoot;
+        public TextMeshPro resTitle, resHead, resYaku0, resYaku1, resYaku2, resHan, resCalc, resPoints, resBody, resRankL, resRankR, resFoot, resDoraLabel, resUraLabel;
+        public MeshRenderer[] resHand;       // 手牌 36
+        public GameObject[] resHandMark;     // 和了牌の赤枠 36
+        public MeshRenderer[] resDora, resUra;   // 18 ずつ
+        public GameObject confirmButton;     // 「確認」
+        public AudioSource sfx;              // 効果音
+        public AudioClip[] sfxClips;         // SFX_* の順
+        [System.NonSerialized] public float sfxVolume = 0.8f;   // 音量(パッドで変える)
         public TextMeshPro[] seatLabels;     // 席の名前 8
         public TextMeshPro[] windLabels;     // 席風 8
         public TextMeshPro[] scoreLabels;    // 点数(7セグ) 8
@@ -84,6 +92,10 @@ namespace MonakaLabo.SquareMahjong
         [UdonSynced] private int sSeed;
         [UdonSynced] private int sHost;                      // ホストの playerId(0 = いない)
         [UdonSynced] private int sStartMs, sKyokuMs, sKyokuEndMs, sEndMs;   // 試合・局の開始/終了の時刻(サーバー時刻 ms、0 = まだ)
+        [UdonSynced] private int sPageN, sPage, sAckMask;    // 結果の画面: ページ数(0 = 出ていない)・いまのページ・確認待ちの席のビット
+        [UdonSynced] private int sEvtWinFrom, sEvtWinTo;     // その出来事で見せる和了(engine.win* の番号の範囲)
+        [UdonSynced] private bool sEvtTail;                  // 最後に流局のページがある
+        [UdonSynced] private int sWinsSeen, sWinsKyoku, sKyokuOverSeen;   // ホスト: どこまで出来事にしたか
         [UdonSynced] private int[] sPlayer = new int[NP];    // 席の人の playerId(0 = NPC)
         [UdonSynced] private int[] sStyle = new int[NP];     // 席の NPC の性格(名前と組)
         [UdonSynced] private int sCount;                     // 記録の数
@@ -101,8 +113,9 @@ namespace MonakaLabo.SquareMahjong
         private int sentAt = -1;                             // 自分の操作を送ったときの sCount(返事が来るまで二度押ししない)
         private float sentWait;
         private float wait;                                  // ホスト: 次の手までの待ち(秒)
-        private float claimWait;                             // ホストに選ばれたとき、持ち主を頼み直すまでの待ち
-        private bool resultShown;                            // ホスト: 局の結果を見せる間を取ったか
+        private float claimWait;
+        private float pageWait;                              // ホスト: だれも座っていないとき、次のページまでの待ち
+        private int ackSentPage = -1;                        // 自分が確認を送ったページ                             // ホストに選ばれたとき、持ち主を頼み直すまでの待ち
         private bool dirty;
         private int[] handSlotTile;                          // 手牌の枠に入っている牌(-1 = 空)
         private int sel0 = -1, sel1 = -1;                    // 選んだ手牌の枠
@@ -115,7 +128,7 @@ namespace MonakaLabo.SquareMahjong
 
         private string[] cpuNames, yakuJa, tileNames;
 
-        public const float NPC_DELAY = 0.45f, RESULT_DELAY = 6f;
+        public const float NPC_DELAY = 0.45f;
 
         private void Start()
         {
@@ -257,8 +270,10 @@ namespace MonakaLabo.SquareMahjong
             sRing[sCount % RING] = code;
             sCount = lCount;
             if (((code >> 3) & 3) == K_NEXT && engine.pendKind != SqmEngine.PEND_END) StartKyokuClock();
+            SfxFor(code);
             ClearSelection();
             dirty = true;
+            HostCheckEvent();
             RequestSerialization();
             return true;
         }
@@ -284,9 +299,10 @@ namespace MonakaLabo.SquareMahjong
             sStartMs = Networking.GetServerTimeInMilliseconds();
             if (sStartMs == 0) sStartMs = 1;
             sKyokuMs = sStartMs; sKyokuEndMs = 0; sEndMs = 0;
+            sPageN = 0; sPage = 0; sAckMask = 0; sEvtWinFrom = 0; sEvtWinTo = 0; sEvtTail = false;
+            sWinsSeen = 0; sWinsKyoku = -1; sKyokuOverSeen = -1;
             ResetLocal();
             wait = 0.5f;
-            resultShown = false;
             message = "";
             RequestSerialization();
             dirty = true;
@@ -303,7 +319,12 @@ namespace MonakaLabo.SquareMahjong
             if (IsHost())
             {
                 if (archiveDirty) { archiveSendWait -= Time.deltaTime; if (archiveSendWait <= 0) SendArchive(); }
-                if (CaughtUp() && Running())
+                if (sPageN > 0)
+                {
+                    // 結果の画面: だれも座っていなければ時間で進める(座っている人がいれば「確認」を待つ)
+                    if (HumanMask() == 0) { pageWait -= Time.deltaTime; if (pageWait <= 0) HostNextPage(); }
+                }
+                else if (CaughtUp() && Running())
                 {
                     if (wait > 0) wait -= Time.deltaTime;
                     else HostStep();
@@ -333,18 +354,16 @@ namespace MonakaLabo.SquareMahjong
                 return;
             }
             if (pk == SqmEngine.PEND_NONE) { dirty = true; return; }
+            if (HostCheckEvent()) return;
             if (pk == SqmEngine.PEND_NEXT)
             {
                 if (sKyokuEndMs == 0) { sKyokuEndMs = Networking.GetServerTimeInMilliseconds(); RequestSerialization(); }
                 int d = engine.dealer;
                 // 人の親がアガリ止めを選べるときは、その人のボタンを待つ
                 if (IsHuman(d) && engine.CanAgariYame()) return;
-                if (!resultShown) { resultShown = true; wait = RESULT_DELAY; dirty = true; return; }
-                resultShown = false;
-                if (Commit(EncodeNext(d, -1))) { wait = 0.3f; StartKyokuClock(); }
+                if (Commit(EncodeNext(d, -1))) wait = 0.3f;
                 return;
             }
-            resultShown = false;
             // 入力待ちの席のうち NPC の分を1つ進める
             for (int i = 0; i < engine.pendN; i++)
             {
@@ -438,6 +457,7 @@ namespace MonakaLabo.SquareMahjong
                 if (!ApplyCode(code)) { message = "同期をやり直しています"; ResetLocal(); AskArchive(); return; }
                 lLog[i] = code;
                 lCount = i + 1;
+                if (sCount - i <= 4) SfxFor(code);   // 大きく遅れて追いつくときは、最後の数手だけ鳴らす
             }
             ClearSelection();
         }
@@ -521,6 +541,7 @@ namespace MonakaLabo.SquareMahjong
             }
             CleanSeats();
             FixHost();
+            HostFixAck();
             wait = 1f;
             RequestSerialization();
             dirty = true;
@@ -532,7 +553,7 @@ namespace MonakaLabo.SquareMahjong
             bool changed = false;
             for (int s = 0; s < NP; s++) if (sPlayer[s] == player.playerId) { sPlayer[s] = 0; changed = true; }
             if (FixHost()) changed = true;
-            if (changed) { RequestSerialization(); dirty = true; }
+            if (changed) { HostFixAck(); RequestSerialization(); dirty = true; }
         }
 
         /// <summary>もういない人の席を空ける(NPC が打つ)</summary>
@@ -593,6 +614,7 @@ namespace MonakaLabo.SquareMahjong
             for (int s = 0; s < NP; s++) if (sPlayer[s] == pid) sPlayer[s] = 0;
             if (seat >= 0) sPlayer[seat] = pid;
             FixHost();
+            HostFixAck();
             UpdateMySeat();
             RequestSerialization();
             dirty = true;
@@ -927,7 +949,12 @@ namespace MonakaLabo.SquareMahjong
         private void RefreshControls()
         {
             optN = 0;
-            bool ok = Running() && CaughtUp() && humanSeat >= 0 && sentAt < 0;
+            bool ok = Running() && CaughtUp() && humanSeat >= 0 && sentAt < 0 && sPageN == 0;
+            if (confirmButton != null)
+            {
+                bool showOk = humanSeat >= 0 && sPageN > 0 && (sAckMask & (1 << humanSeat)) != 0;
+                if (confirmButton.activeSelf != showOk) confirmButton.SetActive(showOk);
+            }
             bool myTurn = ok && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
             bool myCall = false;
             if (ok && engine.pendKind == SqmEngine.PEND_CALLS)
@@ -998,6 +1025,370 @@ namespace MonakaLabo.SquareMahjong
             return "?";
         }
 
+        // ================================================================ 結果の画面と「確認」
+        // 和了(先発・後発)・流局が起きたら、ホストが「出来事」を作る。出来事は何枚かの画面(ページ)からなり、
+        // 和了は1人1枚(親から巡る順)、流局はその後ろに1枚。座っている人(NPC を除く)全員が「確認」を押したら次のページへ。
+        // 最後のページが終わったら試合を続ける。だれも座っていなければ、PAGE_AUTO 秒で進める。
+        public const float PAGE_AUTO = 4f;
+
+        /// <summary>座っている人の席のビット</summary>
+        private int HumanMask()
+        {
+            int m = 0;
+            for (int s = 0; s < NP; s++) if (sPlayer[s] != 0) m |= 1 << s;
+            return m;
+        }
+
+        /// <summary>ホスト: 新しい和了・流局があれば、出来事を作る(true = 作った)</summary>
+        private bool HostCheckEvent()
+        {
+            if (sPageN > 0 || lMatch == 0) return false;
+            int seen = sWinsKyoku == engine.kyokuSeq ? sWinsSeen : 0;
+            bool over = engine.phase == SqmEngine.PH_KYOKU_OVER && sKyokuOverSeen != engine.kyokuSeq;
+            bool newWin = engine.winsN > seen;
+            if (!newWin && !over) return false;
+            sEvtWinFrom = seen;
+            sEvtWinTo = engine.winsN;
+            sEvtTail = over && engine.resType != SqmEngine.RES_WIN;
+            sWinsSeen = engine.winsN;
+            sWinsKyoku = engine.kyokuSeq;
+            if (over) sKyokuOverSeen = engine.kyokuSeq;
+            sPageN = (sEvtWinTo - sEvtWinFrom) + (sEvtTail ? 1 : 0);
+            sPage = 0;
+            sAckMask = HumanMask();
+            pageWait = PAGE_AUTO;
+            RequestSerialization();
+            dirty = true;
+            return sPageN > 0;
+        }
+
+        private void HostNextPage()
+        {
+            sPage++;
+            if (sPage >= sPageN) { sPageN = 0; sPage = 0; sAckMask = 0; wait = 0.3f; }
+            else { sAckMask = HumanMask(); pageWait = PAGE_AUTO; }
+            RequestSerialization();
+            dirty = true;
+        }
+
+        private void HostAck(int seat, int page)
+        {
+            if (sPageN == 0 || page != sPage) return;
+            sAckMask &= ~(1 << seat);
+            if (sAckMask == 0) HostNextPage();
+            else { RequestSerialization(); dirty = true; }
+        }
+
+        /// <summary>人が抜けたり立ったりしたら、確認待ちから外す</summary>
+        private void HostFixAck()
+        {
+            if (sPageN == 0) return;
+            int had = sAckMask;
+            sAckMask &= HumanMask();
+            if (had != 0 && sAckMask == 0) HostNextPage();
+        }
+
+        public void Confirm()
+        {
+            if (humanSeat < 0 || sPageN == 0 || (sAckMask & (1 << humanSeat)) == 0 || ackSentPage == sPage + sEvtWinFrom * 100 + sWinsKyoku * 10000) return;
+            ackSentPage = sPage + sEvtWinFrom * 100 + sWinsKyoku * 10000;
+            PlaySfx(SFX_CLICK);
+            if (IsHost()) HostAck(humanSeat, sPage);
+            else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetAck), sPage);
+            dirty = true;
+        }
+
+        [NetworkCallable]
+        public void NetAck(int page)
+        {
+            if (!IsHost()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p)) return;
+            for (int s = 0; s < NP; s++) if (sPlayer[s] == p.playerId) HostAck(s, page);
+        }
+
+        // ---- ホストが参加者を席から立たせる(パッドから呼ぶ) ----
+        public void Kick0() { RequestKick(0); } public void Kick1() { RequestKick(1); } public void Kick2() { RequestKick(2); } public void Kick3() { RequestKick(3); }
+        public void Kick4() { RequestKick(4); } public void Kick5() { RequestKick(5); } public void Kick6() { RequestKick(6); } public void Kick7() { RequestKick(7); }
+
+        private void RequestKick(int seat)
+        {
+            if (sHost == 0 || sHost != MyId()) return;
+            if (IsHost()) HostKick(seat);
+            else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetKick), seat);
+        }
+
+        [NetworkCallable]
+        public void NetKick(int seat)
+        {
+            if (!IsHost()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p) || p.playerId != sHost) return;
+            HostKick(seat);
+        }
+
+        private void HostKick(int seat)
+        {
+            if (seat < 0 || seat >= NP || sPlayer[seat] == 0 || sPlayer[seat] == sHost) return;
+            sPlayer[seat] = 0;
+            FixHost();
+            HostFixAck();
+            UpdateMySeat();
+            RequestSerialization();
+            dirty = true;
+        }
+
+        // ---- 結果の画面を描く ----
+        private int[] pageOrder;                             // 出来事の和了を、親から巡る順に並べた番号
+
+        /// <summary>いま見せる結果のページ(-1 = なし、0〜 = 和了、99 = 流局、100 = 終局)</summary>
+        private int CurrentPage()
+        {
+            if (lMatch == 0) return -1;
+            if (sPageN > 0 && lMatch == sMatch && replayTo == 0 && sEvtWinTo <= engine.winsN)
+            {
+                int wins = sEvtWinTo - sEvtWinFrom;
+                if (sPage < wins) return sPage;
+                if (sEvtTail && engine.phase == SqmEngine.PH_KYOKU_OVER) return 99;
+                return -1;
+            }
+            if (engine.phase == SqmEngine.PH_MATCH_OVER) return 100;
+            return -1;
+        }
+
+        private void RefreshResult(int page)
+        {
+            bool show = page >= 0;
+            if (resultRoot != null && resultRoot.activeSelf != show) resultRoot.SetActive(show);
+            if (!show) return;
+            for (int i = 0; i < resHand.Length; i++) ResTile(i, -1, false);
+            for (int i = 0; i < resDora.Length; i++) HoloTile(resDora[i], -1);
+            for (int i = 0; i < resUra.Length; i++) HoloTile(resUra[i], -1);
+            resHead.text = ""; resYaku0.text = ""; resYaku1.text = ""; resYaku2.text = ""; resHan.text = ""; resCalc.text = ""; resPoints.text = "";
+            resBody.text = ""; resRankL.text = ""; resRankR.text = ""; resDoraLabel.text = ""; resUraLabel.text = "";
+            string foot = "";
+            if (page == 100) RenderFinal();
+            else if (page == 99) RenderDraw();
+            else RenderWin(page);
+            if (page != 100)
+            {
+                // 確認待ちの人
+                string waitList = "";
+                for (int s = 0; s < NP; s++) if ((sAckMask & (1 << s)) != 0) waitList += (waitList.Length > 0 ? "、" : "") + NameOf(s);
+                if (sAckMask != 0) foot = "確認待ち: " + waitList;
+                else if (HumanMask() == 0) foot = "まもなく続きます";
+                if (humanSeat >= 0 && (sAckMask & (1 << humanSeat)) != 0) foot = "<color=#ffd070>「確認」を押してください</color>   " + foot;
+            }
+            else foot = "このセットは終局しました　詳細な結果はパッドをご確認ください";
+            resFoot.text = foot;
+        }
+
+        private void RenderWin(int page)
+        {
+            int n = sEvtWinTo - sEvtWinFrom;
+            if (pageOrder == null) pageOrder = new int[16];
+            for (int i = 0; i < n; i++) pageOrder[i] = sEvtWinFrom + i;
+            // 親から巡る順に並べる
+            for (int i = 1; i < n; i++)
+            {
+                int x = pageOrder[i]; int kx = (engine.winSeat[x] - engine.dealer + NP) % NP;
+                int j = i - 1;
+                while (j >= 0 && (engine.winSeat[pageOrder[j]] - engine.dealer + NP) % NP > kx) { pageOrder[j + 1] = pageOrder[j]; j--; }
+                pageOrder[j + 1] = x;
+            }
+            int w = pageOrder[page];
+            int s = engine.winSeat[w];
+            string role = engine.winRole[w] == SqmEngine.ROLE_FIRST ? "先発" : "後発";
+            resTitle.text = role + "和了　東" + engine.kyoku + "局";
+            int wt = engine.winType[w];
+            string kind = wt == SqmEngine.WT_TSUMO ? "ツモ" : wt == SqmEngine.WT_RON2 ? "2枚ロン" : "片ロン";
+            string head = SeatName(s) + " <color=#ff5a48>" + kind + "</color>";
+            if (wt != SqmEngine.WT_TSUMO && engine.winFrom[w] >= 0) head += "  <size=55%>放銃：" + SeatName(engine.winFrom[w]) + "</size>";
+            resHead.text = head;
+            ShowHand(s, engine.winTileA[w], engine.winTileB[w]);
+            // ドラ・裏ドラ
+            resDoraLabel.text = "ドラ";
+            for (int i = 0; i < resDora.Length && i < engine.doraIndN; i++) HoloTile(resDora[i], engine.doraInd[i]);
+            if (engine.winRiichi[w] && engine.rUseUra)
+            {
+                resUraLabel.text = "裏ドラ";
+                for (int i = 0; i < resUra.Length && i < engine.uraIndN; i++) HoloTile(resUra[i], engine.uraInd[i]);
+            }
+            // 役(3列。多いときは文字が小さくなる)
+            int yn = engine.winYakuN[w];
+            int per = (yn + 2) / 3;
+            if (per < 1) per = 1;
+            string c0 = "", c1 = "", c2 = "";
+            for (int k = 0; k < yn; k++)
+            {
+                int id = engine.winYakuId[w * SqmEngine.MAXYAKU + k];
+                int han = engine.winYakuHan[w * SqmEngine.MAXYAKU + k];
+                string line = yakuJa[id] + "<pos=78%>" + (engine.winYakuman[w] && id >= 40 ? "役満" : han + "翻") + "\n";
+                if (k < per) c0 += line; else if (k < per * 2) c1 += line; else c2 += line;
+            }
+            resYaku0.text = c0; resYaku1.text = c1; resYaku2.text = c2;
+            // 翻・点数
+            int hanAll = engine.winHan[w];
+            resHan.text = engine.winYakuman[w] ? "立方満" : hanAll + "<size=60%>翻</size> " + LimitName(hanAll);
+            int m10 = engine.winM10[w];
+            string calc = engine.winBase[w].ToString("N0") + " ×" + (m10 / 10) + "." + (m10 % 10);
+            if (engine.winHonba[w] > 0) calc += "  " + engine.winHonba[w] + "本場";
+            if (engine.winStick[w] > 0) calc += "  供託 +" + engine.winStick[w].ToString("N0");
+            resCalc.text = calc;
+            resPoints.text = engine.winTotal[w].ToString("N0") + "<size=60%>点</size>";
+        }
+
+        private string LimitName(int han)
+        {
+            if (han >= 8) return "平方満";
+            if (han == 7) return "倍満";
+            if (han == 6) return "跳満";
+            if (han == 5) return "満貫";
+            return "";
+        }
+
+        private string SeatName(int s)
+        {
+            return WindName(engine.SeatWindOf(s, engine.dealer)) + "家 " + NameOf(s);
+        }
+
+        private void RenderDraw()
+        {
+            if (engine.resType == SqmEngine.RES_ABORT)
+            {
+                resTitle.text = "流局";
+                int r = engine.resReason;
+                if (r == SqmEngine.REASON_KYUSHU)
+                {
+                    resHead.text = SeatName(engine.resSeat) + " 十四種十四牌";
+                    ShowHand(engine.resSeat, -1, -1);
+                    resBody.text = "\n\n\n十四種以上の么九牌がそろったため、この局は流局となります。";
+                }
+                else if (r == SqmEngine.REASON_HACHIFUU)
+                {
+                    resHead.text = "八風連打";
+                    resBody.text = "\n八家すべてが最初に同じ風牌を切ったため、この局は流局となります。";
+                }
+                else
+                {
+                    resHead.text = "八家立直";
+                    resBody.text = "\n八家すべてが立直を宣言したため、この局は流局となります。";
+                }
+                return;
+            }
+            resTitle.text = "荒牌流局";
+            int active = 0;
+            for (int s = 0; s < NP; s++) if (engine.outRole[s] == SqmEngine.ROLE_NONE) active++;
+            int tn = engine.resTenpaiN;
+            if (engine.resHadWin) { resBody.text = "\n先発の和了があったため、不聴罰符の支払いはありません。"; return; }
+            if (tn == 0) { resBody.text = "\n全員が不聴のため、不聴罰符の支払いはありません。"; return; }
+            if (tn >= active) { resBody.text = "\n全員が聴牌のため、不聴罰符の支払いはありません。"; return; }
+            resHead.text = "聴牌 " + tn + "名  不聴罰符 " + engine.rNotenTotal.ToString("N0") + "点";
+            string list = "\n";
+            for (int k = 0; k < tn; k++)
+            {
+                int s = engine.resTenpai[k];
+                list += (k > 0 ? ", " : "") + WindName(engine.SeatWindOf(s, engine.dealer)) + " " + NameOf(s);
+            }
+            resBody.text = list;
+        }
+
+        private void RenderFinal()
+        {
+            resTitle.text = "終局";
+            string l = "", r = "";
+            string[] ord = new string[] { "1st.", "2nd.", "3rd.", "4th.", "5th.", "6th.", "7th.", "8th." };
+            for (int i = 0; i < NP; i++)
+            {
+                string line = ord[i] + "<pos=16%>" + NameOf(engine.mrSeat[i]) + "<pos=66%>" + ScoreText(engine.mrScore[i]) + "\n";
+                if (i < 4) l += line; else r += line;
+            }
+            resRankL.text = l;
+            resRankR.text = r;
+        }
+
+        /// <summary>点数を 10^6 の位まで(頭の 0 は灰色)。負の値は赤で「-」をつける</summary>
+        private string ScoreText(int v)
+        {
+            if (v < 0) return "<color=#ff5a48>-" + (-v).ToString("N0") + "</color>";
+            string full = v.ToString("0000000");
+            string withComma = full.Substring(0, 1) + "," + full.Substring(1, 3) + "," + full.Substring(4, 3);
+            int lead = 0;
+            while (lead < withComma.Length - 1 && (withComma[lead] == '0' || withComma[lead] == ',')) lead++;
+            if (lead == 0) return withComma;
+            return "<color=#4a5a66>" + withComma.Substring(0, lead) + "</color>" + withComma.Substring(lead);
+        }
+
+        /// <summary>手牌(門前は並べて、副露は後ろに)。a・b は赤枠をつける和了牌</summary>
+        private void ShowHand(int s, int a, int b)
+        {
+            int n = 0;
+            bool markA = a >= 0, markB = b >= 0;
+            for (int t = 0; t < NT; t++)
+            {
+                for (int k = 0; k < engine.handC[s * NT + t] && n < resHand.Length; k++)
+                {
+                    bool mark = false;
+                    if (markA && t == a) { mark = true; markA = false; }
+                    else if (markB && t == b) { mark = true; markB = false; }
+                    ResTile(n++, t, mark);
+                }
+            }
+            for (int m = 0; m < engine.meldN[s] && n < resHand.Length; m++)
+            {
+                n++;   // 副露の前はひとつ空ける
+                int mi = s * 4 + m;
+                int ty = engine.meldType[mi], st = engine.meldStart[mi];
+                int cnt = 6 + (engine.meldKan[mi] != SqmEngine.KAN_NONE ? 1 : 0);
+                for (int k = 0; k < cnt && n < resHand.Length; k++)
+                {
+                    int t = ty == SqmEngine.MT_K ? st : ty == SqmEngine.MT_T ? st + k / 2 : st + k;
+                    if (k >= 6) t = st;
+                    ResTile(n++, t, false);
+                }
+            }
+        }
+
+        private void ResTile(int i, int tile, bool mark)
+        {
+            if (i >= resHand.Length) return;
+            HoloTile(resHand[i], tile);
+            if (resHandMark != null && i < resHandMark.Length && resHandMark[i] != null)
+            {
+                bool m = mark && tile >= 0;
+                if (resHandMark[i].activeSelf != m) resHandMark[i].SetActive(m);
+            }
+        }
+
+        // ================================================================ 効果音
+        public const int SFX_DISCARD = 0, SFX_CALL = 1, SFX_RIICHI = 2, SFX_WIN = 3, SFX_END = 4, SFX_TURN = 5, SFX_CLICK = 6;
+
+        private void PlaySfx(int i)
+        {
+            if (sfx == null || sfxClips == null || i >= sfxClips.Length || sfxClips[i] == null || sfxVolume <= 0) return;
+            sfx.PlayOneShot(sfxClips[i], sfxVolume);
+        }
+
+        /// <summary>記録1つを再生した直後に、その手に合った音を鳴らす(追いつき中は鳴らさない)</summary>
+        private void SfxFor(int code)
+        {
+            int kind = (code >> 3) & 3;
+            if (kind == K_DISCARD) PlaySfx(((code >> 5) & 1) == 1 ? SFX_RIICHI : SFX_DISCARD);
+            else if (kind == K_LEGAL)
+            {
+                int ty = act[SqmEngine.O_TYPE];
+                if (ty == SqmEngine.A_RON || ty == SqmEngine.A_TSUMO) PlaySfx(SFX_WIN);
+                else if (ty == SqmEngine.A_PON || ty == SqmEngine.A_CHI || ty == SqmEngine.A_KAN) PlaySfx(SFX_CALL);
+                else if (ty == SqmEngine.A_ABORT) PlaySfx(SFX_END);
+            }
+            if (engine.phase == SqmEngine.PH_KYOKU_OVER && kind != K_NEXT && !(kind == K_LEGAL && (act[SqmEngine.O_TYPE] == SqmEngine.A_RON || act[SqmEngine.O_TYPE] == SqmEngine.A_TSUMO))) PlaySfx(SFX_END);
+            bool myTurn = humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
+            if (myTurn && !wasMyTurn) PlaySfx(SFX_TURN);
+            wasMyTurn = myTurn;
+        }
+
+        private bool wasMyTurn;
+
         // ================================================================ 上空のホロ
         // 左: 局・残り枚数(円のゲージ)・点棒 / 中: ドラ表示牌・ロン牌・時間 / 右: 8席の見取り図(見ている人の席が下の真ん中)
         // 見取り図のマス p: 0 = 下中(自分), 1 = 右下, 2 = 右中, 3 = 右上, 4 = 上中(対面), 5 = 左上, 6 = 左中, 7 = 左下。マス p には席 (基準 + p) % 8
@@ -1008,13 +1399,13 @@ namespace MonakaLabo.SquareMahjong
         {
             if (holo == null) return;
             bool live = lMatch > 0;
-            if (holoPlay != null && holoPlay.activeSelf != live) holoPlay.SetActive(live);
             if (holoTitle != null) holoTitle.text = "";
             if (!live)
             {
+                if (holoPlay != null && holoPlay.activeSelf) holoPlay.SetActive(false);
+                RefreshResult(-1);
                 holo.text = "";
                 if (holoTitle != null) holoTitle.text = "<size=180%>平方麻雀²</size>\n席の「ここで打つ」で座ります。最初に座った人がホストです\nホストが「新しい試合」で始めます\n<size=80%>だれも座らなければ、NPC だけで打ちます</size>";
-                ShowResult(false);
                 return;
             }
             string top = "";
@@ -1083,36 +1474,10 @@ namespace MonakaLabo.SquareMahjong
                 if (holoCellScore != null && holoCellScore[p] != null) holoCellScore[p].text = engine.score[s].ToString();
             }
 
-            // ---- 局の結果・終局 ----
-            bool over = engine.phase == SqmEngine.PH_KYOKU_OVER || engine.phase == SqmEngine.PH_MATCH_OVER;
-            ShowResult(over);
-            if (over && holoResult != null)
-            {
-                string t = ResultText();
-                if (engine.phase == SqmEngine.PH_MATCH_OVER)
-                {
-                    t += "<size=120%>終局</size>\n";
-                    for (int i = 0; i < NP; i++) t += (i + 1) + "位 " + NameOf(engine.mrSeat[i]) + "  " + engine.mrScore[i].ToString("N0") + "\n";
-                }
-                else
-                {
-                    // 点数の増減
-                    string d = "";
-                    for (int s = 0; s < NP; s++)
-                    {
-                        int diff = engine.score[s] - engine.kyokuStartScore[s];
-                        if (diff == 0) continue;
-                        d += NameOf(s) + " " + (diff > 0 ? "<color=#7fffb0>+" + diff.ToString("N0") : "<color=#ff8080>" + diff.ToString("N0")) + "</color>   ";
-                    }
-                    if (d.Length > 0) t += "<size=80%>" + d + "</size>";
-                }
-                holoResult.text = t;
-            }
-        }
-
-        private void ShowResult(bool show)
-        {
-            if (holoResultPanel != null && holoResultPanel.activeSelf != show) holoResultPanel.SetActive(show);
+            // ---- 結果の画面(出ているあいだは、ふだんの表示を隠す) ----
+            int page = CurrentPage();
+            if (holoPlay != null && holoPlay.activeSelf != (page < 0)) holoPlay.SetActive(page < 0);
+            RefreshResult(page);
         }
 
         private void HoloTile(MeshRenderer r, int tile)
@@ -1140,27 +1505,6 @@ namespace MonakaLabo.SquareMahjong
             int sec = ms / 1000;
             int h = sec / 3600, m = sec / 60 % 60, ss = sec % 60;
             return h.ToString("00") + ":" + m.ToString("00") + ":" + ss.ToString("00");
-        }
-
-        private string ResultText()
-        {
-            string t = "";
-            if (engine.resType == SqmEngine.RES_EXHAUST && engine.winsN == 0) t += "流局\n";
-            if (engine.resType == SqmEngine.RES_ABORT) t += "途中流局\n";
-            for (int w = 0; w < engine.winsN; w++)
-            {
-                string role = engine.winRole[w] == SqmEngine.ROLE_FIRST ? "先発" : "後発";
-                string kind = engine.winType[w] == SqmEngine.WT_TSUMO ? "ツモ" : engine.winType[w] == SqmEngine.WT_RON2 ? "二枚ロン" : "片ロン";
-                t += NameOf(engine.winSeat[w]) + " " + role + " " + kind + "  " + (engine.winYakuman[w] ? "立方満" : engine.winHan[w] + "翻") + "  +" + engine.winTotal[w].ToString("N0") + "\n";
-                string ys = "";
-                for (int k = 0; k < engine.winYakuN[w]; k++)
-                {
-                    int id = engine.winYakuId[w * SqmEngine.MAXYAKU + k];
-                    ys += (k > 0 ? "・" : "") + yakuJa[id];
-                }
-                t += "<size=80%>" + ys + "</size>\n";
-            }
-            return t;
         }
 
         /// <summary>上空の表示を、自分の頭の方へ向ける</summary>

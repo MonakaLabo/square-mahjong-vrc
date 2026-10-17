@@ -39,7 +39,7 @@ namespace TMPro
         public UnityEngine.Material material;
         public System.Collections.Generic.List<TMP_Character> characterTable;
     }
-    public enum TextAlignmentOptions { Center, Right, Left }
+    public enum TextAlignmentOptions { Center, Right, Left, TopLeft }
     public enum TextOverflowModes { Overflow, Ellipsis }
     public class TextMeshPro : UnityEngine.MonoBehaviour
     {

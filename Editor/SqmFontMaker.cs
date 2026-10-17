@@ -74,7 +74,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 chars = ta.text;
             }
             int size = seg ? 512 : 2048;
-            var fa = TMP_FontAsset.CreateFontAsset(font, seg ? 90 : 80, seg ? 9 : 8, GlyphRenderMode.SDFAA, size, size, AtlasPopulationMode.Dynamic, false);
+            var fa = TMP_FontAsset.CreateFontAsset(font, seg ? 90 : 64, seg ? 9 : 7, GlyphRenderMode.SDFAA, size, size, AtlasPopulationMode.Dynamic, false);
             if (fa == null) return "作れなかった";
             fa.name = Path.GetFileNameWithoutExtension(outPath);
             fa.TryAddCharacters(chars, out string missing);

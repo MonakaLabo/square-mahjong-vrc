@@ -88,6 +88,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
             // ---- 文字 ----
             BuildHolo(root, table);
+            BuildAudio(root, table);
             // 席ごとに、卓の縁へ寝かせて並べる(その席から読める向き): 左から 席風・名前・点数(7セグ)
             table.seatLabels = new TextMeshPro[8];
             table.windLabels = new TextMeshPro[8];
@@ -129,6 +130,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.controls = controls.transform;
             table.discardButton = Button(controls, "discard", "切る", table, "Discard", new Vector3(0.36f, -0.08f, 0), Quaternion.identity, new Vector3(0.12f, 0.06f, 0.02f), out _);
             table.riichiButton = Button(controls, "riichi", "リーチ", table, "ToggleRiichi", new Vector3(0.36f, 0, 0), Quaternion.identity, new Vector3(0.12f, 0.06f, 0.02f), out table.riichiLabel);
+            table.confirmButton = Button(controls, "confirm", "確認", table, "Confirm", new Vector3(0, 0.09f, 0), Quaternion.identity, new Vector3(0.2f, 0.07f, 0.02f), out _);
+            table.confirmButton.SetActive(false);
             table.optionButtons = new GameObject[SqmTable.N_OPT];
             table.optionLabels = new TextMeshPro[SqmTable.N_OPT];
             for (int i = 0; i < SqmTable.N_OPT; i++)
@@ -248,15 +251,112 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.holoCellScore[p] = SegText(cell, "Score", sPos, 0.3f, new Vector2(0.18f, 0.05f), true);
             }
 
-            // ---- 局の結果・終局(板の上に出す) ----
-            var res = Group(holo, "Result");
-            table.holoResultPanel = res;
-            Panel(res, "Panel", new Vector2(0, HH / 2 + 0.26f), new Vector2(2.1f, 0.44f));
-            table.holoResult = HText(res, "Text", new Vector2(0, HH / 2 + 0.26f), 0.34f, new Vector2(2.0f, 0.4f), TextAlignmentOptions.Center);
-            table.holoResult.enableAutoSizing = true;
-            table.holoResult.fontSizeMin = 0.14f;
-            table.holoResult.fontSizeMax = 0.34f;
-            res.SetActive(false);
+            BuildResult(holo, table);
+        }
+
+        /// <summary>結果の画面(和了・流局・終局)。ホロの板の中に重ねる</summary>
+        static void BuildResult(GameObject holo, SqmTable table)
+        {
+            var g = Group(holo, "Result");
+            table.resultRoot = g;
+            var yellow = new Color(1f, 0.82f, 0.44f);
+            table.resTitle = HText(g, "Title", new Vector2(0, 0.41f), 0.62f, new Vector2(HW - 0.2f, 0.12f), TextAlignmentOptions.Center);
+            table.resTitle.color = yellow;
+            var line = Prim(PrimitiveType.Quad, g, "Divider", matHoloLine);
+            line.transform.localPosition = new Vector3(0, 0.335f, 0);
+            line.transform.localScale = new Vector3(HW - 0.16f, 0.003f, 1);
+            table.resHead = HText(g, "Head", new Vector2(0, 0.26f), 0.5f, new Vector2(HW - 0.2f, 0.1f), TextAlignmentOptions.Left);
+            table.resHead.enableWordWrapping = false;
+
+            // 手牌(36枚。和了牌には赤枠)
+            const int HAND = 36;
+            table.resHand = new MeshRenderer[HAND];
+            table.resHandMark = new GameObject[HAND];
+            var hand = Group(g, "Hand");
+            const float TWH = 0.06f, THH = 0.08f, STEP = 0.064f;
+            for (int i = 0; i < HAND; i++)
+            {
+                float x = -(HAND - 1) * STEP / 2 + i * STEP;
+                var q = Prim(PrimitiveType.Quad, hand, "tile_" + i.ToString("00"), matHoloFaces[0]);
+                q.transform.localPosition = new Vector3(x, 0.12f, 0);
+                q.transform.localScale = new Vector3(TWH, THH, 1);
+                q.SetActive(false);
+                table.resHand[i] = q.GetComponent<MeshRenderer>();
+                var m = Prim(PrimitiveType.Quad, hand, "mark_" + i.ToString("00"), matHoloRed);
+                m.transform.localPosition = new Vector3(x, 0.12f, 0.002f);
+                m.transform.localScale = new Vector3(TWH + 0.01f, THH + 0.01f, 1);
+                m.SetActive(false);
+                table.resHandMark[i] = m;
+            }
+
+            // ドラ・裏ドラ(小さめ。18枚ずつ)
+            table.resDoraLabel = HText(g, "DoraLabel", new Vector2(-1.13f, -0.01f), 0.32f, new Vector2(0.16f, 0.07f), TextAlignmentOptions.Right);
+            table.resUraLabel = HText(g, "UraLabel", new Vector2(-0.16f, -0.01f), 0.32f, new Vector2(0.2f, 0.07f), TextAlignmentOptions.Right);
+            table.resDora = SmallTiles(g, "Dora", -1.02f, -0.01f);
+            table.resUra = SmallTiles(g, "Ura", -0.02f, -0.01f);
+
+            // 役(3列)
+            table.resYaku0 = YakuCol(g, "Yaku0", -0.95f);
+            table.resYaku1 = YakuCol(g, "Yaku1", -0.35f);
+            table.resYaku2 = YakuCol(g, "Yaku2", 0.25f);
+
+            // 翻・点数(右)
+            table.resHan = HText(g, "Han", new Vector2(0.98f, -0.12f), 0.62f, new Vector2(0.6f, 0.1f), TextAlignmentOptions.Right);
+            table.resHan.color = yellow;
+            table.resCalc = HText(g, "Calc", new Vector2(0.98f, -0.2f), 0.26f, new Vector2(0.6f, 0.05f), TextAlignmentOptions.Right);
+            table.resCalc.color = yellow;
+            table.resPoints = HText(g, "Points", new Vector2(0.98f, -0.3f), 0.7f, new Vector2(0.6f, 0.11f), TextAlignmentOptions.Right);
+            table.resPoints.color = yellow;
+
+            // 流局の説明・終局の順位
+            table.resBody = HText(g, "Body", new Vector2(0, 0.0f), 0.42f, new Vector2(HW - 0.24f, 0.55f), TextAlignmentOptions.Left);
+            table.resRankL = HText(g, "RankL", new Vector2(-0.62f, -0.02f), 0.56f, new Vector2(1.16f, 0.62f), TextAlignmentOptions.Left);
+            table.resRankR = HText(g, "RankR", new Vector2(0.64f, -0.02f), 0.38f, new Vector2(1.1f, 0.62f), TextAlignmentOptions.Left);
+            table.resFoot = HText(g, "Foot", new Vector2(0, -0.43f), 0.28f, new Vector2(HW - 0.2f, 0.06f), TextAlignmentOptions.Center);
+            g.SetActive(false);
+        }
+
+        static MeshRenderer[] SmallTiles(GameObject parent, string name, float x0, float y)
+        {
+            var g = Group(parent, name);
+            var rs = new MeshRenderer[SqmTable.N_DORA];
+            for (int i = 0; i < rs.Length; i++)
+            {
+                var q = Prim(PrimitiveType.Quad, g, name + "_" + i.ToString("00"), matHoloFaces[0]);
+                q.transform.localPosition = new Vector3(x0 + i * 0.043f, y, 0);
+                q.transform.localScale = new Vector3(0.04f, 0.053f, 1);
+                q.SetActive(false);
+                rs[i] = q.GetComponent<MeshRenderer>();
+            }
+            return rs;
+        }
+
+        static TextMeshPro YakuCol(GameObject parent, string name, float x)
+        {
+            var t = HText(parent, name, new Vector2(x, -0.25f), 0.3f, new Vector2(0.56f, 0.26f), TextAlignmentOptions.TopLeft);
+            t.enableAutoSizing = true;
+            t.fontSizeMin = 0.12f;
+            t.fontSizeMax = 0.3f;
+            return t;
+        }
+
+        /// <summary>効果音を鳴らす所(卓の上。近くの人にだけ聞こえる)</summary>
+        static void BuildAudio(GameObject root, SqmTable table)
+        {
+            var g = Group(root, "Sfx");
+            g.transform.localPosition = new Vector3(0, TOP + 0.4f, 0);
+            var a = g.AddComponent<AudioSource>();
+            a.playOnAwake = false;
+            a.spatialBlend = 1f;
+            a.rolloffMode = AudioRolloffMode.Linear;
+            a.minDistance = 2f;
+            a.maxDistance = 9f;
+            a.dopplerLevel = 0f;
+            table.sfx = a;
+            string[] names = { "discard", "call", "riichi", "win", "end", "turn", "click" };
+            table.sfxClips = new AudioClip[names.Length];
+            for (int i = 0; i < names.Length; i++)
+                table.sfxClips[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/sfx_" + names[i] + ".wav");
         }
 
         /// <summary>半透明の板と、青白い縁</summary>
