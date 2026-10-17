@@ -3,3 +3,7 @@ Tests~/EngineHarness/bin/
 Tests~/EngineHarness/obj/
 Tests~/UnityCompile/bin/
 Tests~/UnityCompile/obj/
+Runtime/Generated/
+Runtime/Generated.meta
+Runtime/Prefabs/
+Runtime/Prefabs.meta

@@ -24,6 +24,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         [MenuItem("Tools/平方麻雀/卓をシーンに置く")]
         public static void Build()
         {
+            // U# のスクリプトには対のプログラムアセット(.asset)が要る。見つからないときは何も作らずに止める
+            foreach (var type in new[] { typeof(SqmEngine), typeof(SqmNpc), typeof(SqmTable), typeof(SqmTileClick), typeof(SqmButton) })
+            {
+                if (UdonSharpEditorUtility.GetUdonSharpProgramAsset(type) == null)
+                {
+                    EditorUtility.DisplayDialog("平方麻雀", type.Name + " の U# プログラムアセットが見つかりません。\nU# のコンパイルが終わってから、もう一度実行してください。", "OK");
+                    return;
+                }
+            }
             MakeAssets();
             FindFont();
 
