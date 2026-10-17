@@ -234,11 +234,11 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < 6; i++) SetActive(btnRoots[i], slotAct[i] != ACT_NONE);
         }
 
-        /// <summary>手牌の位置: 門前は2段(上の段 14 枚)、ツモ牌は上の段の右に離す</summary>
+        /// <summary>手牌の位置: 門前は半分ずつ2段(26 枚なら 13 + 13)、ツモ牌は上の段のさらに上の右</summary>
         private void PlaceHand(int mainN, int n)
         {
             const float STEP = 0.024f, Y1 = 0.004f, Y2 = -0.031f, YD = 0.04f;
-            int row1 = mainN > 14 ? 14 : mainN;
+            int row1 = (mainN + 1) / 2;
             for (int i = 0; i < handTiles.Length; i++)
             {
                 Vector3 p;

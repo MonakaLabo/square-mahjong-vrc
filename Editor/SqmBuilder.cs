@@ -115,6 +115,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Button(center, "resync", "Resync", table, "Resync", new Vector3(-0.016f, TOP + TT / 2, 0), faceUp, new Vector3(TW, TH, TT), out _);
             Button(center, "reset", "Reset", table, "ResetMatch", new Vector3(0.016f, TOP + TT / 2, 0), faceUp, new Vector3(TW, TH, TT), out _);
 
+            // ---- 卓の上の「確定」(打牌の確定。自分の番だけ、自分の席に出る) ----
+            table.discardButtons = new GameObject[8];
+            var discards = Group(root, "DiscardButtons");
+            for (int s = 0; s < 8; s++)
+            {
+                Vector3 u = U(s), r = R(s);
+                table.discardButtons[s] = Button(discards, "discard_" + s, "確定", table, "Discard",
+                    u * 1.11f + r * 0.43f + Vector3.up * (TOP + 0.008f), Quaternion.LookRotation(Vector3.down, -u), new Vector3(0.07f, 0.045f, 0.016f), out _);
+                table.discardButtons[s].SetActive(false);
+            }
+
             // ---- 手元のパッド(席ごとの板 + 中身1組)。席に着く・試合を始める・打つ・鳴く・確認はパッドで ----
             BuildPads(root, table);
 
@@ -204,7 +215,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 t.transform.localScale = new Vector3(0.022f, 0.03f, 1);
                 var box = t.AddComponent<BoxCollider>();
                 box.isTrigger = true;
-                box.size = new Vector3(1, 1, 0.3f);
+                box.center = new Vector3(0, 0, -0.003f);
+                box.size = new Vector3(1, 1, 0.008f);
                 PadKey(t, pad, i);
                 t.SetActive(false);
                 pad.handTiles[i] = t.GetComponent<MeshRenderer>();
@@ -291,11 +303,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Vector3 u = U(s), r = R(s);
             var g = new GameObject("Pad_" + s);
             g.transform.SetParent(parent.transform, false);
-            g.transform.localPosition = u * 1.27f + r * 0.3f + Vector3.up * (TOP + 0.05f);
-            // 手前(座る人)へ向けて、45° 傾ける
-            g.transform.localRotation = Quaternion.LookRotation((-u + Vector3.down).normalized, (-u + Vector3.up).normalized);
+            // 手前(座る人)へ向けて 45° 傾け、板の上辺を卓の縁(天板の角)に接するように置く
+            Vector3 padUp = (-u + Vector3.up).normalized;
+            Vector3 edge = u * 1.18f + Vector3.up * TOP;
+            g.transform.localPosition = edge - padUp * (PH / 2) + r * 0.3f;
+            g.transform.localRotation = Quaternion.LookRotation((-u + Vector3.down).normalized, padUp);
+            // 掴む判定は板の裏側に薄く置く(ボタンの判定より奥にして、ボタンを押すじゃまをしない)
             var col = g.AddComponent<BoxCollider>();
-            col.size = new Vector3(PW, PH, 0.02f);
+            col.center = new Vector3(0, 0, 0.01f);
+            col.size = new Vector3(PW, PH, 0.004f);
             col.isTrigger = true;
             var rb = g.AddComponent<Rigidbody>();
             rb.isKinematic = true;
@@ -364,8 +380,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             text.transform.localPosition = new Vector3(0, 0, -0.0008f);
             text.enableWordWrapping = false;
             text.text = label;
+            // 押せる所は四角全体(文字より手前に、少し厚めに)
             var box = g.AddComponent<BoxCollider>();
-            box.size = new Vector3(size.x, size.y, 0.006f);
+            box.center = new Vector3(0, 0, -0.003f);
+            box.size = new Vector3(size.x, size.y, 0.008f);
             box.isTrigger = true;
             return g;
         }

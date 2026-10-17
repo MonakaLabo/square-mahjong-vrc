@@ -76,6 +76,7 @@ namespace MonakaLabo.SquareMahjong
         public GameObject newMatchButton;    // 「新しい試合」
         public Transform controls;           // 自分の前に出る操作ボタンのまとまり
         public GameObject discardButton;
+        public GameObject[] discardButtons; // 卓の上の「確定」 8(自分の席のぶんだけ出す)
         public GameObject riichiButton;
         public TextMeshPro riichiLabel;
         public GameObject[] optionButtons;   // 宣言などの選択肢 12
@@ -1065,6 +1066,12 @@ namespace MonakaLabo.SquareMahjong
             padRiichiOk = myTurn && riichiOk;
             padDiscardOk = myTurn && (!engine.riichiOn[humanSeat] || optN > 0);
             padConfirm = humanSeat >= 0 && sPageN > 0 && (sAckMask & (1 << humanSeat)) != 0;
+            if (discardButtons != null)
+                for (int s = 0; s < discardButtons.Length; s++)
+                {
+                    bool on = s == humanSeat && padDiscardOk;
+                    if (discardButtons[s] != null && discardButtons[s].activeSelf != on) discardButtons[s].SetActive(on);
+                }
             if (optionButtons != null)
                 for (int i = 0; i < N_OPT && i < optionButtons.Length; i++)
                 {

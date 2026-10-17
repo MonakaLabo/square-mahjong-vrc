@@ -24,6 +24,7 @@ namespace MonakaLabo.SquareMahjong
         public Collider body;               // 掴む所
 
         public const float SNAP = 0.3f;     // 元の場所からこの距離(m)以内で離すと、くっつく
+        private bool visible = true, grab;
         private Vector3 homePos;
         private Quaternion homeRot;
         private bool homeSet;
@@ -64,6 +65,8 @@ namespace MonakaLabo.SquareMahjong
 
         public void SetGrabbable(bool on)
         {
+            grab = on;
+            UpdateCollider();
             if (pickup == null || pickup.pickupable == on) return;
             pickup.pickupable = on;
             if (!on && pickup.IsHeld) pickup.Drop();
@@ -74,6 +77,14 @@ namespace MonakaLabo.SquareMahjong
         {
             if (visuals != null)
                 for (int i = 0; i < visuals.Length; i++) if (visuals[i] != null && visuals[i].activeSelf != on) visuals[i].SetActive(on);
+            visible = on;
+            UpdateCollider();
+        }
+
+        /// <summary>掴む判定は、見えていて掴める設定のときだけ(それ以外はボタンを押すじゃまをしないよう消す)</summary>
+        private void UpdateCollider()
+        {
+            bool on = visible && grab;
             if (body != null && body.enabled != on) body.enabled = on;
         }
 
