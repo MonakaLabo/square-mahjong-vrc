@@ -330,13 +330,18 @@ namespace MonakaLabo.SquareMahjong
         // ---- 局の始まりの演出 ----
         public const float BANNER_TIME = 2.2f;
         private int bannerSeq = -1;
-        private float bannerT;
+        private float bannerT, bannerFull = BANNER_TIME;
+
+        /// <summary>局の始まりの演出中か(終わるまで、だれも牌を切れない)</summary>
+        public bool BannerShowing() { return bannerT > 0; }
 
         /// <summary>新しい局が始まったら、ホロの手前に「東2局」を出して声(か効果音)を鳴らす。追いつき中は出さない</summary>
         private void CheckKyokuBanner()
         {
-            if (lMatch == 0 || engine.kyokuSeq == bannerSeq) return;
-            bannerSeq = engine.kyokuSeq;
+            // 「どの試合の何局目か」で覚える(Reset して新しい試合を始めたときも、東1局から出すように)
+            int key = lMatch * 1000 + engine.kyokuSeq;
+            if (lMatch == 0 || key == bannerSeq) return;
+            bannerSeq = key;
             if (replayTo > 0 || engine.kyokuSeq <= 0 || engine.phase == SqmEngine.PH_MATCH_OVER) return;
             if (kyokuBannerText != null)
             {
@@ -353,6 +358,11 @@ namespace MonakaLabo.SquareMahjong
             bannerQ[bannerQN++] = v;
             if (engine.honba >= 1 && honbaVoices != null && engine.honba <= honbaVoices.Length && honbaVoices[engine.honba - 1] != null) bannerQ[bannerQN++] = honbaVoices[engine.honba - 1];
             if (engine.kyoku >= engine.rKyokuCount && voiceOorasu != null) bannerQ[bannerQN++] = voiceOorasu;
+            // 声が長いときは、言い終わるまで帯を出しておく
+            float total = 0.4f;
+            for (int i = 0; i < bannerQN; i++) total += bannerQ[i].length + 0.08f;
+            if (total > bannerT) bannerT = total;
+            bannerFull = bannerT;
             PlayBannerNext();
         }
 
@@ -394,7 +404,8 @@ namespace MonakaLabo.SquareMahjong
             if (kyokuBanner.gameObject.activeSelf != on) kyokuBanner.gameObject.SetActive(on);
             if (!on) return;
             bannerT -= Time.deltaTime;
-            float e = BANNER_TIME - bannerT;               // 経った時間
+            if (bannerT <= 0) dirty = true;   // 終わったら、操作ボタンを出し直す
+            float e = bannerFull - bannerT;                // 経った時間
             float open = Mathf.Clamp01(e / 0.25f);         // 0.25 秒で開く
             float close = Mathf.Clamp01(bannerT / 0.35f);  // 最後の 0.35 秒で閉じる
             float k = Mathf.Min(open, close);
@@ -419,7 +430,7 @@ namespace MonakaLabo.SquareMahjong
                     // 結果の画面: だれも座っていなければ時間で進める(座っている人がいれば「確認」を待つ)
                     if (HumanMask() == 0) { pageWait -= Time.deltaTime; if (pageWait <= 0) HostNextPage(); }
                 }
-                else if (CaughtUp() && Running())
+                else if (CaughtUp() && Running() && bannerT <= 0)   // 局の始まりの演出が終わるまでは進めない
                 {
                     if (wait > 0) wait -= Time.deltaTime;
                     else HostStep();
@@ -803,7 +814,7 @@ namespace MonakaLabo.SquareMahjong
         // ================================================================ 自分の操作
         private bool MyTurn()
         {
-            return Running() && CaughtUp() && humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
+            return Running() && CaughtUp() && bannerT <= 0 && humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
         }
 
         public void ClickTile(int slot)
@@ -1120,7 +1131,7 @@ namespace MonakaLabo.SquareMahjong
         private void RefreshControls()
         {
             optN = 0;
-            bool ok = Running() && CaughtUp() && humanSeat >= 0 && sentAt < 0 && sPageN == 0;
+            bool ok = Running() && CaughtUp() && humanSeat >= 0 && sentAt < 0 && sPageN == 0 && bannerT <= 0;
             if (confirmButton != null)
             {
                 bool showOk = humanSeat >= 0 && sPageN > 0 && (sAckMask & (1 << humanSeat)) != 0;
