@@ -1466,6 +1466,52 @@ namespace MonakaLabo.SquareMahjong
             return true;
         }
 
+        /// <summary>打牌以外のアクションが、その席の合法手の何番目にあたるか(無ければ -1)。同期で番号だけを送るのに使う</summary>
+        public int FindLegal(int[] act)
+        {
+            int n = BuildLegal(act[O_SEAT]);
+            if (phase == PH_CALLS && act[O_TYPE] == A_PASS) return n - 1;
+            for (int i = 0; i < n; i++) if (SameOption(legal, i * OPT, act, 0)) return i;
+            return -1;
+        }
+
+        /// <summary>打牌ができるかだけを調べる(状態は変えない)。できなければ false(lastError に理由)</summary>
+        public bool CheckDiscard(int[] act)
+        {
+            lastError = "";
+            int seat = act[O_SEAT];
+            int n = BuildLegal(seat);
+            if (phase != PH_TURN) return Fail("いまは切れません");
+            int oi = -1;
+            for (int i = 0; i < n; i++) if (legal[i * OPT + O_TYPE] == A_DISCARD) oi = i;
+            if (oi < 0) return Fail("いまは切れません");
+            int ob = oi * OPT;
+            int cnt = act[O_TAKEN];
+            if (cnt != mustDiscard) return Fail(mustDiscard + "枚切ってください");
+            int ta = act[O_TAKE], tb = cnt == 2 ? act[O_TAKE + 1] : -1;
+            if (ta < 0 || ta >= NT || tb >= NT) return Fail("手牌にない牌です");
+            if (handC[seat * NT + ta] < 1 || (tb >= 0 && handC[seat * NT + tb] < (tb == ta ? 2 : 1))) return Fail("手牌にない牌です");
+            if (legal[ob + O_FIXEDN] >= 0)
+            {
+                int fn = legal[ob + O_FIXEDN];
+                int fa = fn > 0 ? legal[ob + O_FIXED] : -1, fb = fn > 1 ? legal[ob + O_FIXED + 1] : -1;
+                bool same = cnt == fn && ((ta == fa && tb == fb) || (ta == fb && tb == fa));
+                if (!same) return Fail("リーチ中はツモ切りです");
+            }
+            for (int k = 0; k < kuikaeN; k++) if (kuikae[k] == ta || kuikae[k] == tb) return Fail("喰い替え禁止です");
+            if (act[O_MODE] == 1)
+            {
+                if (legal[ob + O_RIICHIOK] != 1) return Fail("リーチできません");
+                RemoveHand(seat, ta, 1);
+                if (cnt == 2) RemoveHand(seat, tb, 1);
+                bool tenpai = WaitsOf(seat) > 0;
+                AddHand(seat, ta);
+                if (cnt == 2) AddHand(seat, tb);
+                if (!tenpai) return Fail("その切り方では聴牌になりません");
+            }
+            return true;
+        }
+
         private bool DoDiscard(int s, int ta, int tb, int cnt, bool riichi)
         {
             RemoveHand(s, ta, 1);

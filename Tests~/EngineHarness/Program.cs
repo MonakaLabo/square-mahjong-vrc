@@ -40,6 +40,9 @@ static class Program
             int[] styles = PickStyles(e, seedStr);
             for (int s = 0; s < 8; s++) npc.SetSeat(s, level, styles[s]);
             bool ok = Check(e, rows[1], 0, f);
+            // 同期の確かめ: 操作を番号(code)にして記録し、もう1つのエンジンで番号から再生して、同じ状態になるか
+            var codes = new System.Collections.Generic.List<int>();
+            var snaps = new System.Collections.Generic.List<string>();
             for (int k = 2; ok && k < rows.Length; k++)
             {
                 string row = rows[k];
@@ -66,6 +69,10 @@ static class Program
                             break;
                         }
                     }
+                    snaps.Add(Canon(e));
+                    int code = Codec.Encode(e, act);
+                    if (code < 0) { Console.WriteLine($"✖ {Path.GetFileName(f)} 操作{k - 1}: 番号にできない"); return 1; }
+                    codes.Add(code);
                     if (!e.ApplyAction(act))
                     {
                         Console.WriteLine($"✖ {Path.GetFileName(f)} 操作{k - 1}: C# で適用できない: {e.lastError}\n  {row}");
@@ -77,14 +84,29 @@ static class Program
                 ok = Check(e, row, k - 1, f);
                 totalOps++;
             }
+            if (ok)
+            {
+                var b = new SqmEngine();
+                b.SetDefaultRules();
+                ApplyRules(b, meta.GetProperty("rules"));
+                b.NewMatchFromString(seedStr);
+                Codec.AdvanceAll(b);
+                for (int i = 0; i < codes.Count && ok; i++)
+                {
+                    if (Canon(b) != snaps[i]) { Console.WriteLine($"✖ {Path.GetFileName(f)}: 番号からの再生が {i} 手目の前でずれた"); ok = false; break; }
+                    if (!Codec.Apply(b, codes[i])) { Console.WriteLine($"✖ {Path.GetFileName(f)}: 番号 {codes[i]} を適用できない: {b.lastError}"); ok = false; }
+                }
+                if (ok && Canon(b) != Canon(e)) { Console.WriteLine($"✖ {Path.GetFileName(f)}: 番号からの再生の最後がずれた"); ok = false; }
+                codecOps += codes.Count;
+            }
             if (ok) { okFiles++; Console.WriteLine($"✔ {Path.GetFileName(f)}: {rows.Length - 2} 操作すべて一致"); }
             else return 1;
         }
-        Console.WriteLine($"{okFiles}/{files.Length} 試合・{totalOps} 操作が一致、NPC の判断 {npcChecks} 回が一致 ({sw.ElapsedMilliseconds} ms)");
+        Console.WriteLine($"{okFiles}/{files.Length} 試合・{totalOps} 操作が一致、NPC の判断 {npcChecks} 回が一致、番号からの再生 {codecOps} 手が一致 ({sw.ElapsedMilliseconds} ms)");
         return okFiles == files.Length ? 0 : 1;
     }
 
-    static int npcChecks;
+    static int npcChecks, codecOps;
 
     /// <summary>その試合の8人の性格(ブラウザ版 pickStyles と同じ: 10人を seed で混ぜて先頭8人)</summary>
     static int[] PickStyles(SqmEngine e, string seedStr)
@@ -296,5 +318,66 @@ static class Program
     {
         int n = a[o + nIdx];
         return string.Join(".", Enumerable.Range(0, Math.Max(0, n)).Select(i => a[o + at + i]));
+    }
+}
+
+/// <summary>SqmTable の EncodeAct / ApplyCode / AdvanceAll と同じもの(同期の番号)</summary>
+static class Codec
+{
+    const int K_LEGAL = 0, K_DISCARD = 1, K_NEXT = 2;
+
+    public static int Encode(SqmEngine e, int[] a)
+    {
+        int seat = a[SqmEngine.O_SEAT];
+        if (a[SqmEngine.O_TYPE] == SqmEngine.A_DISCARD)
+        {
+            int cnt = a[SqmEngine.O_TAKEN];
+            int ta = a[SqmEngine.O_TAKE], tb = cnt == 2 ? a[SqmEngine.O_TAKE + 1] : -1;
+            return seat | (K_DISCARD << 3) | ((a[SqmEngine.O_MODE] == 1 ? 1 : 0) << 5) | ((ta + 1) << 6) | ((tb + 1) << 12);
+        }
+        if (a[SqmEngine.O_TYPE] == SqmEngine.A_NEXT) return seat | (K_NEXT << 3) | ((a[SqmEngine.O_MODE] + 1) << 6);
+        int idx = e.FindLegal(a);
+        if (idx < 0) return -1;
+        return seat | (K_LEGAL << 3) | (idx << 6);
+    }
+
+    public static bool Apply(SqmEngine e, int code)
+    {
+        AdvanceAll(e);
+        int seat = code & 7, kind = (code >> 3) & 3;
+        var act = new int[SqmEngine.OPT];
+        act[SqmEngine.O_SEAT] = seat;
+        act[SqmEngine.O_MODE] = -1; act[SqmEngine.O_TILE] = -1; act[SqmEngine.O_RONIDX] = -1; act[SqmEngine.O_RONTILE] = -1;
+        act[SqmEngine.O_MELDTYPE] = SqmEngine.MT_NONE; act[SqmEngine.O_START] = -1;
+        if (kind == K_DISCARD)
+        {
+            int ta = ((code >> 6) & 63) - 1, tb = ((code >> 12) & 63) - 1;
+            act[SqmEngine.O_TYPE] = SqmEngine.A_DISCARD;
+            act[SqmEngine.O_MODE] = (code >> 5) & 1;
+            act[SqmEngine.O_TAKEN] = tb >= 0 ? 2 : 1;
+            act[SqmEngine.O_TAKE] = ta;
+            if (tb >= 0) act[SqmEngine.O_TAKE + 1] = tb;
+        }
+        else if (kind == K_NEXT)
+        {
+            act[SqmEngine.O_TYPE] = SqmEngine.A_NEXT;
+            act[SqmEngine.O_MODE] = ((code >> 6) & 3) - 1;
+        }
+        else
+        {
+            int idx = code >> 6;
+            int n = e.BuildLegal(seat);
+            if (idx >= n) return false;
+            for (int k = 0; k < SqmEngine.OPT; k++) act[k] = e.legal[idx * SqmEngine.OPT + k];
+            act[SqmEngine.O_SEAT] = seat;
+        }
+        bool ok = e.ApplyAction(act);
+        AdvanceAll(e);
+        return ok;
+    }
+
+    public static void AdvanceAll(SqmEngine e)
+    {
+        for (int guard = 0; guard < 64 && e.pendKind == SqmEngine.PEND_NONE; guard++) e.Advance();
     }
 }

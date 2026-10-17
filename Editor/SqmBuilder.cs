@@ -17,15 +17,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         const string PREFAB = PKG + "/Runtime/Prefabs/SquareMahjongTable.prefab";
         const float TOP = SqmTable.TOP, TW = SqmTable.TW, TH = SqmTable.TH, TT = SqmTable.TT;
 
-        static Material matBody, matBack, matFelt, matRim, matButton, matButtonHot;
+        static Material matBody, matBack, matFelt, matRim, matButton, matButtonHot, matSegBox;
         static Material[] matFaces;
-        static TMP_FontAsset font;
+        static TMP_FontAsset font, segFont;
 
         [MenuItem("Tools/平方麻雀/卓をシーンに置く")]
         public static void Build()
         {
             // U# のスクリプトには対のプログラムアセット(.asset)が要る。見つからないときは何も作らずに止める
-            foreach (var type in new[] { typeof(SqmEngine), typeof(SqmNpc), typeof(SqmTable), typeof(SqmTileClick), typeof(SqmButton) })
+            foreach (var type in new[] { typeof(SqmEngine), typeof(SqmNpc), typeof(SqmTable), typeof(SqmArchive), typeof(SqmTileClick), typeof(SqmButton) })
             {
                 if (UdonSharpEditorUtility.GetUdonSharpProgramAsset(type) == null)
                 {
@@ -38,12 +38,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
             var root = new GameObject("SquareMahjongTable");
             Undo.RegisterCreatedObjectUndo(root, "平方麻雀の卓");
-            var engine = UdonSharpUndo.AddComponent<SqmEngine>(root);
-            var npc = UdonSharpUndo.AddComponent<SqmNpc>(root);
+            // 同期する SqmTable / SqmArchive と、同期しないエンジン・NPC は、別の GameObject に置く(同期の方式が混ざらないように)
             var table = UdonSharpUndo.AddComponent<SqmTable>(root);
+            var logic = Group(root, "Logic");
+            var engine = UdonSharpUndo.AddComponent<SqmEngine>(logic);
+            var npc = UdonSharpUndo.AddComponent<SqmNpc>(logic);
+            var archive = UdonSharpUndo.AddComponent<SqmArchive>(Group(root, "Archive"));
             npc.engine = engine;
             table.engine = engine;
             table.npc = npc;
+            table.archive = archive;
+            archive.table = table;
             table.faceMats = matFaces;
 
             // ---- 卓 ----
@@ -83,13 +88,22 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holo = Text(root, "Hologram", new Vector3(0, TOP + 0.75f, 0), Quaternion.identity, 0.55f, new Vector2(1.6f, 0.9f));
             table.holo.text = "平方麻雀²";
             table.holoRoot = table.holo.transform;
+            // 席ごとに、卓の縁へ寝かせて並べる(その席から読める向き): 左から 席風・名前・点数(7セグ)
             table.seatLabels = new TextMeshPro[8];
+            table.windLabels = new TextMeshPro[8];
+            table.scoreLabels = new TextMeshPro[8];
             var labels = Group(root, "SeatLabels");
             for (int s = 0; s < 8; s++)
             {
-                Vector3 u = U(s);
-                // 卓の縁に寝かせて、その席から読める向き
-                table.seatLabels[s] = Text(labels, "label_" + s, u * 1.13f + Vector3.up * (TOP + 0.002f), Quaternion.LookRotation(Vector3.down, -u), 0.28f, new Vector2(0.6f, 0.12f));
+                Vector3 u = U(s), r = R(s);
+                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + 0.002f);
+                Quaternion flat = Quaternion.LookRotation(Vector3.down, -u);
+                var seat = Group(labels, "seat_" + s);
+                table.windLabels[s] = Text(seat, "wind", at - r * 0.34f, flat, 0.45f, new Vector2(0.07f, 0.07f));
+                table.seatLabels[s] = Text(seat, "name", at - r * 0.06f, flat, 0.24f, new Vector2(0.44f, 0.06f));
+                table.seatLabels[s].enableWordWrapping = false;
+                table.seatLabels[s].overflowMode = TextOverflowModes.Ellipsis;
+                table.scoreLabels[s] = SegDisplay(seat, at + r * 0.27f, u);
             }
 
             // ---- 席を選ぶボタン ----
@@ -104,8 +118,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 Vector3 u = U(SqmTable.WALLLESS_SIDE);
                 Vector3 r = R(SqmTable.WALLLESS_SIDE);
-                Button(joins, "watch", "NPC だけで観戦", table, "Watch", u * 1.28f + r * 0.3f + Vector3.up * (TOP + 0.24f), Quaternion.LookRotation(-u, Vector3.up), new Vector3(0.26f, 0.06f, 0.02f), out _);
-                Button(root, "new_match", "新しい試合", table, "NewMatch", u * 1.28f - r * 0.3f + Vector3.up * (TOP + 0.24f), Quaternion.LookRotation(-u, Vector3.up), new Vector3(0.26f, 0.06f, 0.02f), out _);
+                table.leaveButton = Button(root, "leave", "席を立つ", table, "Leave", u * 1.28f + r * 0.3f + Vector3.up * (TOP + 0.24f), Quaternion.LookRotation(-u, Vector3.up), new Vector3(0.26f, 0.06f, 0.02f), out _);
+                table.newMatchButton = Button(root, "new_match", "新しい試合", table, "NewMatch", u * 1.28f - r * 0.3f + Vector3.up * (TOP + 0.24f), Quaternion.LookRotation(-u, Vector3.up), new Vector3(0.26f, 0.06f, 0.02f), out _);
             }
 
             // ---- 自分の前に出る操作ボタン ----
@@ -129,7 +143,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Directory.CreateDirectory(Path.GetDirectoryName(PREFAB));
             PrefabUtility.SaveAsPrefabAssetAndConnect(root, PREFAB, InteractionMode.UserAction);
             Selection.activeGameObject = root;
-            Debug.Log("[平方麻雀] 卓を置きました: " + PREFAB + (font == null ? "(日本語のフォントが見つからないので、文字が □ になるかもしれません)" : "(フォント: " + font.name + ")"));
+            Debug.Log("[平方麻雀] 卓を置きました: " + PREFAB + (font == null ? "(日本語のフォントが見つからないので、文字が □ になるかもしれません)" : "(フォント: " + font.name + ")")
+                + (segFont == null ? "(7セグのフォント DSEG7 が見つからないので、点数はふつうの文字です)" : "(7セグ: " + segFont.name + ")"));
         }
 
         // ================================================================ 部品
@@ -212,6 +227,33 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             return t;
         }
 
+        /// <summary>点数の表示: 黒い枠に赤い7セグ。消えている画も薄く見せる(DSEG7 フォントがあるとき)</summary>
+        static TextMeshPro SegDisplay(GameObject parent, Vector3 at, Vector3 u)
+        {
+            const float w = 0.2f, h = 0.05f;
+            var g = Group(parent, "score");
+            g.transform.localPosition = at;
+            var box = Prim(PrimitiveType.Cube, g, "Box", matSegBox);
+            box.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
+            box.transform.localScale = new Vector3(w, 0.004f, h);
+            Quaternion flat = Quaternion.LookRotation(Vector3.down, -u);
+            Vector3 lift = Vector3.up * 0.0025f;
+            TextMeshPro Seg(string name, Color c)
+            {
+                var t = Text(g, name, lift, flat, 0.3f, new Vector2(w - 0.016f, h));
+                if (segFont != null) t.font = segFont;
+                t.alignment = TextAlignmentOptions.Right;
+                t.enableWordWrapping = false;
+                t.color = c;
+                return t;
+            }
+            if (segFont != null) Seg("ghost", new Color(0.32f, 0.04f, 0.03f)).text = "8888888";
+            var lit = Seg("value", new Color(1f, 0.16f, 0.1f));
+            lit.transform.localPosition = lift + Vector3.up * 0.0004f;
+            lit.text = "0";
+            return lit;
+        }
+
         static GameObject Button(GameObject parent, string name, string label, SqmTable table, string eventName, Vector3 pos, Quaternion rot, Vector3 size, out TextMeshPro text)
         {
             var g = new GameObject(name);
@@ -241,6 +283,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             matRim = Mat("TableRim", new Color(0.35f, 0.22f, 0.13f), null);
             matButton = Mat("Button", new Color(0.18f, 0.16f, 0.14f), null);
             matButtonHot = Mat("ButtonHot", new Color(0.75f, 0.55f, 0.18f), null);
+            matSegBox = Mat("SegBox", new Color(0.03f, 0.03f, 0.03f), null);
             matFaces = new Material[47];
             for (int t = 0; t < 47; t++)
             {
@@ -269,14 +312,16 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         static void FindFont()
         {
             font = null;
+            segFont = null;
             foreach (var guid in AssetDatabase.FindAssets("t:TMP_FontAsset"))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
                 string lower = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+                if (lower.Contains("dseg")) { if (segFont == null) segFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path); continue; }
+                if (font != null) continue;
                 if (lower.Contains("jp") || lower.Contains("japan") || lower.Contains("noto") || lower.Contains("gothic") || lower.Contains("mplus") || lower.Contains("ja") || lower.Contains("sourcehan") || lower.Contains("mincho"))
                 {
                     font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
-                    if (font != null) return;
                 }
             }
         }

@@ -1,21 +1,32 @@
 using TMPro;
 using UdonSharp;
 using UnityEngine;
+using VRC.SDK3.UdonNetworkCalling;
 using VRC.SDKBase;
+using VRC.Udon.Common.Interfaces;
 
 namespace MonakaLabo.SquareMahjong
 {
     /// <summary>
     /// 卓1つ。試合を進め(SqmEngine + SqmNpc)、牌・文字・ボタンを卓の上に並べる。
-    /// いまはローカル(自分 + NPC 7人)だけ。複数人の同期は次の段階で足す。
+    ///
+    /// 同期: 卓の持ち主(ホスト)だけが試合を進める。NPC の手・自動の進行・人の操作を、1つずつ番号(code)にして記録に足し、
+    /// 直近 RING 個をリングで全員へ送る。ほかの人は、同じ種(シード)から同じ記録を手元のエンジンで再生する。
+    /// エンジンは同じ操作なら同じ結果になる(JS 版と照合済み)ので、盤面そのものは送らない。
+    /// 人の操作は、ホストへネットワークイベント(NetAct)で頼む。ホストが確かめて記録に足す。
+    /// 途中から来た人や遅れた人は、ホストに記録すべて(SqmArchive)を頼んで追いつく。
+    /// ホストが抜けたら、VRChat が次の持ち主を決める。手元に同じ記録があるので、そのまま続けられる。
+    /// 人が抜けた席は NPC が打つ。
+    ///
     /// 物(牌・ボタン・文字)は、エディタのメニュー「平方麻雀 → 卓をシーンに置く」(SqmBuilder)で作って、ここの配列に入れる。
     /// </summary>
-    [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
+    [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class SqmTable : UdonSharpBehaviour
     {
         // ---------------- つなぐもの(SqmBuilder が入れる) ----------------
         public SqmEngine engine;
         public SqmNpc npc;
+        public SqmArchive archive;
         public Material[] faceMats;          // 牌の表面 47種
         public Transform[] wallStacks;       // 壁の幢 525
         public Transform[] handTiles;        // 手牌 8席 × 28(SLOT_HAND)
@@ -29,8 +40,12 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] centerFaces;
         public TextMeshPro holo;             // 卓の上空の表示
         public Transform holoRoot;           // 上空の表示の向きを変える用(Udon では TextMeshPro.transform が使えない)
-        public TextMeshPro[] seatLabels;     // 席の名前・点数 8
+        public TextMeshPro[] seatLabels;     // 席の名前 8
+        public TextMeshPro[] windLabels;     // 席風 8
+        public TextMeshPro[] scoreLabels;    // 点数(7セグ) 8
         public GameObject[] joinButtons;     // 席の「ここで打つ」 8
+        public GameObject leaveButton;       // 「席を立つ」
+        public GameObject newMatchButton;    // 「新しい試合」
         public Transform controls;           // 自分の前に出る操作ボタンのまとまり
         public GameObject discardButton;
         public GameObject riichiButton;
@@ -41,15 +56,35 @@ namespace MonakaLabo.SquareMahjong
         // ---------------- 大きさ(m) ----------------
         public const float TOP = 0.76f;      // 卓の天板の高さ
         public const float TW = 0.026f, TH = 0.035f, TT = 0.02f; // 牌の幅・高さ・厚み
-        public const float R_HAND = 1.06f, R_MELD = 0.965f;
+        public const float R_HAND = 1.06f, R_MELD = 0.965f, R_LABEL = 1.13f;
         public const int SLOT_HAND = 28, SLOT_RIVER = 36, SLOT_MELD = 28, N_DORA = 18, N_RON = 12, N_OPT = 12;
         public const int WALL_PER_SIDE = 75, WALLLESS_SIDE = 7;
         public const int NP = 8, NT = 47;
+        public const int RING = 64;          // 毎回送る直近の記録の数
+        public const int LOG_MAX = 32768;    // 1試合の記録の上限(1試合はふつう 1万手まで)
+        public const int REPLAY_PER_FRAME = 120;
 
-        // ---------------- 状態 ----------------
-        [System.NonSerialized] public int humanSeat = -1;   // 自分の席(-1 = 観戦)
-        private bool running;
-        private float wait;                                  // 次の NPC の手までの待ち(秒)
+        // ---------------- 同期する状態(ホストが書く) ----------------
+        [UdonSynced] private int sMatch;                     // 試合の番号(0 = まだ無い)
+        [UdonSynced] private int sSeed;
+        [UdonSynced] private int[] sPlayer = new int[NP];    // 席の人の playerId(0 = NPC)
+        [UdonSynced] private int[] sStyle = new int[NP];     // 席の NPC の性格(名前と組)
+        [UdonSynced] private int sCount;                     // 記録の数
+        [UdonSynced] private int[] sRing = new int[RING];    // 記録 i は sRing[i % RING]
+
+        // ---------------- 手元の状態 ----------------
+        [System.NonSerialized] public int humanSeat = -1;   // 自分の席(-1 = 座っていない)
+        private int lMatch;                                  // 手元のエンジンが表している試合
+        private int lCount;                                  // 手元で再生した記録の数
+        private int[] lLog;                                  // 手元の記録(ホストになったときに配れるよう、全員が持つ)
+        private int replayTo;                                // 記録すべてから再生しているときの行き先(0 = していない)
+        private float archiveAskWait;                        // 記録すべてを頼み直すまでの待ち
+        private bool archiveDirty;                           // ホスト: 記録すべてを送る
+        private float archiveSendWait;
+        private int sentAt = -1;                             // 自分の操作を送ったときの sCount(返事が来るまで二度押ししない)
+        private float sentWait;
+        private float wait;                                  // ホスト: 次の手までの待ち(秒)
+        private bool resultShown;                            // ホスト: 局の結果を見せる間を取ったか
         private bool dirty;
         private int[] handSlotTile;                          // 手牌の枠に入っている牌(-1 = 空)
         private int sel0 = -1, sel1 = -1;                    // 選んだ手牌の枠
@@ -58,6 +93,7 @@ namespace MonakaLabo.SquareMahjong
         private int[] act;
         private string message = "";
         private bool ready;
+        private int[] tmpC, tmpDr;
 
         private string[] cpuNames, yakuJa, tileNames;
 
@@ -66,7 +102,7 @@ namespace MonakaLabo.SquareMahjong
         private void Start()
         {
             Init();
-            UpdateTileInteract();
+            UpdateMySeat();
             Refresh();
         }
 
@@ -77,7 +113,11 @@ namespace MonakaLabo.SquareMahjong
             handSlotTile = new int[NP * SLOT_HAND];
             optBuf = new int[N_OPT * SqmEngine.OPT];
             act = new int[SqmEngine.OPT];
-            seatStyle = new int[NP]; tmpC = new int[NT]; tmpDr = new int[8];
+            lLog = new int[LOG_MAX];
+            tmpC = new int[NT]; tmpDr = new int[8];
+            if (sPlayer == null || sPlayer.Length != NP) sPlayer = new int[NP];
+            if (sStyle == null || sStyle.Length != NP) sStyle = new int[NP];
+            if (sRing == null || sRing.Length != RING) sRing = new int[RING];
             cpuNames = new string[] { "ドラ丸", "ツモ子", "リーチ侍", "片ロン姫", "カン太郎", "役満爺", "ノーテン王", "算用博士", "風林課長", "先発隊長" };
             yakuJa = new string[SqmEngine.N_YAKU];
             string[] ja = new string[] { "立直", "ダブル立直", "一発", "門前清自摸和", "断幺九", "役牌", "順子手", "静かなること林の如く",
@@ -91,122 +131,218 @@ namespace MonakaLabo.SquareMahjong
             engine.SetDefaultRules();
         }
 
-        // ================================================================ 試合の開始
-        public void StartMatch()
-        {
-            Init();
-            uint seed = (uint)UnityEngine.Random.Range(1, int.MaxValue);
-            engine.NewMatch(seed);
-            // 10人から8人を選び、席に座らせる(名前と性格はいつも組)
-            int[] order = new int[10];
-            for (int i = 0; i < 10; i++) order[i] = i;
-            for (int i = 9; i > 0; i--) { int j = UnityEngine.Random.Range(0, i + 1); int x = order[i]; order[i] = order[j]; order[j] = x; }
-            for (int s = 0; s < NP; s++) { seatStyle[s] = order[s]; npc.SetSeat(s, SqmNpc.LV_NORMAL, order[s]); }
-            running = true;
-            wait = 0.5f;
-            ClearSelection();
-            message = "";
-            Refresh();
-        }
-
-        private int[] seatStyle, tmpC, tmpDr;
+        private bool IsHost() { return Networking.IsOwner(gameObject); }
+        private bool Running() { return lMatch > 0 && engine.pendKind != SqmEngine.PEND_END; }
+        private bool CaughtUp() { return lMatch == sMatch && lCount == sCount && replayTo == 0; }
+        private bool IsHuman(int s) { return sPlayer[s] != 0; }
 
         private string NameOf(int s)
         {
-            if (s == humanSeat) return "あなた";
-            return cpuNames[seatStyle[s]];
+            if (sPlayer[s] != 0)
+            {
+                VRCPlayerApi p = VRCPlayerApi.GetPlayerById(sPlayer[s]);
+                if (Utilities.IsValid(p)) return p.displayName;
+                return "?";
+            }
+            if (lMatch == 0) return "";
+            return cpuNames[sStyle[s]];
         }
 
-        // ---- 席を選ぶボタン(Join0..Join7) と 観戦 ----
-        public void Join0() { Join(0); } public void Join1() { Join(1); } public void Join2() { Join(2); } public void Join3() { Join(3); }
-        public void Join4() { Join(4); } public void Join5() { Join(5); } public void Join6() { Join(6); } public void Join7() { Join(7); }
-        public void Watch() { Join(-1); }
-
-        private void Join(int seat)
+        /// <summary>自分の席を、同期された席の表から求める</summary>
+        private void UpdateMySeat()
         {
-            Init();
-            humanSeat = seat;
-            UpdateTileInteract();
-            StartMatch();
-        }
-
-        /// <summary>他人の席の手牌は押せない(手のマークも出ない)ようにする</summary>
-        private void UpdateTileInteract()
-        {
+            int mine = -1;
+            VRCPlayerApi lp = Networking.LocalPlayer;
+            if (Utilities.IsValid(lp)) for (int s = 0; s < NP; s++) if (sPlayer[s] == lp.playerId) mine = s;
+            if (mine == humanSeat) return;
+            humanSeat = mine;
+            ClearSelection();
             if (handClicks == null) return;
+            // 他人の席の手牌は押せない(手のマークも出ない)ようにする
             for (int i = 0; i < handClicks.Length; i++)
                 if (handClicks[i] != null) handClicks[i].DisableInteractive = i / SLOT_HAND != humanSeat;
         }
 
-        public void NewMatch() { StartMatch(); }
+        // ================================================================ 記録の番号(code)
+        // 下位3ビット = 席、次の2ビット = 種類。
+        //   0: 合法手の番号(6ビット目から)
+        //   1: 打牌。5ビット目 = リーチ、6〜11 = 1枚目 + 1、12〜17 = 2枚目 + 1(0 = なし)
+        //   2: 局の終わりの「次へ」。6〜7 = mode + 1
+        private const int K_LEGAL = 0, K_DISCARD = 1, K_NEXT = 2;
 
-        // ================================================================ 進行
+        private int EncodeAct(int[] a)
+        {
+            int seat = a[SqmEngine.O_SEAT];
+            if (a[SqmEngine.O_TYPE] == SqmEngine.A_DISCARD)
+            {
+                int cnt = a[SqmEngine.O_TAKEN];
+                int ta = a[SqmEngine.O_TAKE], tb = cnt == 2 ? a[SqmEngine.O_TAKE + 1] : -1;
+                return seat | (K_DISCARD << 3) | ((a[SqmEngine.O_MODE] == 1 ? 1 : 0) << 5) | ((ta + 1) << 6) | ((tb + 1) << 12);
+            }
+            if (a[SqmEngine.O_TYPE] == SqmEngine.A_NEXT) return EncodeNext(seat, a[SqmEngine.O_MODE]);
+            int idx = engine.FindLegal(a);
+            if (idx < 0) return -1;
+            return seat | (K_LEGAL << 3) | (idx << 6);
+        }
+
+        private int EncodeNext(int seat, int mode) { return seat | (K_NEXT << 3) | ((mode + 1) << 6); }
+
+        /// <summary>記録1つをエンジンに適用する(その前に、自動の進行を済ませる)</summary>
+        private bool ApplyCode(int code)
+        {
+            AdvanceAll();
+            int seat = code & 7, kind = (code >> 3) & 3;
+            ClearAct(seat);
+            if (kind == K_DISCARD)
+            {
+                int ta = ((code >> 6) & 63) - 1, tb = ((code >> 12) & 63) - 1;
+                act[SqmEngine.O_TYPE] = SqmEngine.A_DISCARD;
+                act[SqmEngine.O_MODE] = (code >> 5) & 1;
+                act[SqmEngine.O_TAKEN] = tb >= 0 ? 2 : 1;
+                act[SqmEngine.O_TAKE] = ta;
+                if (tb >= 0) act[SqmEngine.O_TAKE + 1] = tb;
+            }
+            else if (kind == K_NEXT)
+            {
+                act[SqmEngine.O_TYPE] = SqmEngine.A_NEXT;
+                act[SqmEngine.O_MODE] = ((code >> 6) & 3) - 1;
+            }
+            else
+            {
+                int idx = code >> 6;
+                int n = engine.BuildLegal(seat);
+                if (idx >= n) return false;
+                for (int k = 0; k < SqmEngine.OPT; k++) act[k] = engine.legal[idx * SqmEngine.OPT + k];
+                act[SqmEngine.O_SEAT] = seat;
+            }
+            bool ok = engine.ApplyAction(act);
+            AdvanceAll();
+            return ok;
+        }
+
+        /// <summary>入力待ちが無いあいだ、自動で進める(配牌・ツモなど)。ホストも他の人も同じ所で止まる</summary>
+        private void AdvanceAll()
+        {
+            for (int guard = 0; guard < 64 && engine.pendKind == SqmEngine.PEND_NONE; guard++) engine.Advance();
+        }
+
+        // ================================================================ ホスト: 試合を進める
+        /// <summary>ホストが記録に1つ足す(手元で適用できたものだけ)</summary>
+        private bool Commit(int code)
+        {
+            if (code < 0 || lCount >= LOG_MAX) return false;
+            if (!ApplyCode(code)) { message = "エラー: " + engine.lastError; dirty = true; return false; }
+            lLog[lCount] = code;
+            lCount++;
+            sRing[sCount % RING] = code;
+            sCount = lCount;
+            ClearSelection();
+            dirty = true;
+            RequestSerialization();
+            return true;
+        }
+
+        private void HostNewMatch()
+        {
+            Init();
+            sMatch = (sMatch > lMatch ? sMatch : lMatch) + 1;
+            sSeed = UnityEngine.Random.Range(1, int.MaxValue);
+            // 10人から8人を選び、席に座らせる(名前と性格はいつも組)
+            int[] order = new int[10];
+            for (int i = 0; i < 10; i++) order[i] = i;
+            for (int i = 9; i > 0; i--) { int j = UnityEngine.Random.Range(0, i + 1); int x = order[i]; order[i] = order[j]; order[j] = x; }
+            for (int s = 0; s < NP; s++) sStyle[s] = order[s];
+            sCount = 0;
+            ResetLocal();
+            wait = 0.5f;
+            resultShown = false;
+            message = "";
+            RequestSerialization();
+            dirty = true;
+        }
+
         private void Update()
         {
             BillboardHolo();
-            if (!running) return;
-            if (wait > 0) { wait -= Time.deltaTime; return; }
-            Step();
+            if (replayTo > 0) ReplayChunk();
+            if (sentAt >= 0) { sentWait -= Time.deltaTime; if (sentWait <= 0 || sentAt != sCount) sentAt = -1; }
+            if (IsHost())
+            {
+                if (archiveDirty) { archiveSendWait -= Time.deltaTime; if (archiveSendWait <= 0) SendArchive(); }
+                if (CaughtUp() && Running())
+                {
+                    if (wait > 0) wait -= Time.deltaTime;
+                    else HostStep();
+                }
+            }
+            else if (archiveAskWait > 0)
+            {
+                archiveAskWait -= Time.deltaTime;
+                if (archiveAskWait <= 0 && lMatch == sMatch && lCount < sCount && replayTo == 0) AskArchive();
+            }
             if (dirty) { dirty = false; Refresh(); }
         }
 
-        /// <summary>1回分だけ進める(自動進行・NPC の手・局の終わり)</summary>
-        private void Step()
+        /// <summary>ホストが1回分だけ進める(自動進行・NPC の手・人の自動ツモ切り・局の終わり)</summary>
+        private void HostStep()
         {
+            AdvanceAll();
             int pk = engine.pendKind;
-            if (pk == SqmEngine.PEND_NONE) { engine.Advance(); dirty = true; return; }
-            if (pk == SqmEngine.PEND_END) { running = false; dirty = true; return; }
+            if (pk == SqmEngine.PEND_NONE || pk == SqmEngine.PEND_END) { dirty = true; return; }
             if (pk == SqmEngine.PEND_NEXT)
             {
-                // 自分が親でアガリ止めを選べるときは、ボタンを待つ
-                if (humanSeat == engine.dealer && engine.CanAgariYame()) return;
-                ApplyNext(-1);
+                int d = engine.dealer;
+                // 人の親がアガリ止めを選べるときは、その人のボタンを待つ
+                if (IsHuman(d) && engine.CanAgariYame()) return;
+                if (!resultShown) { resultShown = true; wait = RESULT_DELAY; dirty = true; return; }
+                resultShown = false;
+                if (Commit(EncodeNext(d, -1))) wait = 0.3f;
                 return;
             }
-            // 入力待ちの席のうち NPC の分を1つ進める。自分だけが残っていたら待つ
+            resultShown = false;
+            // 入力待ちの席のうち NPC の分を1つ進める
             for (int i = 0; i < engine.pendN; i++)
             {
                 int seat = engine.pendSeats[i];
-                if (seat == humanSeat) continue;
+                if (IsHuman(seat)) continue;
                 uint nseed = engine.HashSeed(engine.seed.ToString() + ":" + engine.step + ":" + seat);
                 npc.Decide(seat, nseed);
                 bool discard = npc.action[SqmEngine.O_TYPE] == SqmEngine.A_DISCARD;
-                if (!engine.ApplyAction(npc.action)) message = "NPC エラー: " + engine.lastError;
-                dirty = true;
+                if (!Commit(EncodeAct(npc.action))) { message = "NPC エラー: " + engine.lastError; wait = 2f; return; }
                 if (discard) wait = NPC_DELAY;
                 return;
             }
-            // 自分の番: リーチ中のツモ切りは自動
-            if (engine.pendKind == SqmEngine.PEND_TURN && humanSeat >= 0 && engine.riichiOn[humanSeat])
+            // 人の番: リーチ中で、ツモ和了・槓ができないときのツモ切りは自動
+            if (pk == SqmEngine.PEND_TURN && IsHuman(engine.turn) && engine.riichiOn[engine.turn])
             {
-                int n = engine.BuildLegal(humanSeat);
-                bool canWin = false;
-                for (int i = 0; i < n; i++) if (engine.legal[i * SqmEngine.OPT + SqmEngine.O_TYPE] == SqmEngine.A_TSUMO || engine.legal[i * SqmEngine.OPT + SqmEngine.O_TYPE] == SqmEngine.A_KAN) canWin = true;
-                if (!canWin)
+                int t = engine.turn;
+                int n = engine.BuildLegal(t);
+                for (int i = 0; i < n; i++)
                 {
-                    for (int i = 0; i < n; i++)
-                    {
-                        int b = i * SqmEngine.OPT;
-                        if (engine.legal[b + SqmEngine.O_TYPE] != SqmEngine.A_DISCARD) continue;
-                        ClearAct(humanSeat); act[SqmEngine.O_TYPE] = SqmEngine.A_DISCARD; act[SqmEngine.O_MODE] = 0;
-                        int fn = engine.legal[b + SqmEngine.O_FIXEDN];
-                        act[SqmEngine.O_TAKEN] = fn;
-                        for (int k = 0; k < fn; k++) act[SqmEngine.O_TAKE + k] = engine.legal[b + SqmEngine.O_FIXED + k];
-                        engine.ApplyAction(act);
-                        dirty = true; wait = NPC_DELAY;
-                        return;
-                    }
+                    int ty = engine.legal[i * SqmEngine.OPT + SqmEngine.O_TYPE];
+                    if (ty == SqmEngine.A_TSUMO || ty == SqmEngine.A_KAN) return;
                 }
+                if (BuildTsumogiri(t) && Commit(EncodeAct(act))) wait = NPC_DELAY;
             }
         }
 
-        private void ApplyNext(int yame)
+        /// <summary>act に、リーチ中のツモ切りを入れる</summary>
+        private bool BuildTsumogiri(int seat)
         {
-            ClearAct(engine.dealer);
-            act[SqmEngine.O_TYPE] = SqmEngine.A_NEXT; act[SqmEngine.O_MODE] = yame;
-            engine.ApplyAction(act);
-            dirty = true;
-            wait = 0.3f;
+            int n = engine.BuildLegal(seat);
+            for (int i = 0; i < n; i++)
+            {
+                int b = i * SqmEngine.OPT;
+                if (engine.legal[b + SqmEngine.O_TYPE] != SqmEngine.A_DISCARD) continue;
+                int fn = engine.legal[b + SqmEngine.O_FIXEDN];
+                if (fn <= 0) return false;
+                ClearAct(seat);
+                act[SqmEngine.O_TYPE] = SqmEngine.A_DISCARD; act[SqmEngine.O_MODE] = 0;
+                act[SqmEngine.O_TAKEN] = fn;
+                for (int k = 0; k < fn; k++) act[SqmEngine.O_TAKE + k] = engine.legal[b + SqmEngine.O_FIXED + k];
+                return true;
+            }
+            return false;
         }
 
         private void ClearAct(int seat)
@@ -217,11 +353,214 @@ namespace MonakaLabo.SquareMahjong
             act[SqmEngine.O_MELDTYPE] = SqmEngine.MT_NONE; act[SqmEngine.O_START] = -1;
         }
 
+        // ================================================================ 同期を受け取る
+        /// <summary>手元のエンジンを、同期された試合の最初の状態にする</summary>
+        private void ResetLocal()
+        {
+            engine.NewMatch((uint)sSeed);
+            for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
+            lMatch = sMatch;
+            lCount = 0;
+            replayTo = 0;
+            AdvanceAll();
+            ClearSelection();
+        }
+
+        public override void OnDeserialization()
+        {
+            Init();
+            UpdateMySeat();
+            if (sMatch != lMatch && sMatch > 0) ResetLocal();
+            CatchUp();
+            dirty = true;
+        }
+
+        /// <summary>リングに残っている分で追いつく。足りなければ記録すべてを頼む</summary>
+        private void CatchUp()
+        {
+            if (replayTo > 0 || lMatch != sMatch || lCount >= sCount) return;
+            if (lCount < sCount - RING) { AskArchive(); return; }
+            for (int i = lCount; i < sCount; i++)
+            {
+                int code = sRing[i % RING];
+                if (!ApplyCode(code)) { message = "同期をやり直しています"; ResetLocal(); AskArchive(); return; }
+                lLog[i] = code;
+                lCount = i + 1;
+            }
+            ClearSelection();
+        }
+
+        private void AskArchive()
+        {
+            archiveAskWait = 5f;   // 返事が来なければ、また頼む
+            SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetAskArchive));
+        }
+
+        [NetworkCallable]
+        public void NetAskArchive()
+        {
+            if (!IsHost()) return;
+            if (!archiveDirty) archiveSendWait = 0.5f;   // 続けて頼まれても、まとめて1回送る
+            archiveDirty = true;
+        }
+
+        private void SendArchive()
+        {
+            archiveDirty = false;
+            if (archive == null || !CaughtUp()) return;
+            if (!Networking.IsOwner(archive.gameObject)) Networking.SetOwner(Networking.LocalPlayer, archive.gameObject);
+            int[] log = new int[lCount];
+            for (int i = 0; i < lCount; i++) log[i] = lLog[i];
+            archive.aMatch = lMatch;
+            archive.aCount = lCount;
+            archive.aLog = log;
+            archive.RequestSerialization();
+        }
+
+        /// <summary>記録すべてが届いた。最初から再生し直す(何フレームかに分けて)</summary>
+        public void OnArchive()
+        {
+            Init();
+            if (IsHost() || archive.aMatch != sMatch || sMatch == 0) return;
+            if (lMatch == sMatch && replayTo == 0 && lCount >= archive.aCount) return;
+            int n = archive.aCount;
+            if (n > LOG_MAX || archive.aLog == null || archive.aLog.Length < n) return;
+            ResetLocal();
+            for (int i = 0; i < n; i++) lLog[i] = archive.aLog[i];
+            replayTo = n;
+            archiveAskWait = 0;
+            if (n == 0) { replayTo = 0; CatchUp(); dirty = true; }
+        }
+
+        private void ReplayChunk()
+        {
+            int end = lCount + REPLAY_PER_FRAME;
+            if (end > replayTo) end = replayTo;
+            for (int i = lCount; i < end; i++)
+            {
+                if (!ApplyCode(lLog[i])) { message = "同期に失敗しました"; replayTo = 0; ResetLocal(); archiveAskWait = 5f; return; }
+                lCount = i + 1;
+            }
+            if (lCount >= replayTo)
+            {
+                replayTo = 0;
+                message = "";
+                CatchUp();
+                dirty = true;
+            }
+        }
+
+        // ================================================================ ホストの交代・人の出入り
+        public override void OnOwnershipTransferred(VRCPlayerApi player)
+        {
+            Init();
+            if (!Utilities.IsValid(player) || !player.isLocal) return;
+            // 自分がホストになった。手元の記録を正として続ける
+            if (lMatch == sMatch && replayTo == 0)
+            {
+                sCount = lCount;
+                for (int i = 0; i < RING && i < lCount; i++) sRing[(lCount - 1 - i) % RING] = lLog[lCount - 1 - i];
+            }
+            else if (lMatch != sMatch || replayTo > 0)
+            {
+                // 追いついていない: 手元で再生できた所までを正とする
+                sMatch = lMatch; replayTo = 0; sCount = lCount;
+                for (int i = 0; i < RING && i < lCount; i++) sRing[(lCount - 1 - i) % RING] = lLog[lCount - 1 - i];
+            }
+            CleanSeats();
+            wait = 1f;
+            RequestSerialization();
+            dirty = true;
+        }
+
+        public override void OnPlayerLeft(VRCPlayerApi player)
+        {
+            if (!IsHost() || !Utilities.IsValid(player)) return;
+            bool changed = false;
+            for (int s = 0; s < NP; s++) if (sPlayer[s] == player.playerId) { sPlayer[s] = 0; changed = true; }
+            if (changed) { RequestSerialization(); dirty = true; }
+        }
+
+        /// <summary>もういない人の席を空ける(NPC が打つ)</summary>
+        private void CleanSeats()
+        {
+            for (int s = 0; s < NP; s++)
+            {
+                if (sPlayer[s] == 0) continue;
+                VRCPlayerApi p = VRCPlayerApi.GetPlayerById(sPlayer[s]);
+                if (!Utilities.IsValid(p)) sPlayer[s] = 0;
+            }
+            UpdateMySeat();
+        }
+
+        // ================================================================ 席・試合のボタン
+        public void Join0() { RequestSeat(0); } public void Join1() { RequestSeat(1); } public void Join2() { RequestSeat(2); } public void Join3() { RequestSeat(3); }
+        public void Join4() { RequestSeat(4); } public void Join5() { RequestSeat(5); } public void Join6() { RequestSeat(6); } public void Join7() { RequestSeat(7); }
+        public void Leave() { RequestSeat(-1); }
+
+        private void RequestSeat(int seat)
+        {
+            Init();
+            if (IsHost()) HostSeat(seat, Networking.LocalPlayer.playerId);
+            else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetSeat), seat);
+        }
+
+        [NetworkCallable]
+        public void NetSeat(int seat)
+        {
+            if (!IsHost()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p)) return;
+            HostSeat(seat, p.playerId);
+        }
+
+        /// <summary>ホスト: 席に座らせる(seat = -1 なら立たせる)。空いている席(NPC の席)なら試合の途中でも座れる</summary>
+        private void HostSeat(int seat, int pid)
+        {
+            if (seat >= NP) return;
+            if (seat >= 0 && sPlayer[seat] != 0 && sPlayer[seat] != pid) return;
+            for (int s = 0; s < NP; s++) if (sPlayer[s] == pid) sPlayer[s] = 0;
+            if (seat >= 0) sPlayer[seat] = pid;
+            UpdateMySeat();
+            RequestSerialization();
+            dirty = true;
+        }
+
+        public void NewMatch()
+        {
+            Init();
+            if (IsHost()) { if (MayStart(Networking.LocalPlayer.playerId)) HostNewMatch(); }
+            else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetNewMatch));
+        }
+
+        [NetworkCallable]
+        public void NetNewMatch()
+        {
+            if (!IsHost()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p)) return;
+            if (MayStart(p.playerId)) HostNewMatch();
+        }
+
+        /// <summary>試合中にやり直せるのは、座っている人だけ(だれも座っていなければ、だれでも)</summary>
+        private bool MayStart(int pid)
+        {
+            if (!Running()) return true;
+            bool anyone = false;
+            for (int s = 0; s < NP; s++) { if (sPlayer[s] == pid) return true; if (sPlayer[s] != 0) anyone = true; }
+            return !anyone;
+        }
+
         // ================================================================ 自分の操作
+        private bool MyTurn()
+        {
+            return Running() && CaughtUp() && humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
+        }
+
         public void ClickTile(int slot)
         {
             if (humanSeat < 0 || slot / SLOT_HAND != humanSeat) return;
-            if (engine.pendKind != SqmEngine.PEND_TURN || engine.turn != humanSeat) return;
+            if (!MyTurn()) return;
             if (handSlotTile[slot] < 0) return;
             if (sel0 == slot) { sel0 = sel1; sel1 = -1; }
             else if (sel1 == slot) sel1 = -1;
@@ -233,22 +572,11 @@ namespace MonakaLabo.SquareMahjong
 
         public void Discard()
         {
-            if (humanSeat < 0 || engine.pendKind != SqmEngine.PEND_TURN || engine.turn != humanSeat) return;
+            if (!MyTurn() || sentAt >= 0) return;
             if (engine.riichiOn[humanSeat])
             {
                 // リーチ中: ツモ和了や槓をせずにツモ切りする
-                int ln = engine.BuildLegal(humanSeat);
-                for (int i = 0; i < ln; i++)
-                {
-                    int b = i * SqmEngine.OPT;
-                    if (engine.legal[b + SqmEngine.O_TYPE] != SqmEngine.A_DISCARD) continue;
-                    ClearAct(humanSeat); act[SqmEngine.O_TYPE] = SqmEngine.A_DISCARD; act[SqmEngine.O_MODE] = 0;
-                    int fn = engine.legal[b + SqmEngine.O_FIXEDN];
-                    act[SqmEngine.O_TAKEN] = fn;
-                    for (int k = 0; k < fn; k++) act[SqmEngine.O_TAKE + k] = engine.legal[b + SqmEngine.O_FIXED + k];
-                }
-                if (!engine.ApplyAction(act)) message = engine.lastError;
-                ClearSelection(); wait = NPC_DELAY; Refresh();
+                if (BuildTsumogiri(humanSeat)) SendCode(EncodeAct(act));
                 return;
             }
             int need = engine.mustDiscard;
@@ -260,11 +588,8 @@ namespace MonakaLabo.SquareMahjong
             act[SqmEngine.O_TAKE] = handSlotTile[sel0];
             if (need == 2) act[SqmEngine.O_TAKE + 1] = handSlotTile[sel1];
             act[SqmEngine.O_MODE] = riichiArmed ? 1 : 0;
-            if (!engine.ApplyAction(act)) { message = engine.lastError; Refresh(); return; }
-            message = "";
-            ClearSelection();
-            wait = NPC_DELAY;
-            Refresh();
+            if (!engine.CheckDiscard(act)) { message = engine.lastError; Refresh(); return; }
+            SendCode(EncodeAct(act));
         }
 
         public void ToggleRiichi()
@@ -280,14 +605,36 @@ namespace MonakaLabo.SquareMahjong
 
         private void ClickOption(int i)
         {
-            if (i >= optN) return;
+            if (i >= optN || sentAt >= 0 || !CaughtUp()) return;
             for (int k = 0; k < SqmEngine.OPT; k++) act[k] = optBuf[i * SqmEngine.OPT + k];
-            if (act[SqmEngine.O_TYPE] == SqmEngine.A_NEXT) { ApplyNext(act[SqmEngine.O_MODE]); Refresh(); return; }
-            if (!engine.ApplyAction(act)) message = engine.lastError;
-            else message = "";
+            act[SqmEngine.O_SEAT] = humanSeat;
+            SendCode(EncodeAct(act));
+        }
+
+        /// <summary>自分の操作をホストへ送る(自分がホストなら、そのまま記録に足す)</summary>
+        private void SendCode(int code)
+        {
+            if (code < 0) { message = "その操作はできません"; Refresh(); return; }
+            message = "";
+            if (IsHost())
+            {
+                if (Commit(code)) wait = NPC_DELAY;
+                return;
+            }
+            sentAt = sCount;
+            sentWait = 3f;
+            SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetAct), sMatch, sCount, code);
             ClearSelection();
-            wait = 0.2f;
             Refresh();
+        }
+
+        [NetworkCallable]
+        public void NetAct(int match, int count, int code)
+        {
+            if (!IsHost() || match != sMatch || count != sCount || !CaughtUp()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p) || sPlayer[code & 7] != p.playerId) return;
+            if (Commit(code)) wait = NPC_DELAY;
         }
 
         private void ClearSelection() { sel0 = -1; sel1 = -1; riichiArmed = false; }
@@ -327,12 +674,19 @@ namespace MonakaLabo.SquareMahjong
             RefreshHolo();
         }
 
+        /// <summary>だれか座っているか(座っている人がいれば、観戦者にも手牌は見せない)</summary>
+        private bool AnyHuman()
+        {
+            for (int s = 0; s < NP; s++) if (sPlayer[s] != 0) return true;
+            return false;
+        }
+
         private void RefreshWall()
         {
             int live = engine.LiveLeft();
             int visible = live / 2;
             if (visible > 525) visible = 525;
-            if (engine.phase == SqmEngine.PH_DEAL && !running) visible = 525;
+            if (engine.phase == SqmEngine.PH_DEAL && !Running()) visible = 525;
             int drawnStacks = 525 - visible;
             // 引く順: 親の前の壁から、壁のある7辺を巡る。辺の中は内側の列から
             int startSide = engine.dealer == WALLLESS_SIDE ? 0 : engine.dealer;
@@ -362,7 +716,7 @@ namespace MonakaLabo.SquareMahjong
         private void RefreshHand(int s)
         {
             int baseSlot = s * SLOT_HAND;
-            bool reveal = s == humanSeat || humanSeat < 0 || engine.outRole[s] != SqmEngine.ROLE_NONE || engine.phase == SqmEngine.PH_KYOKU_OVER;
+            bool reveal = s == humanSeat || (humanSeat < 0 && !AnyHuman()) || engine.outRole[s] != SqmEngine.ROLE_NONE || engine.phase == SqmEngine.PH_KYOKU_OVER;
             // ツモった牌は右端に離して置く
             int dn = engine.drawnLen[s];
             int[] c = tmpC;
@@ -475,17 +829,24 @@ namespace MonakaLabo.SquareMahjong
 
         private void RefreshLabel(int s)
         {
-            if (seatLabels == null || s >= seatLabels.Length || seatLabels[s] == null) return;
-            string wind = WindName(engine.SeatWindOf(s, engine.dealer));
-            string txt = wind + " " + NameOf(s) + "\n" + engine.score[s].ToString("N0");
-            if (engine.riichiOn[s]) txt += "  リーチ";
-            if (engine.outRole[s] == SqmEngine.ROLE_FIRST) txt += "  先発";
-            if (engine.outRole[s] == SqmEngine.ROLE_SECOND) txt += "  後発";
-            if (running && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == s) txt = "▶ " + txt;
-            seatLabels[s].text = txt;
+            bool live = lMatch > 0;
+            if (seatLabels != null && s < seatLabels.Length && seatLabels[s] != null)
+            {
+                string txt = NameOf(s);
+                if (!live && sPlayer[s] == 0) txt = "空席";
+                if (live && engine.riichiOn[s]) txt += "  リーチ";
+                if (live && engine.outRole[s] == SqmEngine.ROLE_FIRST) txt += "  先発";
+                if (live && engine.outRole[s] == SqmEngine.ROLE_SECOND) txt += "  後発";
+                if (Running() && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == s) txt = "▶ " + txt;
+                seatLabels[s].text = txt;
+            }
+            if (windLabels != null && s < windLabels.Length && windLabels[s] != null)
+                windLabels[s].text = live ? WindName(engine.SeatWindOf(s, engine.dealer)) : "";
+            if (scoreLabels != null && s < scoreLabels.Length && scoreLabels[s] != null)
+                scoreLabels[s].text = live ? engine.score[s].ToString() : "";
             if (joinButtons != null && s < joinButtons.Length && joinButtons[s] != null)
             {
-                bool showJoin = !running || humanSeat < 0;
+                bool showJoin = humanSeat < 0 && sPlayer[s] == 0;
                 if (joinButtons[s].activeSelf != showJoin) joinButtons[s].SetActive(showJoin);
             }
         }
@@ -495,11 +856,12 @@ namespace MonakaLabo.SquareMahjong
         private void RefreshControls()
         {
             optN = 0;
-            bool myTurn = running && humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
+            bool ok = Running() && CaughtUp() && humanSeat >= 0 && sentAt < 0;
+            bool myTurn = ok && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
             bool myCall = false;
-            if (running && humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_CALLS)
+            if (ok && engine.pendKind == SqmEngine.PEND_CALLS)
                 for (int i = 0; i < engine.pendN; i++) if (engine.pendSeats[i] == humanSeat) myCall = true;
-            bool myNext = running && humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_NEXT && humanSeat == engine.dealer && engine.CanAgariYame();
+            bool myNext = ok && engine.pendKind == SqmEngine.PEND_NEXT && humanSeat == engine.dealer && engine.CanAgariYame();
             bool riichiOk = false;
             if (myTurn || myCall || myNext)
             {
@@ -528,6 +890,12 @@ namespace MonakaLabo.SquareMahjong
                 bool show = i < optN;
                 if (optionButtons[i].activeSelf != show) optionButtons[i].SetActive(show);
                 if (show) optionLabels[i].text = OptionText(i * SqmEngine.OPT);
+            }
+            if (leaveButton != null && leaveButton.activeSelf != (humanSeat >= 0)) leaveButton.SetActive(humanSeat >= 0);
+            if (newMatchButton != null)
+            {
+                bool showNew = !Running() || humanSeat >= 0;
+                if (newMatchButton.activeSelf != showNew) newMatchButton.SetActive(showNew);
             }
         }
 
@@ -562,12 +930,13 @@ namespace MonakaLabo.SquareMahjong
         private void RefreshHolo()
         {
             if (holo == null) return;
-            string t = "";
-            if (!running && engine.phase != SqmEngine.PH_MATCH_OVER)
+            if (lMatch == 0)
             {
-                holo.text = "<size=140%>平方麻雀²</size>\n席の「ここで打つ」を押すと始まります";
+                holo.text = "<size=140%>平方麻雀²</size>\n席の「ここで打つ」で座って、「新しい試合」で始めます\n<size=80%>だれも座らなければ、NPC だけで打ちます</size>";
                 return;
             }
+            string t = "";
+            if (replayTo > 0) t += "<size=80%>追いついています… " + lCount + " / " + replayTo + "</size>\n";
             t += "<size=130%>東" + engine.kyoku + "局</size>  " + engine.honba + "本場  供託 " + engine.kyotaku.ToString("N0") + "\n";
             t += "残り " + engine.LiveLeft() + "\n";
             if (engine.phase == SqmEngine.PH_KYOKU_OVER || engine.phase == SqmEngine.PH_MATCH_OVER) t += ResultText();
@@ -575,6 +944,19 @@ namespace MonakaLabo.SquareMahjong
             {
                 t += "\n<size=120%>終局</size>\n";
                 for (int i = 0; i < NP; i++) t += (i + 1) + "位 " + NameOf(engine.mrSeat[i]) + "  " + engine.mrScore[i].ToString("N0") + "\n";
+            }
+            else
+            {
+                // 全席の点数(自分の席は色を変える)
+                t += "<size=75%>";
+                for (int s = 0; s < NP; s++)
+                {
+                    string line = WindName(engine.SeatWindOf(s, engine.dealer)) + " " + NameOf(s) + "  " + engine.score[s].ToString("N0");
+                    if (s == humanSeat) line = "<color=#ffd070>" + line + "</color>";
+                    if (Running() && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == s) line = "▶ " + line;
+                    t += line + "\n";
+                }
+                t += "</size>";
             }
             if (message.Length > 0) t += "\n<color=#ff8080>" + message + "</color>";
             holo.text = t;
