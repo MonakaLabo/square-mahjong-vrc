@@ -20,6 +20,7 @@ namespace MonakaLabo.SquareMahjong
         public Transform[] wallStacks;       // 壁の幢 525
         public Transform[] handTiles;        // 手牌 8席 × 28(SLOT_HAND)
         public MeshRenderer[] handFaces;
+        public SqmTileClick[] handClicks;    // 手牌のクリック。自分の席の分だけ押せるようにする
         public Transform[] riverTiles;       // 河 8席 × 36(SLOT_RIVER)
         public MeshRenderer[] riverFaces;
         public Transform[] meldTiles;        // 副露 8席 × 28(SLOT_MELD)
@@ -65,6 +66,7 @@ namespace MonakaLabo.SquareMahjong
         private void Start()
         {
             Init();
+            UpdateTileInteract();
             Refresh();
         }
 
@@ -124,7 +126,16 @@ namespace MonakaLabo.SquareMahjong
         {
             Init();
             humanSeat = seat;
+            UpdateTileInteract();
             StartMatch();
+        }
+
+        /// <summary>他人の席の手牌は押せない(手のマークも出ない)ようにする</summary>
+        private void UpdateTileInteract()
+        {
+            if (handClicks == null) return;
+            for (int i = 0; i < handClicks.Length; i++)
+                if (handClicks[i] != null) handClicks[i].DisableInteractive = i / SLOT_HAND != humanSeat;
         }
 
         public void NewMatch() { StartMatch(); }

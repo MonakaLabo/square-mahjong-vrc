@@ -61,6 +61,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             // ---- 手牌・河・副露・中央 ----
             table.handTiles = new Transform[8 * SqmTable.SLOT_HAND];
             table.handFaces = new MeshRenderer[8 * SqmTable.SLOT_HAND];
+            table.handClicks = new SqmTileClick[8 * SqmTable.SLOT_HAND];
             var hands = Group(root, "Hands");
             for (int i = 0; i < table.handTiles.Length; i++)
             {
@@ -70,6 +71,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 var click = UdonSharpUndo.AddComponent<SqmTileClick>(t);
                 click.table = table;
                 click.index = i;
+                table.handClicks[i] = click;
                 table.handTiles[i] = t.transform;
                 table.handFaces[i] = face;
             }
