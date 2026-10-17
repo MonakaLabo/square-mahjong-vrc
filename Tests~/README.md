@@ -8,7 +8,7 @@ NPC(`SqmNpc.cs`)も、同じ局面でブラウザ版の NPC と同じ手を選�
 
    ```bash
    cd golden
-   node make-golden.mjs 40 C:/Users/Savanna/Documents/CLAUDE/Game/BakaMahjong
+   node make-golden.mjs 40 <ブラウザ版(square-mahjong)のフォルダ>
    ```
 
 2. C# で同じ操作をして照合する(.NET SDK が要る。Unity / UdonSharp の代わりに Stubs.cs でコンパイルする)

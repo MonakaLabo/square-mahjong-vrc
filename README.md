@@ -38,13 +38,23 @@ SavannaMonaka が、Claude(Anthropic の AI)といっしょに作りました。
 
 ### 1. パッケージを入れる
 
-このリポジトリを、ワールドのプロジェクトの `Packages/jp.monakalabo.square-mahjong` に置きます。
+**VCC / ALCOM から入れる(おすすめ)**
 
-```
-<あなたのプロジェクト>/
-  Packages/
-    jp.monakalabo.square-mahjong/   ← ここ
-```
+1. VCC(VRChat Creator Companion)または ALCOM を開く
+2. 設定の「Packages」→「Add Repository」(ALCOM は「パッケージ」→「リポジトリを追加」)に、次の URL を入れる
+
+   ```
+   https://monakalabo.github.io/square-mahjong-vrc/index.json
+   ```
+
+   (<https://monakalabo.github.io/square-mahjong-vrc/> を開いて「VCC に追加する」を押しても追加できます)
+3. ワールドのプロジェクトの「Manage Project」で **Square-Mahjong** を追加する
+
+新しいバージョンが出たら、同じ画面から更新できます。
+
+**手で入れる場合**
+
+[Releases](https://github.com/MonakaLabo/square-mahjong-vrc/releases) から zip をダウンロードして、ワールドのプロジェクトの `Packages/jp.monakalabo.square-mahjong` に展開します。
 
 Unity を開くと、U# のコンパイルが自動で走ります。Console に赤いエラーが出ていなければ準備完了です。
 

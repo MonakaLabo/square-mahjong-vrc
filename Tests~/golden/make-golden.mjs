@@ -10,7 +10,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
 const DUMP = args[0] === '--dump';
-const JS_ROOT = (DUMP ? args[3] : args[1]) || 'C:/Users/Savanna/Documents/CLAUDE/Game/BakaMahjong';
+const JS_ROOT = (DUMP ? args[3] : args[1]) || process.env.SQM_JS_ROOT;
+if (!JS_ROOT) { console.error('ブラウザ版のフォルダを引数か環境変数 SQM_JS_ROOT で指定してください'); process.exit(1); }
 const R = (p) => pathToFileURL(join(JS_ROOT, p)).href;
 const { createMatch, advance, apply, legalActions, liveLeft, canAgariYame } = await import(R('js/engine/game.js'));
 const { decide } = await import(R('js/cpu/cpu.js'));

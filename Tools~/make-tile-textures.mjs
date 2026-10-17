@@ -9,7 +9,8 @@ import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const JS_ROOT = process.argv[2] || 'C:/Users/Savanna/Documents/CLAUDE/Game/BakaMahjong';
+const JS_ROOT = process.argv[2] || process.env.SQM_JS_ROOT;
+if (!JS_ROOT) { console.error('ブラウザ版のフォルダを引数か環境変数 SQM_JS_ROOT で指定してください'); process.exit(1); }
 const { tileSvg } = await import(pathToFileURL(join(JS_ROOT, 'js/ui/tile-art.js')).href);
 
 const W = 240, H = 320;          // 1枚の大きさ(牌の表面 26×35mm の比)

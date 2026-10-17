@@ -1,0 +1,62 @@
+# バージョンのタグ(v0.3.0 など)を push すると:
+#  1. パッケージの zip を作って GitHub のリリースに載せる
+#  2. VCC / ALCOM 用の一覧(VPM のリスト)を作り直して GitHub Pages に公開する
+#     一覧の URL: https://monakalabo.github.io/square-mahjong-vrc/index.json
+# タグの番号は package.json の version と同じにすること。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: バージョンを確かめる
+        id: ver
+        run: |
+          VERSION=$(jq -r .version package.json)
+          NAME=$(jq -r .name package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$VERSION" ]; then
+            echo "タグ ${GITHUB_REF_NAME} と package.json の version ($VERSION) が違います"; exit 1
+          fi
+
+      - name: zip を作る
+        if: github.ref_type == 'tag'
+        run: |
+          ZIP="${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.version }}.zip"
+          zip -r -q "$ZIP" . -x '.git/*' '.github/*' '*.zip'
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+
+      - name: リリースに載せる
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" "$ZIP" --title "平方麻雀 for VRChat ${GITHUB_REF_NAME}" --notes "変更点は CHANGELOG.md を見てください。VCC / ALCOM には https://monakalabo.github.io/square-mahjong-vrc/index.json を追加すると入れられます。"
+
+      - name: VCC 用の一覧を作る
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/build_listing.py site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - uses: actions/deploy-pages@v4
