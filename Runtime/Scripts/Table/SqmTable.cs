@@ -103,7 +103,8 @@ namespace MonakaLabo.SquareMahjong
 
         // ---------------- 手元の状態 ----------------
         [System.NonSerialized] public int humanSeat = -1;   // 自分の席(-1 = 座っていない)
-        private int lMatch;                                  // 手元のエンジンが表している試合
+        private int lMatch;                                  // 手元のエンジンが表している試合(0 = 試合なし)
+        private int lIdleMatch;                              // Reset で「試合なし」になったときの番号
         private int lCount;                                  // 手元で再生した記録の数
         private int[] lLog;                                  // 手元の記録(ホストになったときに配れるよう、全員が持つ)
         private int replayTo;                                // 記録すべてから再生しているときの行き先(0 = していない)
@@ -166,7 +167,11 @@ namespace MonakaLabo.SquareMahjong
         private bool IsHost() { return Networking.IsOwner(gameObject); }
         private int MyId() { VRCPlayerApi lp = Networking.LocalPlayer; return Utilities.IsValid(lp) ? lp.playerId : -1; }
         private bool Running() { return lMatch > 0 && engine.pendKind != SqmEngine.PEND_END; }
-        private bool CaughtUp() { return lMatch == sMatch && lCount == sCount && replayTo == 0; }
+        private bool CaughtUp()
+        {
+            if (sSeed == 0) return replayTo == 0;   // 試合なし
+            return lMatch == sMatch && lCount == sCount && replayTo == 0;
+        }
         private bool IsHuman(int s) { return sPlayer[s] != 0; }
 
         private string NameOf(int s)
@@ -288,7 +293,7 @@ namespace MonakaLabo.SquareMahjong
         private void HostNewMatch()
         {
             Init();
-            sMatch = (sMatch > lMatch ? sMatch : lMatch) + 1;
+            sMatch = Mathf.Max(sMatch, Mathf.Max(lMatch, lIdleMatch)) + 1;
             sSeed = UnityEngine.Random.Range(1, int.MaxValue);
             // 10人から8人を選び、席に座らせる(名前と性格はいつも組)
             int[] order = new int[10];
@@ -421,6 +426,14 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>手元のエンジンを、同期された試合の最初の状態にする</summary>
         private void ResetLocal()
         {
+            if (sSeed == 0)
+            {
+                // 試合なし(Reset された)
+                engine.SetDefaultRules();
+                lMatch = 0; lIdleMatch = sMatch; lCount = 0; replayTo = 0;
+                ClearSelection();
+                return;
+            }
             engine.NewMatch((uint)sSeed);
             for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
             lMatch = sMatch;
@@ -434,7 +447,7 @@ namespace MonakaLabo.SquareMahjong
         {
             Init();
             UpdateMySeat();
-            if (sMatch != lMatch && sMatch > 0) ResetLocal();
+            if (sMatch != lMatch && sMatch > 0 && !(sSeed == 0 && lIdleMatch == sMatch)) ResetLocal();
             else if (lMatch == sMatch && lCount > sCount && replayTo == 0)
             {
                 // 持ち主が代わって、自分が足した手の一部が取り消された: 手元の記録の頭から sCount 手目までを再生し直す
@@ -528,7 +541,8 @@ namespace MonakaLabo.SquareMahjong
             Init();
             if (!Utilities.IsValid(player) || !player.isLocal) return;
             // 自分がホストになった。手元の記録を正として続ける
-            if (lMatch == sMatch && replayTo == 0)
+            if (sSeed == 0) { }   // 試合なし
+            else if (lMatch == sMatch && replayTo == 0)
             {
                 sCount = lCount;
                 for (int i = 0; i < RING && i < lCount; i++) sRing[(lCount - 1 - i) % RING] = lLog[lCount - 1 - i];
@@ -641,6 +655,57 @@ namespace MonakaLabo.SquareMahjong
         {
             if (sHost != 0) return pid == sHost;
             return !Running();
+        }
+
+        // ---- 卓の中央の Resync・Reset ----
+        /// <summary>自分の手元だけ、記録すべてをホストからもらい直して作り直す</summary>
+        public void Resync()
+        {
+            Init();
+            PlaySfx(SFX_CLICK);
+            if (IsHost() || sMatch == 0) { dirty = true; return; }
+            message = "同期をやり直しています";
+            ResetLocal();
+            AskArchive();
+            dirty = true;
+        }
+
+        /// <summary>試合をやめて、だれもいない状態に戻す。人が座っていればホストだけ、NPC だけの試合ならだれでも</summary>
+        public void ResetMatch()
+        {
+            Init();
+            PlaySfx(SFX_CLICK);
+            if (IsHost()) { if (MayReset(MyId())) HostReset(); }
+            else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetReset));
+        }
+
+        [NetworkCallable]
+        public void NetReset()
+        {
+            if (!IsHost()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p)) return;
+            if (MayReset(p.playerId)) HostReset();
+        }
+
+        private bool MayReset(int pid)
+        {
+            if (HumanMask() == 0) return true;
+            return sHost != 0 && pid == sHost;
+        }
+
+        /// <summary>ホスト: 試合を消す(sSeed = 0 は「試合なし」)</summary>
+        private void HostReset()
+        {
+            sMatch = Mathf.Max(sMatch, Mathf.Max(lMatch, lIdleMatch)) + 1;
+            sSeed = 0;
+            sCount = 0;
+            sPageN = 0; sPage = 0; sAckMask = 0;
+            sStartMs = 0; sEndMs = 0; sKyokuMs = 0; sKyokuEndMs = 0;
+            ResetLocal();
+            message = "";
+            RequestSerialization();
+            dirty = true;
         }
 
         // ================================================================ 自分の操作
@@ -939,7 +1004,8 @@ namespace MonakaLabo.SquareMahjong
                 scoreLabels[s].text = live ? engine.score[s].ToString() : "";
             if (joinButtons != null && s < joinButtons.Length && joinButtons[s] != null)
             {
-                bool showJoin = humanSeat < 0 && sPlayer[s] == 0;
+                // 座っていない人に、空いている席だけ出す。NPC だけの試合中はどこにも座れない
+                bool showJoin = humanSeat < 0 && sPlayer[s] == 0 && !(Running() && HumanMask() == 0);
                 if (joinButtons[s].activeSelf != showJoin) joinButtons[s].SetActive(showJoin);
             }
         }
@@ -989,10 +1055,13 @@ namespace MonakaLabo.SquareMahjong
                 if (optionButtons[i].activeSelf != show) optionButtons[i].SetActive(show);
                 if (show) optionLabels[i].text = OptionText(i * SqmEngine.OPT);
             }
-            if (leaveButton != null && leaveButton.activeSelf != (humanSeat >= 0)) leaveButton.SetActive(humanSeat >= 0);
+            // 「席を立つ」「新しい試合」は試合が無いときだけ卓に出す(試合中はパッドから)
+            bool idle = !Running();
+            bool showLeave = idle && humanSeat >= 0;
+            if (leaveButton != null && leaveButton.activeSelf != showLeave) leaveButton.SetActive(showLeave);
             if (newMatchButton != null)
             {
-                bool showNew = sHost != 0 ? sHost == MyId() : !Running();
+                bool showNew = idle && (sHost == 0 || sHost == MyId());
                 if (newMatchButton.activeSelf != showNew) newMatchButton.SetActive(showNew);
             }
         }

@@ -75,6 +75,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 var t = MakeTile(hands, "hand_" + (i / SqmTable.SLOT_HAND) + "_" + (i % SqmTable.SLOT_HAND).ToString("00"), out MeshRenderer face);
                 var box = t.AddComponent<BoxCollider>();
                 box.size = new Vector3(TW, TH, TT * 1.5f);
+                box.isTrigger = true;   // 人はすり抜ける(Interact はできる)
                 var click = UdonSharpUndo.AddComponent<SqmTileClick>(t);
                 click.table = table;
                 click.index = i;
@@ -123,6 +124,11 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.newMatchButton = Button(root, "new_match", "新しい試合", table, "NewMatch", u * 1.28f - r * 0.3f + Vector3.up * (TOP + 0.24f), Quaternion.LookRotation(-u, Vector3.up), new Vector3(0.26f, 0.06f, 0.02f), out _);
             }
 
+            // ---- 卓の中央(王牌部)の Resync・Reset(牌と同じ大きさ) ----
+            var center = Group(root, "CenterButtons");
+            Button(center, "resync", "Resync", table, "Resync", new Vector3(-0.022f, TOP + TH / 2, 0), Quaternion.identity, new Vector3(TW, TH, TT), out _);
+            Button(center, "reset", "Reset", table, "ResetMatch", new Vector3(0.022f, TOP + TH / 2, 0), Quaternion.identity, new Vector3(TW, TH, TT), out _);
+
             // ---- 自分の前に出る操作ボタン ----
             var controls = new GameObject("Controls");
             controls.transform.SetParent(root.transform, false);
@@ -153,13 +159,13 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // ================================================================ 上空のホロ
         // 半透明の青白の板に、太めの明朝。数字は赤い7セグ。見る人の方へ向く(SqmTable.BillboardHolo)。
         // 板の中の座標(m): 原点が板の中央、x が右、y が上。読む人は -Z 側から見る
-        const float HW = 2.6f, HH = 1.0f;
+        const float HW = 2.3f, HH = 0.86f;
         static readonly Color HOLO_TEXT = new Color(0.88f, 0.96f, 1f);
 
         static void BuildHolo(GameObject root, SqmTable table)
         {
             var holo = Group(root, "Hologram");
-            holo.transform.localPosition = new Vector3(0, TOP + 1.1f, 0);
+            holo.transform.localPosition = new Vector3(0, TOP + 1.05f, 0);
             table.holoRoot = holo.transform;
             table.holoMatLine = matHoloLine; table.holoMatRed = matHoloRed; table.holoMatYellow = matHoloYellow;
             table.holoMatFill = matHoloFill; table.holoMatTurn = matHoloTurn;
@@ -168,13 +174,14 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Panel(holo, "Panel", Vector2.zero, new Vector2(HW, HH));
             table.holoTitle = HText(holo, "Title", new Vector2(0, 0.02f), 0.7f, new Vector2(HW - 0.2f, HH - 0.2f), TextAlignmentOptions.Center);
             table.holoTitle.text = "平方麻雀²";
-            table.holo = HText(holo, "Message", new Vector2(0, -HH / 2 + 0.06f), 0.28f, new Vector2(HW - 0.2f, 0.08f), TextAlignmentOptions.Center);
+            // お知らせは板の上に出す
+            table.holo = HText(holo, "Message", new Vector2(0, HH / 2 + 0.05f), 0.32f, new Vector2(HW - 0.1f, 0.08f), TextAlignmentOptions.Center);
 
             var play = Group(holo, "Play");
             table.holoPlay = play;
 
             // ---- 左: 局・残り枚数(円のゲージ)・点棒 ----
-            var c = new Vector2(-0.95f, -0.02f);
+            var c = new Vector2(-0.8f, 0f);
             var ring = Prim(PrimitiveType.Quad, play, "Ring", matHoloLine);
             ring.GetComponent<MeshFilter>().sharedMesh = RingMesh();
             ring.transform.localPosition = new Vector3(c.x, c.y, 0);
@@ -185,39 +192,39 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 float a = (90f - i * 360f / GAUGE) * Mathf.Deg2Rad;
                 var seg = Prim(PrimitiveType.Quad, gauge, "seg_" + i.ToString("00"), matHoloRed);
-                seg.transform.localPosition = new Vector3(c.x + Mathf.Cos(a) * 0.322f, c.y + Mathf.Sin(a) * 0.322f, -0.001f);
+                seg.transform.localPosition = new Vector3(c.x + Mathf.Cos(a) * 0.3f, c.y + Mathf.Sin(a) * 0.3f, -0.001f);
                 seg.transform.localRotation = Quaternion.Euler(0, 0, a * Mathf.Rad2Deg - 90f);
-                seg.transform.localScale = new Vector3(0.019f, 0.016f, 1);
+                seg.transform.localScale = new Vector3(0.018f, 0.016f, 1);
                 table.holoGauge[i] = seg;
             }
-            table.holoRound = HText(play, "Round", c + new Vector2(0, 0.12f), 1.0f, new Vector2(0.56f, 0.14f), TextAlignmentOptions.Center);
-            HText(play, "LeftLabel", c + new Vector2(-0.16f, -0.02f), 0.6f, new Vector2(0.12f, 0.1f), TextAlignmentOptions.Center).text = "残";
-            table.holoLeft = SegText(play, "Left", c + new Vector2(0.07f, -0.02f), 0.62f, new Vector2(0.3f, 0.1f), false);
+            table.holoRound = HText(play, "Round", c + new Vector2(0, 0.135f), 1.0f, new Vector2(0.5f, 0.13f), TextAlignmentOptions.Center);
+            HText(play, "LeftLabel", c + new Vector2(-0.15f, 0.015f), 0.62f, new Vector2(0.1f, 0.1f), TextAlignmentOptions.Center).text = "残";
+            table.holoLeft = SegText(play, "Left", c + new Vector2(0.065f, 0.015f), 0.66f, new Vector2(0.3f, 0.1f), false);
             // 点棒(上: 供託の千点棒、下: 本場の百点棒)と本数
             string[] stickTex = { "stick_1000", "stick_100" };
             for (int i = 0; i < 2; i++)
             {
                 var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(PKG + "/Runtime/Textures/Sticks/" + stickTex[i] + ".png");
                 var st = Prim(PrimitiveType.Quad, play, "Stick_" + stickTex[i], ShaderMat("Holo_" + stickTex[i], "Unlit/Transparent", Color.white, tex));
-                st.transform.localPosition = new Vector3(c.x - 0.06f, c.y - 0.135f - i * 0.065f, 0);
-                st.transform.localScale = new Vector3(0.17f, 0.046f, 1);
+                st.transform.localPosition = new Vector3(c.x - 0.055f, c.y - 0.1f - i * 0.07f, 0);
+                st.transform.localScale = new Vector3(0.18f, 0.049f, 1);
             }
-            table.holoSticks = HText(play, "Sticks", c + new Vector2(0.11f, -0.1675f), 0.36f, new Vector2(0.14f, 0.13f), TextAlignmentOptions.Left);
-            table.holoSticks.lineSpacing = 0f;
+            table.holoSticks = HText(play, "Sticks", c + new Vector2(0.115f, -0.135f), 0.48f, new Vector2(0.13f, 0.15f), TextAlignmentOptions.Left);
+            table.holoSticks.lineSpacing = -10f;
 
             // ---- 中: ドラ表示牌・ロン牌・時間 ----
-            HText(play, "DoraLabel", new Vector2(-0.34f, 0.3f), 0.38f, new Vector2(0.34f, 0.08f), TextAlignmentOptions.Left).text = "ドラ表示牌";
-            HText(play, "RonLabel", new Vector2(-0.34f, 0.08f), 0.38f, new Vector2(0.34f, 0.08f), TextAlignmentOptions.Left).text = "ロン牌";
+            HText(play, "DoraLabel", new Vector2(-0.31f, 0.3f), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left).text = "ドラ表示牌";
+            HText(play, "RonLabel", new Vector2(-0.31f, 0.05f), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left).text = "ロン牌";
             table.holoDora = HoloTiles(play, "Dora", SqmTable.N_DORA, 0.3f);
-            table.holoRon = HoloTiles(play, "Ron", SqmTable.N_RON, 0.08f);
-            HText(play, "SetLabel", new Vector2(-0.3f, -0.2f), 0.36f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "セット";
-            HText(play, "KyokuLabel", new Vector2(-0.3f, -0.31f), 0.36f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "現局";
-            table.holoSetTime = SegText(play, "SetTime", new Vector2(0.0f, -0.2f), 0.4f, new Vector2(0.34f, 0.07f), true);
-            table.holoKyokuTime = SegText(play, "KyokuTime", new Vector2(0.0f, -0.31f), 0.4f, new Vector2(0.34f, 0.07f), true);
+            table.holoRon = HoloTiles(play, "Ron", SqmTable.N_RON, 0.05f);
+            HText(play, "SetLabel", new Vector2(-0.3f, -0.21f), 0.44f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "セット";
+            HText(play, "KyokuLabel", new Vector2(-0.3f, -0.31f), 0.44f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "現局";
+            table.holoSetTime = SegText(play, "SetTime", new Vector2(0.0f, -0.21f), 0.44f, new Vector2(0.34f, 0.075f), true);
+            table.holoKyokuTime = SegText(play, "KyokuTime", new Vector2(0.0f, -0.31f), 0.44f, new Vector2(0.34f, 0.075f), true);
 
             // ---- 右: 8席の見取り図 ----
-            var g = new Vector2(0.8f, 0.0f);
-            const float CELL = 0.13f, PITCH = 0.15f;
+            var g = new Vector2(0.72f, -0.01f);
+            const float CELL = 0.125f, PITCH = 0.14f;
             int[] col = { 0, 1, 1, 1, 0, -1, -1, -1 };
             int[] row = { -1, -1, 0, 1, 1, 1, 0, -1 };
             table.holoCellFrame = new MeshRenderer[8];
@@ -226,7 +233,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holoCellName = new TextMeshPro[8];
             table.holoCellScore = new TextMeshPro[8];
             var map = Group(play, "Map");
-            table.holoCenter = HText(map, "Center", g, 0.4f, new Vector2(0.13f, 0.08f), TextAlignmentOptions.Center);
+            table.holoCenter = HText(map, "Center", g, 0.44f, new Vector2(0.125f, 0.08f), TextAlignmentOptions.Center);
             table.holoCenter.color = new Color(1f, 0.82f, 0.44f);
             for (int p = 0; p < 8; p++)
             {
@@ -240,25 +247,20 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 fill.transform.localScale = new Vector3(CELL - 0.008f, CELL - 0.008f, 1);
                 table.holoCellFrame[p] = frame.GetComponent<MeshRenderer>();
                 table.holoCellFill[p] = fill.GetComponent<MeshRenderer>();
-                table.holoCellWind[p] = HText(cell, "Wind", at, 0.72f, new Vector2(CELL, CELL), TextAlignmentOptions.Center);
-                // 名前と点数: 上下の席は1行(名前・点数)、左右の列の席は2行(名前の下に点数)
-                Vector2 nPos, sPos; Vector2 nRect = new Vector2(0.26f, 0.06f);
-                TextAlignmentOptions nAlign = TextAlignmentOptions.Center;
-                if (col[p] == 0)
-                {
-                    float y = g.y + row[p] * 0.235f;
-                    nPos = new Vector2(g.x - 0.13f, y); sPos = new Vector2(g.x + 0.1f, y);
-                    nAlign = TextAlignmentOptions.Right;
-                }
+                table.holoCellWind[p] = HText(cell, "Wind", at, 0.8f, new Vector2(CELL, CELL), TextAlignmentOptions.Center);
+                // 名前と点数は2行。対面(上)は 名前→点数、自分(下)は 点数→名前、左右の列は 名前→点数
+                Vector2 nPos, sPos;
+                if (col[p] == 0 && row[p] > 0) { nPos = new Vector2(g.x, g.y + 0.27f); sPos = new Vector2(g.x, g.y + 0.215f); }
+                else if (col[p] == 0) { sPos = new Vector2(g.x, g.y - 0.215f); nPos = new Vector2(g.x, g.y - 0.27f); }
                 else
                 {
-                    float x = g.x + col[p] * 0.34f;
-                    nPos = new Vector2(x, at.y + 0.032f); sPos = new Vector2(x, at.y - 0.03f);
+                    float x = g.x + col[p] * 0.305f;
+                    nPos = new Vector2(x, at.y + 0.03f); sPos = new Vector2(x, at.y - 0.028f);
                 }
-                table.holoCellName[p] = HText(cell, "Name", nPos, 0.26f, nRect, nAlign);
+                table.holoCellName[p] = HText(cell, "Name", nPos, 0.3f, new Vector2(0.22f, 0.055f), TextAlignmentOptions.Center);
                 table.holoCellName[p].enableWordWrapping = false;
                 table.holoCellName[p].overflowMode = TextOverflowModes.Ellipsis;
-                table.holoCellScore[p] = SegText(cell, "Score", sPos, 0.3f, new Vector2(0.18f, 0.05f), true);
+                table.holoCellScore[p] = SegText(cell, "Score", sPos, 0.36f, new Vector2(0.2f, 0.055f), true);
             }
 
             BuildResult(holo, table);
@@ -270,12 +272,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var g = Group(holo, "Result");
             table.resultRoot = g;
             var yellow = new Color(1f, 0.82f, 0.44f);
-            table.resTitle = HText(g, "Title", new Vector2(0, 0.41f), 0.62f, new Vector2(HW - 0.2f, 0.12f), TextAlignmentOptions.Center);
+            table.resTitle = HText(g, "Title", new Vector2(0, 0.355f), 0.6f, new Vector2(HW - 0.2f, 0.11f), TextAlignmentOptions.Center);
             table.resTitle.color = yellow;
             var line = Prim(PrimitiveType.Quad, g, "Divider", matHoloLine);
-            line.transform.localPosition = new Vector3(0, 0.335f, 0);
-            line.transform.localScale = new Vector3(HW - 0.16f, 0.003f, 1);
-            table.resHead = HText(g, "Head", new Vector2(0, 0.26f), 0.5f, new Vector2(HW - 0.2f, 0.1f), TextAlignmentOptions.Left);
+            line.transform.localPosition = new Vector3(0, 0.29f, 0);
+            line.transform.localScale = new Vector3(HW - 0.12f, 0.003f, 1);
+            table.resHead = HText(g, "Head", new Vector2(0, 0.225f), 0.5f, new Vector2(HW - 0.14f, 0.1f), TextAlignmentOptions.Left);
             table.resHead.enableWordWrapping = false;
 
             // 手牌(36枚。和了牌には赤枠)
@@ -283,46 +285,46 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.resHand = new MeshRenderer[HAND];
             table.resHandMark = new GameObject[HAND];
             var hand = Group(g, "Hand");
-            const float TWH = 0.06f, THH = 0.08f, STEP = 0.064f;
+            const float TWH = 0.055f, THH = 0.073f, STEP = 0.059f;
             for (int i = 0; i < HAND; i++)
             {
                 float x = -(HAND - 1) * STEP / 2 + i * STEP;
                 var q = Prim(PrimitiveType.Quad, hand, "tile_" + i.ToString("00"), matHoloFaces[0]);
-                q.transform.localPosition = new Vector3(x, 0.12f, 0);
+                q.transform.localPosition = new Vector3(x, 0.105f, 0);
                 q.transform.localScale = new Vector3(TWH, THH, 1);
                 q.SetActive(false);
                 table.resHand[i] = q.GetComponent<MeshRenderer>();
                 var m = Prim(PrimitiveType.Quad, hand, "mark_" + i.ToString("00"), matHoloRed);
-                m.transform.localPosition = new Vector3(x, 0.12f, 0.002f);
+                m.transform.localPosition = new Vector3(x, 0.105f, 0.002f);
                 m.transform.localScale = new Vector3(TWH + 0.01f, THH + 0.01f, 1);
                 m.SetActive(false);
                 table.resHandMark[i] = m;
             }
 
             // ドラ・裏ドラ(小さめ。18枚ずつ)
-            table.resDoraLabel = HText(g, "DoraLabel", new Vector2(-1.13f, -0.01f), 0.32f, new Vector2(0.16f, 0.07f), TextAlignmentOptions.Right);
-            table.resUraLabel = HText(g, "UraLabel", new Vector2(-0.16f, -0.01f), 0.32f, new Vector2(0.2f, 0.07f), TextAlignmentOptions.Right);
-            table.resDora = SmallTiles(g, "Dora", -1.02f, -0.01f);
-            table.resUra = SmallTiles(g, "Ura", -0.02f, -0.01f);
+            table.resDoraLabel = HText(g, "DoraLabel", new Vector2(-0.98f, 0.0f), 0.36f, new Vector2(0.14f, 0.07f), TextAlignmentOptions.Right);
+            table.resUraLabel = HText(g, "UraLabel", new Vector2(-0.1f, 0.0f), 0.36f, new Vector2(0.18f, 0.07f), TextAlignmentOptions.Right);
+            table.resDora = SmallTiles(g, "Dora", -0.88f, 0.0f);
+            table.resUra = SmallTiles(g, "Ura", 0.02f, 0.0f);
 
             // 役(3列)
-            table.resYaku0 = YakuCol(g, "Yaku0", -0.95f);
-            table.resYaku1 = YakuCol(g, "Yaku1", -0.35f);
-            table.resYaku2 = YakuCol(g, "Yaku2", 0.25f);
+            table.resYaku0 = YakuCol(g, "Yaku0", -0.82f);
+            table.resYaku1 = YakuCol(g, "Yaku1", -0.3f);
+            table.resYaku2 = YakuCol(g, "Yaku2", 0.22f);
 
             // 翻・点数(右)
-            table.resHan = HText(g, "Han", new Vector2(0.98f, -0.12f), 0.62f, new Vector2(0.6f, 0.1f), TextAlignmentOptions.Right);
+            table.resHan = HText(g, "Han", new Vector2(0.84f, -0.1f), 0.62f, new Vector2(0.56f, 0.1f), TextAlignmentOptions.Right);
             table.resHan.color = yellow;
-            table.resCalc = HText(g, "Calc", new Vector2(0.98f, -0.2f), 0.26f, new Vector2(0.6f, 0.05f), TextAlignmentOptions.Right);
+            table.resCalc = HText(g, "Calc", new Vector2(0.84f, -0.18f), 0.28f, new Vector2(0.56f, 0.05f), TextAlignmentOptions.Right);
             table.resCalc.color = yellow;
-            table.resPoints = HText(g, "Points", new Vector2(0.98f, -0.3f), 0.7f, new Vector2(0.6f, 0.11f), TextAlignmentOptions.Right);
+            table.resPoints = HText(g, "Points", new Vector2(0.84f, -0.275f), 0.72f, new Vector2(0.56f, 0.11f), TextAlignmentOptions.Right);
             table.resPoints.color = yellow;
 
             // 流局の説明・終局の順位
-            table.resBody = HText(g, "Body", new Vector2(0, 0.0f), 0.42f, new Vector2(HW - 0.24f, 0.55f), TextAlignmentOptions.Left);
-            table.resRankL = HText(g, "RankL", new Vector2(-0.62f, -0.02f), 0.56f, new Vector2(1.16f, 0.62f), TextAlignmentOptions.Left);
-            table.resRankR = HText(g, "RankR", new Vector2(0.64f, -0.02f), 0.38f, new Vector2(1.1f, 0.62f), TextAlignmentOptions.Left);
-            table.resFoot = HText(g, "Foot", new Vector2(0, -0.43f), 0.28f, new Vector2(HW - 0.2f, 0.06f), TextAlignmentOptions.Center);
+            table.resBody = HText(g, "Body", new Vector2(0, -0.04f), 0.44f, new Vector2(HW - 0.18f, 0.5f), TextAlignmentOptions.Left);
+            table.resRankL = HText(g, "RankL", new Vector2(-0.56f, -0.04f), 0.56f, new Vector2(1.08f, 0.56f), TextAlignmentOptions.Left);
+            table.resRankR = HText(g, "RankR", new Vector2(0.58f, -0.04f), 0.4f, new Vector2(1.06f, 0.56f), TextAlignmentOptions.Left);
+            table.resFoot = HText(g, "Foot", new Vector2(0, -0.385f), 0.3f, new Vector2(HW - 0.14f, 0.06f), TextAlignmentOptions.Center);
             g.SetActive(false);
         }
 
@@ -343,10 +345,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
         static TextMeshPro YakuCol(GameObject parent, string name, float x)
         {
-            var t = HText(parent, name, new Vector2(x, -0.25f), 0.3f, new Vector2(0.56f, 0.26f), TextAlignmentOptions.TopLeft);
+            var t = HText(parent, name, new Vector2(x, -0.21f), 0.32f, new Vector2(0.5f, 0.25f), TextAlignmentOptions.TopLeft);
             t.enableAutoSizing = true;
             t.fontSizeMin = 0.12f;
-            t.fontSizeMax = 0.3f;
+            t.fontSizeMax = 0.32f;
             return t;
         }
 
@@ -430,15 +432,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             return rs;
         }
 
-        /// <summary>円の縁(輪)。半径 0.345〜0.36</summary>
+        /// <summary>円の縁(輪)。半径 0.318〜0.332</summary>
         static Mesh RingMesh()
         {
-            string path = GEN + "/HoloRing.asset";
+            string path = GEN + "/HoloRing2.asset";
             var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
             if (mesh != null) return mesh;
-            mesh = new Mesh { name = "HoloRing" };
+            mesh = new Mesh { name = "HoloRing2" };
             const int N = 96;
-            const float r0 = 0.345f, r1 = 0.36f;
+            const float r0 = 0.318f, r1 = 0.332f;
             var v = new Vector3[N * 2];
             var tris = new int[N * 6];
             for (int i = 0; i < N; i++)
@@ -575,12 +577,14 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             body.transform.localScale = size;
             var box = g.AddComponent<BoxCollider>();
             box.size = size;
+            box.isTrigger = true;   // 人はすり抜ける(Interact はできる)
             var btn = UdonSharpUndo.AddComponent<SqmButton>(g);
             btn.table = table;
             btn.eventName = eventName;
             // 文字は箱の手前(-Z 側)に。読む人は -Z 側から見る
             text = Text(g, "Label", new Vector3(0, 0, -size.z / 2 - 0.002f), Quaternion.identity, Mathf.Min(0.32f, size.y * 3.2f), new Vector2(size.x * 0.95f, size.y));
             text.text = label;
+            if (size.x < 0.06f) { text.enableAutoSizing = true; text.fontSizeMin = 0.02f; text.fontSizeMax = size.y * 3.2f; }
             return g;
         }
 
@@ -596,7 +600,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             matButtonHot = Mat("ButtonHot", new Color(0.75f, 0.55f, 0.18f), null);
             matSegBox = Mat("SegBox", new Color(0.03f, 0.03f, 0.03f), null);
             // ホロ: 光の影響を受けない半透明
-            matHoloPanel = HoloMat("HoloPanel", new Color(0.55f, 0.85f, 1f, 0.10f));
+            matHoloPanel = HoloMat("HoloPanel", new Color(0.08f, 0.22f, 0.36f, 0.42f));
             matHoloLine = HoloMat("HoloLine", new Color(0.45f, 0.85f, 1f, 0.9f));
             matHoloRed = HoloMat("HoloRed", new Color(1f, 0.32f, 0.26f, 0.95f));
             matHoloYellow = HoloMat("HoloYellow", new Color(1f, 0.82f, 0.4f, 0.95f));
