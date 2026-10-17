@@ -1,6 +1,6 @@
 # 平方麻雀 VRChat ギミック 設計メモ
 
-ブラウザ版(MonakaLabo/baka-mahjong)のルール(ルールブック v0.7)を、VRChat のワールドに置いて遊べるギミックにする。
+ブラウザ版(MonakaLabo/baka-mahjong)のルール(ルールブック v0.8)を、VRChat のワールドに置いて遊べるギミックにする。
 
 ## 形
 

@@ -2,7 +2,7 @@
 
 8人・1316枚・なんでも倍の麻雀「平方麻雀」を、VRChat のワールドに置いて遊べるギミック(開発中)。
 
-- ルール: ブラウザ版 https://monakalabo.github.io/baka-mahjong/ (ルールブック v0.7)
+- ルール: ブラウザ版 https://monakalabo.github.io/baka-mahjong/ (ルールブック v0.8)
 - 設計: [Documentation~/DESIGN.md](Documentation~/DESIGN.md)
 
 ## 開発のしかた

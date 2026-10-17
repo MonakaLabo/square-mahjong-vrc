@@ -4,7 +4,7 @@ using UnityEngine;
 namespace MonakaLabo.SquareMahjong
 {
     /// <summary>
-    /// 平方麻雀のルールエンジン(ブラウザ版 js/engine の移植。ルールブック v0.7)。
+    /// 平方麻雀のルールエンジン(ブラウザ版 js/engine の移植。ルールブック v0.8)。
     /// UdonSharp で動くように、状態はすべて数値の配列で持つ(独自のクラス・構造体・ジェネリクス・ラムダ・例外は使えない)。
     /// 同じシードと同じ操作なら、ブラウザ版と1手単位で同じ結果になる(Tests~ の答え合わせで確かめる)。
     ///
@@ -200,13 +200,13 @@ namespace MonakaLabo.SquareMahjong
             patMask = new int[2 * 10];
         }
 
-        /// <summary>既定のルール(ルールブック v0.7)</summary>
+        /// <summary>既定のルール(ルールブック v0.8)</summary>
         public void SetDefaultRules()
         {
             Alloc();
             rCopies = 28; rHandSize = 26;
             rDwRinshan = 8; rDwDora = 18; rDwUra = 18; rDwRon = 4; rDwSpare = 8;
-            rRonTileCount = 4; rDoraPerFlip = 1; rMaxKan = 8; rStartScore = 250000; rKyokuCount = 8;
+            rRonTileCount = 4; rDoraPerFlip = 1; rMaxKan = 8; rStartScore = 150000; rKyokuCount = 8;
             rBasePoint = 500; rCapHan = 8; rYakumanPoint = 256000;
             rMultChildSecond = 10; rMultChildFirst = 13; rMultDealerSecond = 15; rMultDealerFirst = 18; rDealerTsumoWeight10 = 15;
             rRiichiStick = 5000; rRiichiMinScore = 5000; rHonbaRon = 500; rHonbaTsumoEach = 100; rNotenTotal = 10000;
