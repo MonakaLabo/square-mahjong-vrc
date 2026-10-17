@@ -914,6 +914,13 @@ namespace MonakaLabo.SquareMahjong
                 int t = handSlotTile[slot];
                 if (t < 0 || engine.phase == SqmEngine.PH_DEAL) { Place(handTiles[slot], handFaces[slot], -1, Vector3.zero, s, false, false, false, false); continue; }
                 float x = -width / 2 + i * (TW + 0.001f) + TW / 2 + (i >= mainN ? 0.012f : 0);
+                // 和了った人の手牌は、倒して(表を上にして)見せる
+                if (engine.outRole[s] != SqmEngine.ROLE_NONE)
+                {
+                    Vector3 lay = u * (R_HAND + 0.005f) + r * x + Vector3.up * (TOP + TT / 2);
+                    Place(handTiles[slot], handFaces[slot], t, lay, s, true, true, true, false);
+                    continue;
+                }
                 float lift = (slot == sel0 || slot == sel1) ? 0.012f : 0;
                 Vector3 pos = u * R_HAND + r * x + Vector3.up * (TOP + TH / 2 + lift);
                 Place(handTiles[slot], handFaces[slot], t, pos, s, false, true, reveal, false);
