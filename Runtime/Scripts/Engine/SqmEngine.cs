@@ -1477,6 +1477,40 @@ namespace MonakaLabo.SquareMahjong
             return -1;
         }
 
+        private int[] riiC;
+
+        /// <summary>
+        /// リーチの打牌に使える牌(その牌を含む切り方で聴牌になるもの)を ok[牌] に入れ、その種類の数を返す(状態は変えない)。
+        /// mustDiscard 枚(1 か 2)を切る組み合わせを全部試す。ブラウザ版 riichiTiles と同じ
+        /// </summary>
+        public int RiichiTiles(int s, bool[] ok)
+        {
+            if (riiC == null) riiC = new int[NT];
+            for (int t = 0; t < NT; t++) { ok[t] = false; riiC[t] = handC[s * NT + t]; }
+            int need = NeedMelds(s), n = 0;
+            for (int a = 0; a < NT; a++)
+            {
+                if (riiC[a] == 0) continue;
+                if (mustDiscard < 2)
+                {
+                    riiC[a]--;
+                    if (FindWaits(riiC, need) > 0) ok[a] = true;
+                    riiC[a]++;
+                    continue;
+                }
+                for (int b = a; b < NT; b++)
+                {
+                    if (riiC[b] == 0 || (a == b && riiC[a] < 2)) continue;
+                    if (ok[a] && ok[b]) continue;   // どちらも分かっている
+                    riiC[a]--; riiC[b]--;
+                    if (FindWaits(riiC, need) > 0) { ok[a] = true; ok[b] = true; }
+                    riiC[a]++; riiC[b]++;
+                }
+            }
+            for (int t = 0; t < NT; t++) if (ok[t]) n++;
+            return n;
+        }
+
         /// <summary>打牌ができるかだけを調べる(状態は変えない)。できなければ false(lastError に理由)</summary>
         public bool CheckDiscard(int[] act)
         {

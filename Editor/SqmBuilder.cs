@@ -193,10 +193,14 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             }
             PadLine(content, new Vector2(0, 0.0865f), new Vector2(0.4f, 0.0015f));
             // ---- 下の帯: IN GAME と INFORMATION ----
-            PadLine(content, new Vector2(0, -0.0835f), new Vector2(0.4f, 0.0015f));
-            PadLine(content, new Vector2(-0.11f, -0.104f), new Vector2(0.0015f, 0.04f));
-            pad.inGameText = PText(content, "InGame", new Vector2(-0.155f, -0.104f), 0.06f, new Vector2(0.088f, 0.04f), TextAlignmentOptions.Center);
-            pad.infoText = PText(content, "Info", new Vector2(0.045f, -0.104f), 0.075f, new Vector2(0.3f, 0.04f), TextAlignmentOptions.Center);
+            // 小さい見出し(IN GAME / INFORMATION)と本文は、別々の文字にする(1つにすると行が重なる)
+            PadLine(content, new Vector2(0, -0.0815f), new Vector2(0.4f, 0.0015f));
+            PadLine(content, new Vector2(-0.11f, -0.103f), new Vector2(0.0015f, 0.043f));
+            PText(content, "InGameLabel", new Vector2(-0.155f, -0.088f), 0.03f, new Vector2(0.088f, 0.01f), TextAlignmentOptions.Center).text = "IN GAME";
+            var infoLabel = PText(content, "InfoLabel", new Vector2(0.045f, -0.088f), 0.03f, new Vector2(0.3f, 0.01f), TextAlignmentOptions.Center);
+            infoLabel.text = "<cspace=0.8em>INFORMATION</cspace>";
+            pad.inGameText = PText(content, "InGame", new Vector2(-0.155f, -0.107f), 0.055f, new Vector2(0.088f, 0.03f), TextAlignmentOptions.Center);
+            pad.infoText = PText(content, "Info", new Vector2(0.045f, -0.106f), 0.08f, new Vector2(0.3f, 0.028f), TextAlignmentOptions.Center);
 
             // ---- 対局 ----
             var game = Group(content, "Game");
@@ -204,6 +208,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.gameMessage = PText(game, "Message", new Vector2(0, 0.07f), 0.075f, new Vector2(0.38f, 0.026f), TextAlignmentOptions.Center);
             pad.handTiles = new MeshRenderer[30];
             pad.handLift = new GameObject[30];
+            pad.handDim = new GameObject[30];
+            var dimMat = HoloMat("PadDim", new Color(0.1f, 0.15f, 0.2f, 0.55f), 2999);
             for (int i = 0; i < 30; i++)
             {
                 var lift = Prim(PrimitiveType.Quad, game, "lift_" + i.ToString("00"), matPadLift);
@@ -219,6 +225,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 box.size = new Vector3(1, 1, 0.008f);
                 PadKey(t, pad, i);
                 t.SetActive(false);
+                var dim = Prim(PrimitiveType.Quad, game, "dim_" + i.ToString("00"), dimMat);
+                dim.transform.localScale = new Vector3(0.022f, 0.03f, 1);
+                dim.SetActive(false);
+                pad.handDim[i] = dim;
                 pad.handTiles[i] = t.GetComponent<MeshRenderer>();
             }
             pad.meldTiles = new MeshRenderer[24];

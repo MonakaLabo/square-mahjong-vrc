@@ -730,6 +730,7 @@ namespace MonakaLabo.SquareMahjong
             if (humanSeat < 0 || slot / SLOT_HAND != humanSeat) return;
             if (!MyTurn()) return;
             if (handSlotTile[slot] < 0) return;
+            if (riichiArmed && riichiTile != null && !riichiTile[handSlotTile[slot]]) return;   // リーチで切れない牌
             if (sel0 == slot) { sel0 = sel1; sel1 = -1; }
             else if (sel1 == slot) sel1 = -1;
             else if (sel0 < 0) sel0 = slot;
@@ -762,7 +763,9 @@ namespace MonakaLabo.SquareMahjong
 
         public void ToggleRiichi()
         {
+            if (!riichiArmed && !padRiichiOk) return;
             riichiArmed = !riichiArmed;
+            sel0 = -1; sel1 = -1;   // 選び直してもらう
             Refresh();
         }
 
@@ -1063,7 +1066,14 @@ namespace MonakaLabo.SquareMahjong
             if (riichiButton != null) riichiButton.SetActive(myTurn && riichiOk);
             if (riichiLabel != null) riichiLabel.text = riichiArmed ? "リーチ ON" : "リーチ";
             padMyTurn = myTurn;
-            padRiichiOk = myTurn && riichiOk;
+            // リーチは、聴牌にできる切り方があるときだけ(自分の番ごとに1回だけ調べる)
+            if (myTurn && riichiOk)
+            {
+                if (riichiTile == null) riichiTile = new bool[NT];
+                if (riichiTileStep != engine.step) { riichiTileStep = engine.step; riichiTileN = engine.RiichiTiles(humanSeat, riichiTile); }
+            }
+            padRiichiOk = myTurn && riichiOk && riichiTileN > 0;
+            if (!padRiichiOk) riichiArmed = false;
             padDiscardOk = myTurn && (!engine.riichiOn[humanSeat] || optN > 0);
             padConfirm = humanSeat >= 0 && sPageN > 0 && (sAckMask & (1 << humanSeat)) != 0;
             if (discardButtons != null)
@@ -1517,6 +1527,15 @@ namespace MonakaLabo.SquareMahjong
 
         // ================================================================ パッド(SqmPad / SqmPadBody)から使うもの
         [System.NonSerialized] public bool padMyTurn, padRiichiOk, padDiscardOk, padConfirm;
+        private bool[] riichiTile;                           // リーチの打牌に使える牌(自分の番ごとに調べる)
+        private int riichiTileStep = -1, riichiTileN;
+
+        /// <summary>パッドの牌を暗くするか(リーチ ON のとき、聴牌にならない牌)</summary>
+        public bool PadTileDim(int i)
+        {
+            int t = PadSlotTile(i);
+            return riichiArmed && t >= 0 && riichiTile != null && !riichiTile[t];
+        }
         private int[] handMainN;
 
         public bool IsLive() { return lMatch > 0; }

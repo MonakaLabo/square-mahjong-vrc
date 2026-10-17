@@ -28,6 +28,7 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro gameMessage;
         public MeshRenderer[] handTiles;     // 30(門前 28 + ツモ 2)
         public GameObject[] handLift;        // 選んだ牌の印 30
+        public GameObject[] handDim;         // リーチで切れない牌を暗くする 30
         public MeshRenderer[] meldTiles;     // 副露 24(小さめ)
         public Material[] faceMats;          // 牌の絵 47(光の影響を受けない)
         public GameObject[] btnRoots;        // 操作ボタン 6
@@ -133,9 +134,9 @@ namespace MonakaLabo.SquareMahjong
                 if (tabBacks[i].sharedMaterial != m) tabBacks[i].sharedMaterial = m;
             }
             if (table.IsLive())
-                inGameText.text = "<size=60%>IN GAME</size>\n東" + engine.kyoku + "局 " + engine.honba + "本場\n残 " + engine.LiveLeft().ToString("0000");
-            else inGameText.text = "<size=60%>IN GAME</size>\n—";
-            infoText.text = "<size=55%><cspace=0.6em>INFORMATION</cspace></size>\n" + table.PadInfo();
+                inGameText.text = "東" + engine.kyoku + "局 " + engine.honba + "本場\n残 " + engine.LiveLeft().ToString("0000");
+            else inGameText.text = "—";
+            infoText.text = table.PadInfo();
 
             SetActive(gameRoot, tab == TAB_GAME);
             SetActive(scoreRoot, tab == TAB_SCORE);
@@ -161,6 +162,7 @@ namespace MonakaLabo.SquareMahjong
                 Tile(handTiles[i], t);
                 bool sel = t >= 0 && table.PadSelected(i);
                 SetActive(handLift[i], sel);
+                if (handDim != null) SetActive(handDim[i], t >= 0 && table.PadTileDim(i));
                 if (t >= 0) n = i + 1;
             }
             PlaceHand(mainN, n);
@@ -251,6 +253,7 @@ namespace MonakaLabo.SquareMahjong
                 else p = new Vector3(0.135f + (i - mainN) * STEP, YD, 0);
                 handTiles[i].transform.localPosition = p;
                 handLift[i].transform.localPosition = p + new Vector3(0, 0, 0.0008f);
+                if (handDim != null) handDim[i].transform.localPosition = p + new Vector3(0, 0, -0.001f);
             }
         }
 

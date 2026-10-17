@@ -94,6 +94,14 @@ static class Program
                 for (int i = 0; i < codes.Count && ok; i++)
                 {
                     if (Canon(b) != snaps[i]) { Console.WriteLine($"✖ {Path.GetFileName(f)}: 番号からの再生が {i} 手目の前でずれた"); ok = false; break; }
+                    // リーチの牌を調べる関数(パッド用)が、状態を変えないこと
+                    if (i % 50 == 0 && b.pendKind == SqmEngine.PEND_TURN)
+                    {
+                        string before = Canon(b);
+                        b.RiichiTiles(b.turn, riichiBuf);
+                        if (Canon(b) != before) { Console.WriteLine($"✖ {Path.GetFileName(f)}: RiichiTiles が状態を変えた ({i} 手目)"); ok = false; break; }
+                        riichiChecks++;
+                    }
                     if (!Codec.Apply(b, codes[i])) { Console.WriteLine($"✖ {Path.GetFileName(f)}: 番号 {codes[i]} を適用できない: {b.lastError}"); ok = false; }
                 }
                 if (ok && Canon(b) != Canon(e)) { Console.WriteLine($"✖ {Path.GetFileName(f)}: 番号からの再生の最後がずれた"); ok = false; }
@@ -102,11 +110,12 @@ static class Program
             if (ok) { okFiles++; Console.WriteLine($"✔ {Path.GetFileName(f)}: {rows.Length - 2} 操作すべて一致"); }
             else return 1;
         }
-        Console.WriteLine($"{okFiles}/{files.Length} 試合・{totalOps} 操作が一致、NPC の判断 {npcChecks} 回が一致、番号からの再生 {codecOps} 手が一致 ({sw.ElapsedMilliseconds} ms)");
+        Console.WriteLine($"{okFiles}/{files.Length} 試合・{totalOps} 操作が一致、NPC の判断 {npcChecks} 回が一致、番号からの再生 {codecOps} 手が一致、リーチ判定で状態が変わらない {riichiChecks} 回 ({sw.ElapsedMilliseconds} ms)");
         return okFiles == files.Length ? 0 : 1;
     }
 
-    static int npcChecks, codecOps;
+    static int npcChecks, codecOps, riichiChecks;
+    static readonly bool[] riichiBuf = new bool[SqmEngine.NT];
 
     /// <summary>その試合の8人の性格(ブラウザ版 pickStyles と同じ: 10人を seed で混ぜて先頭8人)</summary>
     static int[] PickStyles(SqmEngine e, string seedStr)
