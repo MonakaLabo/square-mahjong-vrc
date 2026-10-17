@@ -139,6 +139,10 @@ Unity を開くと、U# のコンパイルが自動で走ります。Console に
   - 源ノ明朝 / Source Han Serif © Adobe — SIL Open Font License 1.1
   - DSEG © keshikan — SIL Open Font License 1.1
 
-## ライセンス
+## 利用規約
 
-(未定)
+無料で使えます。くわしくは [LICENSE.md](LICENSE.md) を見てください。
+
+- ✅ 自分のワールドへの設置(パブリックワールドも OK)、自分のワールド用の改変
+- ❌ 再配布・販売(改変したものも含む)
+- ❌ 声・効果音・画像などの素材を取り出して、ほかの目的に使うこと
