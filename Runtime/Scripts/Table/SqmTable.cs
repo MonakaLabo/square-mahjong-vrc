@@ -1429,7 +1429,7 @@ namespace MonakaLabo.SquareMahjong
                 }
             }
             int sticks = engine.rRiichiStick > 0 ? engine.kyotaku / engine.rRiichiStick : 0;
-            if (holoSticks != null) holoSticks.text = "供託 ×" + sticks + "\n本場 ×" + engine.honba;
+            if (holoSticks != null) holoSticks.text = "×" + sticks + "\n×" + engine.honba;
 
             // ---- 中: ドラ表示牌・ロン牌 ----
             bool dealt = engine.phase != SqmEngine.PH_DEAL;

@@ -193,7 +193,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holoRound = HText(play, "Round", c + new Vector2(0, 0.12f), 1.0f, new Vector2(0.56f, 0.14f), TextAlignmentOptions.Center);
             HText(play, "LeftLabel", c + new Vector2(-0.16f, -0.02f), 0.6f, new Vector2(0.12f, 0.1f), TextAlignmentOptions.Center).text = "残";
             table.holoLeft = SegText(play, "Left", c + new Vector2(0.07f, -0.02f), 0.62f, new Vector2(0.3f, 0.1f), false);
-            table.holoSticks = HText(play, "Sticks", c + new Vector2(0, -0.17f), 0.3f, new Vector2(0.44f, 0.12f), TextAlignmentOptions.Center);
+            // 点棒(上: 供託の千点棒、下: 本場の百点棒)と本数
+            string[] stickTex = { "stick_1000", "stick_100" };
+            for (int i = 0; i < 2; i++)
+            {
+                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(PKG + "/Runtime/Textures/Sticks/" + stickTex[i] + ".png");
+                var st = Prim(PrimitiveType.Quad, play, "Stick_" + stickTex[i], ShaderMat("Holo_" + stickTex[i], "Unlit/Transparent", Color.white, tex));
+                st.transform.localPosition = new Vector3(c.x - 0.06f, c.y - 0.135f - i * 0.065f, 0);
+                st.transform.localScale = new Vector3(0.17f, 0.046f, 1);
+            }
+            table.holoSticks = HText(play, "Sticks", c + new Vector2(0.11f, -0.1675f), 0.36f, new Vector2(0.14f, 0.13f), TextAlignmentOptions.Left);
+            table.holoSticks.lineSpacing = 0f;
 
             // ---- 中: ドラ表示牌・ロン牌・時間 ----
             HText(play, "DoraLabel", new Vector2(-0.34f, 0.3f), 0.38f, new Vector2(0.34f, 0.08f), TextAlignmentOptions.Left).text = "ドラ表示牌";

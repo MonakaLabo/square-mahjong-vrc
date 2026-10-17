@@ -46,7 +46,7 @@ namespace TMPro
     {
         public string text; public TMP_FontAsset font; public float fontSize; public bool enableAutoSizing;
         public TextAlignmentOptions alignment; public UnityEngine.Color color;
-        public bool enableWordWrapping; public TextOverflowModes overflowMode; public float fontSizeMin, fontSizeMax;
+        public bool enableWordWrapping; public TextOverflowModes overflowMode; public float fontSizeMin, fontSizeMax, lineSpacing;
         public UnityEngine.RectTransform rectTransform => null;
     }
 }
