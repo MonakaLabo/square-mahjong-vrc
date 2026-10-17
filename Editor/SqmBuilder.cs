@@ -27,7 +27,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         public static void Build()
         {
             // U# のスクリプトには対のプログラムアセット(.asset)が要る。見つからないときは何も作らずに止める
-            foreach (var type in new[] { typeof(SqmEngine), typeof(SqmNpc), typeof(SqmTable), typeof(SqmArchive), typeof(SqmTileClick), typeof(SqmButton) })
+            foreach (var type in new[] { typeof(SqmEngine), typeof(SqmNpc), typeof(SqmTable), typeof(SqmArchive), typeof(SqmTileClick), typeof(SqmButton), typeof(SqmPad), typeof(SqmPadKey), typeof(SqmPadBody) })
             {
                 if (UdonSharpEditorUtility.GetUdonSharpProgramAsset(type) == null)
                 {
@@ -108,22 +108,6 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.scoreLabels[s] = SegDisplay(seat, at + r * 0.27f, u);
             }
 
-            // ---- 席を選ぶボタン ----
-            table.joinButtons = new GameObject[8];
-            var joins = Group(root, "JoinButtons");
-            for (int s = 0; s < 8; s++)
-            {
-                Vector3 u = U(s);
-                table.joinButtons[s] = Button(joins, "join_" + s, "ここで打つ", table, "Join" + s,
-                    u * 1.28f + Vector3.up * (TOP + 0.12f), Quaternion.LookRotation(-u, Vector3.up), new Vector3(0.24f, 0.07f, 0.02f), out _);
-            }
-            {
-                Vector3 u = U(SqmTable.WALLLESS_SIDE);
-                Vector3 r = R(SqmTable.WALLLESS_SIDE);
-                table.leaveButton = Button(root, "leave", "席を立つ", table, "Leave", u * 1.28f + r * 0.3f + Vector3.up * (TOP + 0.24f), Quaternion.LookRotation(-u, Vector3.up), new Vector3(0.26f, 0.06f, 0.02f), out _);
-                table.newMatchButton = Button(root, "new_match", "新しい試合", table, "NewMatch", u * 1.28f - r * 0.3f + Vector3.up * (TOP + 0.24f), Quaternion.LookRotation(-u, Vector3.up), new Vector3(0.26f, 0.06f, 0.02f), out _);
-            }
-
             // ---- 卓の中央(王牌部)の Resync・Reset(牌と同じ大きさ) ----
             var center = Group(root, "CenterButtons");
             // 寝かせて、文字を上に向ける(0番の席から読める向き)
@@ -131,23 +115,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Button(center, "resync", "Resync", table, "Resync", new Vector3(-0.016f, TOP + TT / 2, 0), faceUp, new Vector3(TW, TH, TT), out _);
             Button(center, "reset", "Reset", table, "ResetMatch", new Vector3(0.016f, TOP + TT / 2, 0), faceUp, new Vector3(TW, TH, TT), out _);
 
-            // ---- 自分の前に出る操作ボタン ----
-            var controls = new GameObject("Controls");
-            controls.transform.SetParent(root.transform, false);
-            controls.transform.localPosition = U(0) * 1.12f + Vector3.up * (TOP + 0.25f);
-            table.controls = controls.transform;
-            table.discardButton = Button(controls, "discard", "切る", table, "Discard", new Vector3(0.36f, -0.08f, 0), Quaternion.identity, new Vector3(0.12f, 0.06f, 0.02f), out _);
-            table.riichiButton = Button(controls, "riichi", "リーチ", table, "ToggleRiichi", new Vector3(0.36f, 0, 0), Quaternion.identity, new Vector3(0.12f, 0.06f, 0.02f), out table.riichiLabel);
-            table.confirmButton = Button(controls, "confirm", "確認", table, "Confirm", new Vector3(0, 0.09f, 0), Quaternion.identity, new Vector3(0.2f, 0.07f, 0.02f), out _);
-            table.confirmButton.SetActive(false);
-            table.optionButtons = new GameObject[SqmTable.N_OPT];
-            table.optionLabels = new TextMeshPro[SqmTable.N_OPT];
-            for (int i = 0; i < SqmTable.N_OPT; i++)
-            {
-                int col = i % 6, row = i / 6;
-                table.optionButtons[i] = Button(controls, "option_" + i, "選択肢", table, "Opt" + i,
-                    new Vector3(-0.33f + col * 0.115f, 0.0f - row * 0.075f, 0), Quaternion.identity, new Vector3(0.11f, 0.065f, 0.02f), out table.optionLabels[i]);
-            }
+            // ---- 手元のパッド(席ごとの板 + 中身1組)。席に着く・試合を始める・打つ・鳴く・確認はパッドで ----
+            BuildPads(root, table);
 
             // U# の部品に入れた値を、裏の UdonBehaviour に写す
             foreach (var b in root.GetComponentsInChildren<UdonSharp.UdonSharpBehaviour>(true)) { UdonSharpEditorUtility.CopyProxyToUdon(b); EditorUtility.SetDirty(b); }
@@ -156,6 +125,260 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Selection.activeGameObject = root;
             Debug.Log("[平方麻雀] 卓を置きました: " + PREFAB + (font == null ? "(日本語のフォントが見つからないので、文字が □ になるかもしれません)" : "(フォント: " + font.name + ")")
                 + (segFont == null ? "(7セグのフォント DSEG7 が見つからないので、点数はふつうの文字です)" : "(7セグ: " + segFont.name + ")"));
+        }
+
+        // ================================================================ 手元のパッド
+        // 本体(板)は席ごとに8枚。卓の右寄りに少し傾けて付ける。中身(SqmPad)は1組で、座った人の手元で自分の席の板に付ける。
+        // 板の中の座標(m): 原点が板の中央、x が右、y が上。読む人は -Z 側から見る。板の内側は 0.40 × 0.25
+        const float PW = 0.42f, PH = 0.27f;
+        static readonly Color PAD_TEXT = new Color(0.24f, 0.33f, 0.38f);
+        static Material matPadBg, matPadFrame, matPadLine, matPadTabOn, matPadLift;
+        static Material[] matPadBtn;
+
+        static void PadAssets()
+        {
+            matPadBg = HoloMat("PadBg", new Color(0.886f, 0.973f, 0.988f, 1f));
+            matPadFrame = Mat("PadFrame", new Color(0.49f, 0.51f, 0.51f), null);
+            matPadLine = HoloMat("PadLine", new Color(0.29f, 0.4f, 0.44f, 1f));
+            matPadTabOn = HoloMat("PadTabOn", new Color(0.54f, 0.77f, 0.84f, 1f));
+            matPadLift = HoloMat("PadLift", new Color(0.96f, 0.72f, 0.24f, 1f));
+            // SqmPad.BTN_* の順: 確定・リーチ・リーチON・カン・ポン・チー・和了・パス・その他
+            Color[] c = {
+                new Color(0.71f, 0.9f, 0.95f), new Color(0.97f, 0.79f, 0.56f), new Color(1f, 0.62f, 0.25f), new Color(0.97f, 0.54f, 0.82f),
+                new Color(0.62f, 0.89f, 0.64f), new Color(0.66f, 0.78f, 1f), new Color(1f, 0.54f, 0.5f), new Color(0.82f, 0.85f, 0.86f), new Color(0.88f, 0.78f, 1f) };
+            matPadBtn = new Material[c.Length];
+            for (int i = 0; i < c.Length; i++) matPadBtn[i] = HoloMat("PadBtn_" + i, new Color(c[i].r, c[i].g, c[i].b, 1f));
+        }
+
+        static void BuildPads(GameObject root, SqmTable table)
+        {
+            PadAssets();
+            var pads = Group(root, "Pads");
+            table.padBodies = new SqmPadBody[8];
+            for (int s = 0; s < 8; s++) table.padBodies[s] = PadBody(pads, table, s);
+
+            // 中身(1組)。SqmPad は、いつも動いている別の GameObject に置く
+            var logic = Group(pads, "PadLogic");
+            var pad = UdonSharpUndo.AddComponent<SqmPad>(logic);
+            table.pad = pad;
+            pad.table = table;
+            pad.engine = table.engine;
+            pad.faceMats = matHoloFaces;
+            pad.matTabOn = matPadTabOn; pad.matTabOff = matPadBg;
+            pad.matBox = matPadBg; pad.matBoxMe = matPadTabOn;
+            pad.btnMats = matPadBtn;
+
+            var content = Group(table.padBodies[0].contentAnchor.gameObject, "PadContent");
+            pad.content = content;
+
+            // ---- 上の帯: タブ ----
+            string[] tabs = { "対局", "点数", "ルール", "設定" };
+            pad.tabBacks = new MeshRenderer[4];
+            for (int i = 0; i < 4; i++)
+            {
+                var g = PadBtn(content, "tab_" + i, tabs[i], matPadBg, new Vector2(-0.147f + i * 0.098f, 0.104f), new Vector2(0.096f, 0.034f), 0.12f, out _, out pad.tabBacks[i]);
+                PadKey(g, pad, 100 + i);
+            }
+            PadLine(content, new Vector2(0, 0.0865f), new Vector2(0.4f, 0.0015f));
+            // ---- 下の帯: IN GAME と INFORMATION ----
+            PadLine(content, new Vector2(0, -0.0835f), new Vector2(0.4f, 0.0015f));
+            PadLine(content, new Vector2(-0.11f, -0.104f), new Vector2(0.0015f, 0.04f));
+            pad.inGameText = PText(content, "InGame", new Vector2(-0.155f, -0.104f), 0.06f, new Vector2(0.088f, 0.04f), TextAlignmentOptions.Center);
+            pad.infoText = PText(content, "Info", new Vector2(0.045f, -0.104f), 0.075f, new Vector2(0.3f, 0.04f), TextAlignmentOptions.Center);
+
+            // ---- 対局 ----
+            var game = Group(content, "Game");
+            pad.gameRoot = game;
+            pad.gameMessage = PText(game, "Message", new Vector2(0, 0.07f), 0.075f, new Vector2(0.38f, 0.026f), TextAlignmentOptions.Center);
+            pad.handTiles = new MeshRenderer[30];
+            pad.handLift = new GameObject[30];
+            for (int i = 0; i < 30; i++)
+            {
+                var lift = Prim(PrimitiveType.Quad, game, "lift_" + i.ToString("00"), matPadLift);
+                lift.transform.localScale = new Vector3(0.025f, 0.034f, 1);
+                lift.SetActive(false);
+                pad.handLift[i] = lift;
+                var t = Prim(PrimitiveType.Quad, game, "tile_" + i.ToString("00"), matHoloFaces[0]);
+                t.transform.localPosition = new Vector3(0, 0, -0.0005f);
+                t.transform.localScale = new Vector3(0.022f, 0.03f, 1);
+                var box = t.AddComponent<BoxCollider>();
+                box.isTrigger = true;
+                box.size = new Vector3(1, 1, 0.3f);
+                PadKey(t, pad, i);
+                t.SetActive(false);
+                pad.handTiles[i] = t.GetComponent<MeshRenderer>();
+            }
+            pad.meldTiles = new MeshRenderer[24];
+            for (int i = 0; i < 24; i++)
+            {
+                var t = Prim(PrimitiveType.Quad, game, "meld_" + i.ToString("00"), matHoloFaces[0]);
+                t.transform.localPosition = new Vector3(-0.185f + i * 0.0125f, 0.04f, -0.0005f);
+                t.transform.localScale = new Vector3(0.012f, 0.016f, 1);
+                t.SetActive(false);
+                pad.meldTiles[i] = t.GetComponent<MeshRenderer>();
+            }
+            pad.btnRoots = new GameObject[6];
+            pad.btnBacks = new MeshRenderer[6];
+            pad.btnLabels = new TextMeshPro[6];
+            for (int i = 0; i < 6; i++)
+            {
+                var g = PadBtn(game, "btn_" + i, "", matPadBtn[0], new Vector2(-0.165f + i * 0.066f, -0.064f), new Vector2(0.06f, 0.024f), 0.075f, out pad.btnLabels[i], out pad.btnBacks[i]);
+                g.SetActive(false);
+                PadKey(g, pad, 200 + i);
+                pad.btnRoots[i] = g;
+            }
+            var confirm = PadBtn(game, "confirm", "確認", matPadBtn[0], new Vector2(0, -0.064f), new Vector2(0.2f, 0.028f), 0.11f, out _, out _);
+            PadKey(confirm, pad, 210);
+            confirm.SetActive(false);
+            pad.confirmRoot = confirm;
+
+            // ---- 点数 ----
+            var score = Group(content, "Score");
+            pad.scoreRoot = score;
+            var boxes = Group(score, "Boxes");
+            pad.scoreBoxes = boxes;
+            int[] col = { 0, 1, 1, 1, 0, -1, -1, -1 };
+            int[] row = { -1, -1, 0, 1, 1, 1, 0, -1 };
+            pad.boxFills = new MeshRenderer[8];
+            pad.boxTexts = new TextMeshPro[8];
+            for (int p = 0; p < 8; p++)
+            {
+                var at = new Vector2(col[p] * 0.127f, 0.002f + row[p] * 0.056f);
+                var frame = Prim(PrimitiveType.Quad, boxes, "frame_" + p, matPadLine);
+                frame.transform.localPosition = new Vector3(at.x, at.y, 0.0006f);
+                frame.transform.localScale = new Vector3(0.12f, 0.05f, 1);
+                var fill = Prim(PrimitiveType.Quad, boxes, "fill_" + p, matPadBg);
+                fill.transform.localPosition = new Vector3(at.x, at.y, 0.0003f);
+                fill.transform.localScale = new Vector3(0.117f, 0.047f, 1);
+                pad.boxFills[p] = fill.GetComponent<MeshRenderer>();
+                pad.boxTexts[p] = PText(boxes, "text_" + p, at, 0.055f, new Vector2(0.11f, 0.044f), TextAlignmentOptions.TopLeft);
+            }
+            pad.scoreCenter = PText(boxes, "Center", new Vector2(0, 0.002f), 0.065f, new Vector2(0.12f, 0.05f), TextAlignmentOptions.Center);
+            pad.resultTable = PText(score, "Result", new Vector2(0, 0.002f), 0.07f, new Vector2(0.37f, 0.165f), TextAlignmentOptions.TopLeft);
+            pad.resultTable.gameObject.SetActive(false);
+
+            // ---- ルール・設定(上下に送るリスト) ----
+            var list = Group(content, "List");
+            pad.listRoot = list;
+            pad.listTitle = PText(list, "Title", new Vector2(0, 0.072f), 0.07f, new Vector2(0.38f, 0.024f), TextAlignmentOptions.Center);
+            pad.rowLabels = new TextMeshPro[SqmPad.ROWS];
+            pad.rowValues = new TextMeshPro[SqmPad.ROWS];
+            pad.rowLeft = new GameObject[SqmPad.ROWS];
+            pad.rowRight = new GameObject[SqmPad.ROWS];
+            for (int r = 0; r < SqmPad.ROWS; r++)
+            {
+                float y = 0.048f - r * 0.024f;
+                pad.rowLabels[r] = PText(list, "label_" + r, new Vector2(-0.085f, y), 0.068f, new Vector2(0.2f, 0.022f), TextAlignmentOptions.Left);
+                pad.rowLabels[r].enableWordWrapping = false;
+                pad.rowValues[r] = PText(list, "value_" + r, new Vector2(0.085f, y), 0.062f, new Vector2(0.095f, 0.022f), TextAlignmentOptions.Center);
+                pad.rowValues[r].enableWordWrapping = false;
+                pad.rowLeft[r] = PadBtn(list, "left_" + r, "◀", matPadBtn[7], new Vector2(0.03f, y), new Vector2(0.018f, 0.018f), 0.06f, out _, out _);
+                pad.rowRight[r] = PadBtn(list, "right_" + r, "▶", matPadBtn[7], new Vector2(0.142f, y), new Vector2(0.018f, 0.018f), 0.06f, out _, out _);
+                PadKey(pad.rowLeft[r], pad, 300 + r * 2);
+                PadKey(pad.rowRight[r], pad, 301 + r * 2);
+            }
+            PadKey(PadBtn(list, "up", "▲", matPadBtn[0], new Vector2(0.183f, 0.048f), new Vector2(0.022f, 0.02f), 0.06f, out _, out _), pad, 320);
+            PadKey(PadBtn(list, "down", "▼", matPadBtn[0], new Vector2(0.183f, -0.072f), new Vector2(0.022f, 0.02f), 0.06f, out _, out _), pad, 321);
+            list.SetActive(false);
+            score.SetActive(false);
+            content.SetActive(false);
+        }
+
+        /// <summary>席 s のパッドの本体(板・掴む・位置の同期・待機中の JOIN / NEW GAME)</summary>
+        static SqmPadBody PadBody(GameObject parent, SqmTable table, int s)
+        {
+            Vector3 u = U(s), r = R(s);
+            var g = new GameObject("Pad_" + s);
+            g.transform.SetParent(parent.transform, false);
+            g.transform.localPosition = u * 1.27f + r * 0.3f + Vector3.up * (TOP + 0.05f);
+            // 手前(座る人)へ向けて、45° 傾ける
+            g.transform.localRotation = Quaternion.LookRotation((-u + Vector3.down).normalized, (-u + Vector3.up).normalized);
+            var col = g.AddComponent<BoxCollider>();
+            col.size = new Vector3(PW, PH, 0.02f);
+            col.isTrigger = true;
+            var rb = g.AddComponent<Rigidbody>();
+            rb.isKinematic = true;
+            rb.useGravity = false;
+            var pickup = g.AddComponent<VRC.SDK3.Components.VRCPickup>();
+            pickup.pickupable = false;
+            pickup.AutoHold = VRC.SDKBase.VRC_Pickup.AutoHoldMode.Yes;
+            pickup.InteractionText = "パッド";
+            g.AddComponent<VRC.SDK3.Components.VRCObjectSync>();
+            var body = UdonSharpUndo.AddComponent<SqmPadBody>(g);
+            body.table = table;
+            body.seat = s;
+            body.pickup = pickup;
+
+            var frame = Prim(PrimitiveType.Cube, g, "Frame", matPadFrame);
+            frame.transform.localPosition = new Vector3(0, 0, 0.007f);
+            frame.transform.localScale = new Vector3(PW, PH, 0.012f);
+            var panel = Prim(PrimitiveType.Quad, g, "Panel", matPadBg);
+            panel.transform.localPosition = new Vector3(0, 0, -0.0002f);
+            panel.transform.localScale = new Vector3(PW - 0.02f, PH - 0.02f, 1);
+            var anchor = Group(g, "Anchor");
+            anchor.transform.localPosition = new Vector3(0, 0, -0.0012f);
+            body.contentAnchor = anchor.transform;
+
+            // 待機中: 平方麻雀・JOIN・NEW GAME
+            var idle = Group(g, "Idle");
+            body.idleRoot = idle;
+            PText(idle, "Title", new Vector2(0, 0.075f), 0.2f, new Vector2(0.38f, 0.05f), TextAlignmentOptions.Center).text = "平方麻雀";
+            body.joinButton = PadBtn(idle, "join", "JOIN", matPadBtn[0], new Vector2(0, 0.0f), new Vector2(0.16f, 0.045f), 0.16f, out _, out _);
+            TableKey(body.joinButton, table, "Join" + s);
+            body.newButton = PadBtn(idle, "new_game", "NEW GAME", matPadBtn[0], new Vector2(0, -0.07f), new Vector2(0.16f, 0.045f), 0.14f, out _, out _);
+            TableKey(body.newButton, table, "NewMatch");
+            body.nameText = PText(g, "Name", Vector2.zero, 0.14f, new Vector2(0.38f, 0.05f), TextAlignmentOptions.Center);
+            return body;
+        }
+
+        static TextMeshPro PText(GameObject parent, string name, Vector2 at, float size, Vector2 rect, TextAlignmentOptions align)
+        {
+            var t = Text(parent, name, new Vector3(at.x, at.y, -0.0006f), Quaternion.identity, size, rect);
+            t.color = PAD_TEXT;
+            t.alignment = align;
+            return t;
+        }
+
+        static void PadLine(GameObject parent, Vector2 at, Vector2 size)
+        {
+            var l = Prim(PrimitiveType.Quad, parent, "Line", matPadLine);
+            l.transform.localPosition = new Vector3(at.x, at.y, -0.0003f);
+            l.transform.localScale = new Vector3(size.x, size.y, 1);
+        }
+
+        /// <summary>パッドのボタン(色の板 + 文字 + 押せる所)。押したときの動きは PadKey / TableKey で付ける</summary>
+        static GameObject PadBtn(GameObject parent, string name, string label, Material mat, Vector2 at, Vector2 size, float fontSize, out TextMeshPro text, out MeshRenderer back)
+        {
+            var g = Group(parent, name);
+            g.transform.localPosition = new Vector3(at.x, at.y, 0);
+            var b = Prim(PrimitiveType.Quad, g, "Back", mat);
+            b.transform.localPosition = new Vector3(0, 0, -0.0003f);
+            b.transform.localScale = new Vector3(size.x, size.y, 1);
+            back = b.GetComponent<MeshRenderer>();
+            var edge = Prim(PrimitiveType.Quad, g, "Edge", matPadLine);
+            edge.transform.localScale = new Vector3(size.x + 0.0015f, size.y + 0.0015f, 1);
+            text = PText(g, "Label", Vector2.zero, fontSize, size, TextAlignmentOptions.Center);
+            text.transform.localPosition = new Vector3(0, 0, -0.0008f);
+            text.enableWordWrapping = false;
+            text.text = label;
+            var box = g.AddComponent<BoxCollider>();
+            box.size = new Vector3(size.x, size.y, 0.006f);
+            box.isTrigger = true;
+            return g;
+        }
+
+        static void PadKey(GameObject g, SqmPad pad, int code)
+        {
+            var k = UdonSharpUndo.AddComponent<SqmPadKey>(g);
+            k.pad = pad;
+            k.code = code;
+        }
+
+        static void TableKey(GameObject g, SqmTable table, string eventName)
+        {
+            var b = UdonSharpUndo.AddComponent<SqmButton>(g);
+            b.table = table;
+            b.eventName = eventName;
         }
 
         // ================================================================ 上空のホロ

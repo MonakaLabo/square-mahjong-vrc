@@ -10,6 +10,7 @@ namespace UdonSharp
         public void SendCustomNetworkEvent(VRC.Udon.Common.Interfaces.NetworkEventTarget target, string eventName, params object[] args) { }
         public virtual void OnOwnershipTransferred(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnPlayerLeft(VRC.SDKBase.VRCPlayerApi player) { }
+        public virtual void OnDrop() { }
         public bool DisableInteractive { get; set; }
     }
     public enum BehaviourSyncMode { Any, None, Continuous, Manual, NoVariableSync }

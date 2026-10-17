@@ -1,0 +1,79 @@
+using TMPro;
+using UdonSharp;
+using UnityEngine;
+using VRC.SDKBase;
+
+namespace MonakaLabo.SquareMahjong
+{
+    /// <summary>
+    /// 席ごとのパッドの本体(板)。卓の右寄りに、少し傾けて付いている。
+    /// 設定で「パッドを掴めるようにする」を ON にした本人だけが掴める。離した所に留まり、元の場所の近くで離すとくっつく。
+    /// 位置の同期は同じ GameObject の VRCObjectSync が受け持つ。中身(タブ・手牌など)は SqmPad の1組を、座った人の手元でここに付ける。
+    /// </summary>
+    [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
+    public class SqmPadBody : UdonSharpBehaviour
+    {
+        public SqmTable table;
+        public int seat;
+        public Transform contentAnchor;     // SqmPad の中身を付ける所
+        public VRC_Pickup pickup;
+        public GameObject idleRoot;         // 待機中の表示(平方麻雀・JOIN・NEW GAME)
+        public GameObject joinButton, newButton;
+        public TextMeshPro nameText;        // ほかの人の席のパッドに出す名前
+
+        public const float SNAP = 0.3f;     // 元の場所からこの距離(m)以内で離すと、くっつく
+        private Vector3 homePos;
+        private Quaternion homeRot;
+        private bool homeSet;
+
+        private void Start() { SetHome(); }
+
+        private void SetHome()
+        {
+            if (homeSet) return;
+            homeSet = true;
+            homePos = transform.position;
+            homeRot = transform.rotation;
+        }
+
+        public override void OnDrop()
+        {
+            SetHome();
+            if (Vector3.Distance(transform.position, homePos) <= SNAP) transform.SetPositionAndRotation(homePos, homeRot);
+        }
+
+        /// <summary>自分が持ち主なら、元の場所に戻す(Reset のとき、全員でこれを呼ぶ)</summary>
+        public void ReturnHomeIfOwner()
+        {
+            SetHome();
+            if (!Networking.IsOwner(gameObject)) return;
+            if (pickup != null && pickup.IsHeld) pickup.Drop();
+            transform.SetPositionAndRotation(homePos, homeRot);
+        }
+
+        /// <summary>自分で元の場所に戻す(持ち主になってから動かす)</summary>
+        public void ReturnHome()
+        {
+            SetHome();
+            if (!Networking.IsOwner(gameObject)) Networking.SetOwner(Networking.LocalPlayer, gameObject);
+            if (pickup != null && pickup.IsHeld) pickup.Drop();
+            transform.SetPositionAndRotation(homePos, homeRot);
+        }
+
+        public void SetGrabbable(bool on)
+        {
+            if (pickup == null || pickup.pickupable == on) return;
+            pickup.pickupable = on;
+            if (!on && pickup.IsHeld) pickup.Drop();
+        }
+
+        /// <summary>中身の無いときの表示(待機中・ほかの人の席)</summary>
+        public void ShowIdle(bool idle, bool join, bool newGame, string name)
+        {
+            if (idleRoot != null && idleRoot.activeSelf != idle) idleRoot.SetActive(idle);
+            if (joinButton != null && joinButton.activeSelf != join) joinButton.SetActive(join);
+            if (newButton != null && newButton.activeSelf != newGame) newButton.SetActive(newGame);
+            if (nameText != null) nameText.text = name;
+        }
+    }
+}

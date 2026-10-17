@@ -30,6 +30,8 @@ namespace MonakaLabo.SquareMahjong
         public SqmEngine engine;
         public SqmNpc npc;
         public SqmArchive archive;
+        public SqmPad pad;                   // 手元のパッドの中身(1組)
+        public SqmPadBody[] padBodies;       // 席ごとのパッドの本体 8
         public Material[] faceMats;          // 牌の表面 47種
         public Transform[] wallStacks;       // 壁の幢 525
         public Transform[] handTiles;        // 手牌 8席 × 28(SLOT_HAND)
@@ -123,8 +125,8 @@ namespace MonakaLabo.SquareMahjong
         private bool dirty;
         private int[] handSlotTile;                          // 手牌の枠に入っている牌(-1 = 空)
         private int sel0 = -1, sel1 = -1;                    // 選んだ手牌の枠
-        private bool riichiArmed;
-        private int[] optBuf; private int optN;              // いま出している選択肢(engine.legal の写し)
+        [System.NonSerialized] public bool riichiArmed;
+        private int[] optBuf; [System.NonSerialized] public int optN;              // いま出している選択肢(engine.legal の写し)
         private int[] act;
         private string message = "";
         private bool ready;
@@ -150,6 +152,8 @@ namespace MonakaLabo.SquareMahjong
             act = new int[SqmEngine.OPT];
             lLog = new int[LOG_MAX];
             tmpC = new int[NT]; tmpDr = new int[8];
+            handMainN = new int[NP];
+            InitRules();
             if (sPlayer == null || sPlayer.Length != NP) sPlayer = new int[NP];
             if (sStyle == null || sStyle.Length != NP) sStyle = new int[NP];
             if (sRing == null || sRing.Length != RING) sRing = new int[RING];
@@ -303,6 +307,7 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < 10; i++) order[i] = i;
             for (int i = 9; i > 0; i--) { int j = UnityEngine.Random.Range(0, i + 1); int x = order[i]; order[i] = order[j]; order[j] = x; }
             for (int s = 0; s < NP; s++) sStyle[s] = order[s];
+            for (int i = 0; i < N_RULE; i++) sRuleUsed[i] = sRule[i];   // この試合のルール
             sCount = 0;
             sStartMs = Networking.GetServerTimeInMilliseconds();
             if (sStartMs == 0) sStartMs = 1;
@@ -437,6 +442,7 @@ namespace MonakaLabo.SquareMahjong
                 ClearSelection();
                 return;
             }
+            ApplyRules(sRuleUsed);
             engine.NewMatch((uint)sSeed);
             for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
             lMatch = sMatch;
@@ -708,6 +714,7 @@ namespace MonakaLabo.SquareMahjong
             ResetLocal();
             message = "";
             RequestSerialization();
+            SendCustomNetworkEvent(NetworkEventTarget.All, nameof(NetReturnPads));   // パッドを元の場所へ
             dirty = true;
         }
 
@@ -832,6 +839,7 @@ namespace MonakaLabo.SquareMahjong
             RefreshCenter();
             RefreshControls();
             RefreshHolo();
+            RefreshPads();
         }
 
         /// <summary>だれか座っているか(座っている人がいれば、観戦者にも手牌は見せない)</summary>
@@ -890,6 +898,7 @@ namespace MonakaLabo.SquareMahjong
             int n = 0;
             for (int t = 0; t < NT; t++) for (int k = 0; k < c[t]; k++) if (n < SLOT_HAND) handSlotTile[baseSlot + n++] = t;
             int mainN = n;
+            handMainN[s] = mainN;
             for (int i = 0; i < drN && n < SLOT_HAND; i++) handSlotTile[baseSlot + n++] = dr[i];
             for (int i = n; i < SLOT_HAND; i++) handSlotTile[baseSlot + i] = -1;
             Vector3 u = U(s), r = R(s);
@@ -1052,12 +1061,17 @@ namespace MonakaLabo.SquareMahjong
             if (discardButton != null) discardButton.SetActive(myTurn && (!engine.riichiOn[humanSeat] || optN > 0));
             if (riichiButton != null) riichiButton.SetActive(myTurn && riichiOk);
             if (riichiLabel != null) riichiLabel.text = riichiArmed ? "リーチ ON" : "リーチ";
-            for (int i = 0; i < N_OPT; i++)
-            {
-                bool show = i < optN;
-                if (optionButtons[i].activeSelf != show) optionButtons[i].SetActive(show);
-                if (show) optionLabels[i].text = OptionText(i * SqmEngine.OPT);
-            }
+            padMyTurn = myTurn;
+            padRiichiOk = myTurn && riichiOk;
+            padDiscardOk = myTurn && (!engine.riichiOn[humanSeat] || optN > 0);
+            padConfirm = humanSeat >= 0 && sPageN > 0 && (sAckMask & (1 << humanSeat)) != 0;
+            if (optionButtons != null)
+                for (int i = 0; i < N_OPT && i < optionButtons.Length; i++)
+                {
+                    bool show = i < optN;
+                    if (optionButtons[i].activeSelf != show) optionButtons[i].SetActive(show);
+                    if (show) optionLabels[i].text = OptionText(i * SqmEngine.OPT);
+                }
             // 「席を立つ」「新しい試合」は試合が無いときだけ卓に出す(試合中はパッドから)
             bool idle = !Running();
             bool showLeave = idle && humanSeat >= 0;
@@ -1069,7 +1083,7 @@ namespace MonakaLabo.SquareMahjong
             }
         }
 
-        private string OptionText(int b)
+        public string OptionText(int b)
         {
             int ty = optBuf[b + SqmEngine.O_TYPE];
             if (ty == SqmEngine.A_TSUMO) return "ツモ " + optBuf[b + SqmEngine.O_HAN] + "翻";
@@ -1435,7 +1449,7 @@ namespace MonakaLabo.SquareMahjong
         // ================================================================ 効果音
         public const int SFX_DISCARD = 0, SFX_CALL = 1, SFX_RIICHI = 2, SFX_WIN = 3, SFX_END = 4, SFX_TURN = 5, SFX_CLICK = 6;
 
-        private void PlaySfx(int i)
+        public void PlaySfx(int i)
         {
             if (sfx == null || sfxClips == null || i >= sfxClips.Length || sfxClips[i] == null || sfxVolume <= 0) return;
             sfx.PlayOneShot(sfxClips[i], sfxVolume);
@@ -1492,6 +1506,236 @@ namespace MonakaLabo.SquareMahjong
             else if (ty == SqmEngine.A_TSUMO) PlayVoice(seat, VOICE_TSUMO, -1);
             else if (ty == SqmEngine.A_RON) PlayVoice(seat, act[SqmEngine.O_MODE] == SqmEngine.RON_TWO ? VOICE_RON_NIMAI : VOICE_RON_KATA, VOICE_RON);
             else if (ty == SqmEngine.A_ABORT && act[SqmEngine.O_TILE] == SqmEngine.REASON_KYUSHU) PlayVoice(seat, VOICE_KYUSHU, -1);
+        }
+
+        // ================================================================ パッド(SqmPad / SqmPadBody)から使うもの
+        [System.NonSerialized] public bool padMyTurn, padRiichiOk, padDiscardOk, padConfirm;
+        private int[] handMainN;
+
+        public bool IsLive() { return lMatch > 0; }
+        public bool IsHostMe() { return sHost != 0 && sHost == MyId(); }
+        public bool NoHost() { return sHost == 0; }
+        public int SeatPlayer(int s) { return sPlayer[s]; }
+        public string SeatDisplayName(int s) { string n = NameOf(s); return n.Length > 0 ? n : (sPlayer[s] == 0 ? "空席" : "?"); }
+        public int PadMainN() { return humanSeat >= 0 && handMainN != null ? handMainN[humanSeat] : 0; }
+        public int PadSlotTile(int i) { return humanSeat >= 0 ? handSlotTile[humanSeat * SLOT_HAND + i] : -1; }
+        public bool PadSelected(int i) { int slot = humanSeat * SLOT_HAND + i; return slot == sel0 || slot == sel1; }
+        public int OptType(int k) { return optBuf[k * SqmEngine.OPT + SqmEngine.O_TYPE]; }
+        public int OptMode(int k) { return optBuf[k * SqmEngine.OPT + SqmEngine.O_MODE]; }
+        public void PadOption(int k) { ClickOption(k); }
+        public void KickSeat(int s) { RequestKick(s); }
+
+        /// <summary>パッドの INFORMATION の1行</summary>
+        public string PadInfo()
+        {
+            if (message.Length > 0) return "<color=#c03030>" + message + "</color>";
+            if (humanSeat < 0) return "";
+            if (lMatch == 0) return IsHostMe() ? "あなたがホストです。「NEW GAME」で始めます。" : "ホストが試合を始めるのを待っています。";
+            if (replayTo > 0) return "追いついています…";
+            if (padConfirm) return "「確認」を押してください。";
+            if (sPageN > 0) return "ほかの人の確認を待っています。";
+            if (engine.phase == SqmEngine.PH_MATCH_OVER) return "このセットは終局しました。";
+            if (padMyTurn) return "あなたの番です。";
+            if (engine.pendKind == SqmEngine.PEND_CALLS) for (int i = 0; i < engine.pendN; i++) if (engine.pendSeats[i] == humanSeat) return "鳴きますか？";
+            if (engine.pendKind == SqmEngine.PEND_TURN) return NameOf(engine.turn) + " の番です。";
+            return "";
+        }
+
+        /// <summary>パッドの対局タブの案内</summary>
+        public string PadGuide()
+        {
+            if (humanSeat < 0 || lMatch == 0) return "";
+            if (padConfirm) return "和了・流局です。内容を確かめて「確認」を押してください。";
+            if (padMyTurn)
+            {
+                if (engine.riichiOn[humanSeat]) return "リーチ中です。ツモ切りは自動です(和了・槓のときだけ選べます)。";
+                if (engine.mustDiscard >= 2) return "あなたの番です。切る牌を2枚選び、確定ボタンを押してください。";
+                return "あなたの番です。切る牌を選択し、確定ボタンを押してください。";
+            }
+            if (optN > 0) return "鳴きますか？";
+            if (engine.outRole[humanSeat] != SqmEngine.ROLE_NONE) return "和了しました。ほかの人の和了を待っています。";
+            return "";
+        }
+
+        /// <summary>点数タブの真ん中</summary>
+        public string PadCenterText()
+        {
+            int sticks = engine.rRiichiStick > 0 ? engine.kyotaku / engine.rRiichiStick : 0;
+            return "<size=130%>東" + engine.kyoku + "局</size>\n残 " + engine.LiveLeft().ToString("0000") + "\n千点棒 ×" + sticks + "\n百点棒 ×" + engine.honba;
+        }
+
+        /// <summary>点数タブの席の箱: 席風・名前 / 順位・点数・自分との差 / リーチ・先発・後発</summary>
+        public string PadSeatBox(int s)
+        {
+            int rank = 1;
+            for (int q = 0; q < NP; q++)
+            {
+                if (q == s) continue;
+                int kq = (q - engine.dealer + NP) % NP, ks = (s - engine.dealer + NP) % NP;
+                if (engine.score[q] > engine.score[s] || (engine.score[q] == engine.score[s] && kq < ks)) rank++;
+            }
+            string[] ord = new string[] { "1st.", "2nd.", "3rd.", "4th.", "5th.", "6th.", "7th.", "8th." };
+            string t = "<size=125%>" + WindName(engine.SeatWindOf(s, engine.dealer)) + "家</size> " + NameOf(s) + "\n";
+            t += ord[rank - 1] + " " + engine.score[s].ToString("N0");
+            if (humanSeat >= 0 && s != humanSeat)
+            {
+                int d = engine.score[s] - engine.score[humanSeat];
+                if (d > 0) t += " <color=#d04040>+" + d.ToString("N0") + "</color>";
+                else if (d < 0) t += " <color=#3070c0>" + d.ToString("N0") + "</color>";
+                else t += " ±0";
+            }
+            t += "\n";
+            if (engine.riichiOn[s]) t += "<color=#d06010>リーチ</color> ";
+            if (engine.outRole[s] == SqmEngine.ROLE_FIRST) t += "<color=#b08000>先発</color>";
+            if (engine.outRole[s] == SqmEngine.ROLE_SECOND) t += "<color=#b08000>後発</color>";
+            if (Running() && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == s) t += " <color=#2a8aa8>▶手番</color>";
+            return t;
+        }
+
+        /// <summary>終局の結果の表(順位・名前・持ち点・ウマ・最終)</summary>
+        public string PadResultTable()
+        {
+            string t = "<size=120%>終局の結果</size>\n<size=80%>順位<pos=12%>名前<pos=52%>持ち点<pos=72%>ウマ<pos=86%>最終</size>\n";
+            for (int i = 0; i < NP; i++)
+            {
+                int s = engine.mrSeat[i];
+                string line = (i + 1) + "位<pos=12%>" + NameOf(s) + "<pos=52%>" + ScoreText(engine.mrScore[i]) + "<pos=72%>" + Signed(engine.mrUma[i]) + "<pos=86%>" + Final10(engine.mrFinal10[i]);
+                if (s == humanSeat) line = "<color=#2a8aa8>" + line + "</color>";
+                t += line + "\n";
+            }
+            return t;
+        }
+
+        private string Signed(int v) { return v > 0 ? "+" + v : v.ToString(); }
+
+        private string Final10(int v)
+        {
+            int a = v < 0 ? -v : v;
+            string s = (a / 10) + "." + (a % 10);
+            return v > 0 ? "+" + s : v < 0 ? "<color=#d04040>-" + s + "</color>" : s;
+        }
+
+        /// <summary>パッドの本体の表示(待機中の JOIN / NEW GAME、ほかの席の名前、掴めるか)と中身</summary>
+        public void RefreshPads()
+        {
+            if (padBodies != null)
+            {
+                bool npcOnly = Running() && HumanMask() == 0;
+                for (int s = 0; s < padBodies.Length; s++)
+                {
+                    SqmPadBody b = padBodies[s];
+                    if (b == null) continue;
+                    bool mine = s == humanSeat;
+                    bool idle = humanSeat < 0 && sPlayer[s] == 0 && !npcOnly;
+                    bool join = idle;
+                    bool newGame = idle && sHost == 0 && !Running();
+                    string name = mine || idle ? "" : SeatDisplayName(s);
+                    b.ShowIdle(idle, join, newGame, name);
+                    b.SetGrabbable(mine && pad != null && pad.grabbable);
+                }
+            }
+            if (pad != null) pad.Refresh();
+        }
+
+        [NetworkCallable]
+        public void NetReturnPads()
+        {
+            if (padBodies == null) return;
+            for (int s = 0; s < padBodies.Length; s++) if (padBodies[s] != null) padBodies[s].ReturnHomeIfOwner();
+        }
+
+        // ================================================================ ルール(開始前にホストが決める。パッドのルールタブ)
+        // 値は「選択肢の番号」で持つ。sRule = いま決めている値、sRuleUsed = いまの試合を始めたときの値(途中参加の再生にも使う)
+        public const int N_RULE = 12;
+        [UdonSynced] private int[] sRule = new int[N_RULE];
+        [UdonSynced] private int[] sRuleUsed = new int[N_RULE];
+        private string[] ruleNames;
+        private string[][] ruleOpts;
+        private int[] ruleDefault;
+
+        private void InitRules()
+        {
+            if (ruleNames != null) return;
+            ruleNames = new string[] { "持ち点", "ドラ表示牌", "ロン牌の枚数", "フリテン", "静かなること林の如く", "完順子ボーナス",
+                "和了による連荘", "片ロンの減翻", "裏ドラ", "アガリ止め", "トビ終了(0点未満で終局)", "順位点(ウマ)" };
+            ruleOpts = new string[N_RULE][];
+            ruleOpts[0] = new string[] { "100,000", "150,000", "200,000", "250,000" };
+            ruleOpts[1] = new string[] { "最初1枚・槓ごとに1枚", "最初2枚・槓ごとに2枚" };
+            ruleOpts[2] = new string[] { "0枚", "2枚", "4枚", "6枚", "8枚", "10枚", "12枚" };
+            ruleOpts[3] = new string[] { "なし(見逃しのみ)", "ゆるい", "厳しい" };
+            ruleOpts[4] = new string[] { "なし", "門前・リーチなし", "門前" };
+            ruleOpts[5] = new string[] { "なし(完全完順のみ)", "2つで1翻(最大2翻)", "1つにつき1翻" };
+            ruleOpts[6] = new string[] { "親が先発のときだけ", "親が和了すれば" };
+            ruleOpts[7] = new string[] { "なし", "1翻" };
+            ruleOpts[8] = new string[] { "あり", "なし" };
+            ruleOpts[9] = new string[] { "あり", "なし" };
+            ruleOpts[10] = new string[] { "あり", "なし" };
+            ruleOpts[11] = new string[] { "あり", "なし" };
+            ruleDefault = new int[] { 1, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0 };
+            if (sRule == null || sRule.Length != N_RULE) sRule = new int[N_RULE];
+            if (sRuleUsed == null || sRuleUsed.Length != N_RULE) sRuleUsed = new int[N_RULE];
+        }
+
+        public int RuleCount() { return N_RULE; }
+        public string RuleName(int i) { InitRules(); return ruleNames[i]; }
+        public int RuleValue(int i) { InitRules(); return RuleIdx(sRule, i); }
+        public string RuleOptLabel(int i, int v) { InitRules(); return ruleOpts[i][v]; }
+        public bool CanEditRules() { return IsHostMe() && !Running(); }
+
+        /// <summary>保存されている値(0 = 既定、それ以外は 選択肢の番号 + 1)を選択肢の番号に</summary>
+        private int RuleIdx(int[] arr, int i)
+        {
+            int v = arr[i] - 1;
+            if (v < 0 || v >= ruleOpts[i].Length) v = ruleDefault[i];
+            return v;
+        }
+
+        public void RequestRule(int i, int dir)
+        {
+            InitRules();
+            if (i < 0 || i >= N_RULE || !CanEditRules()) return;
+            int n = ruleOpts[i].Length;
+            int v = (RuleIdx(sRule, i) + dir + n) % n;
+            if (IsHost()) HostSetRule(i, v);
+            else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetRule), i, v);
+        }
+
+        [NetworkCallable]
+        public void NetRule(int i, int v)
+        {
+            if (!IsHost()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p) || p.playerId != sHost || Running()) return;
+            HostSetRule(i, v);
+        }
+
+        private void HostSetRule(int i, int v)
+        {
+            InitRules();
+            if (i < 0 || i >= N_RULE || v < 0 || v >= ruleOpts[i].Length) return;
+            sRule[i] = v + 1;
+            RequestSerialization();
+            dirty = true;
+        }
+
+        /// <summary>エンジンにルールを入れる(既定のルールに、決めた値を重ねる)</summary>
+        private void ApplyRules(int[] arr)
+        {
+            InitRules();
+            engine.SetDefaultRules();
+            int[] score = new int[] { 100000, 150000, 200000, 250000 };
+            engine.rStartScore = score[RuleIdx(arr, 0)];
+            engine.rDoraPerFlip = RuleIdx(arr, 1) + 1;
+            engine.rRonTileCount = RuleIdx(arr, 2) * 2;
+            engine.rFuriten = RuleIdx(arr, 3);
+            engine.rHayashi = RuleIdx(arr, 4);
+            engine.rKanjunMode = RuleIdx(arr, 5);
+            engine.rRenchanFirst = RuleIdx(arr, 6) == 0;
+            engine.rKataRonPenalty = RuleIdx(arr, 7);
+            engine.rUseUra = RuleIdx(arr, 8) == 0;
+            engine.rAgariYame = RuleIdx(arr, 9) == 0;
+            engine.rTobiEnd = RuleIdx(arr, 10) == 0;
+            engine.rUseUma = RuleIdx(arr, 11) == 0;
         }
 
         // ================================================================ 上空のホロ
