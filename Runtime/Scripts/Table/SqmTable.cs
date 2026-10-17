@@ -404,7 +404,11 @@ namespace MonakaLabo.SquareMahjong
             if (kyokuBanner.gameObject.activeSelf != on) kyokuBanner.gameObject.SetActive(on);
             if (!on) return;
             bannerT -= Time.deltaTime;
-            if (bannerT <= 0) dirty = true;   // 終わったら、操作ボタンを出し直す
+            if (bannerT <= 0)
+            {
+                dirty = true;   // 終わったら、操作ボタンを出し直す
+                if (noticeLater) { noticeLater = false; if (wasMyTurn || wasMyCall) PlaySfx(SFX_TURN); }
+            }
             float e = bannerFull - bannerT;                // 経った時間
             float open = Mathf.Clamp01(e / 0.25f);         // 0.25 秒で開く
             float close = Mathf.Clamp01(bannerT / 0.35f);  // 最後の 0.35 秒で閉じる
@@ -1588,16 +1592,24 @@ namespace MonakaLabo.SquareMahjong
             }
             if (engine.phase == SqmEngine.PH_KYOKU_OVER && kind != K_NEXT && !(kind == K_LEGAL && (act[SqmEngine.O_TYPE] == SqmEngine.A_RON || act[SqmEngine.O_TYPE] == SqmEngine.A_TSUMO))) PlaySfx(SFX_END);
             bool myTurn = humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
-            if (myTurn && !wasMyTurn) PlaySfx(SFX_TURN);
+            if (myTurn && !wasMyTurn) Notice();
             wasMyTurn = myTurn;
             bool myCall = false;
             if (humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_CALLS)
                 for (int i = 0; i < engine.pendN; i++) if (engine.pendSeats[i] == humanSeat) myCall = true;
-            if (myCall && !wasMyCall) PlaySfx(SFX_TURN);   // 鳴ける(ロンできる)ときも知らせる
+            if (myCall && !wasMyCall) Notice();   // 鳴ける(ロンできる)ときも知らせる
             wasMyCall = myCall;
         }
 
-        private bool wasMyTurn, wasMyCall;
+        private bool wasMyTurn, wasMyCall, noticeLater;
+
+        /// <summary>自分の番・鳴けるときの notice。局の始まりの演出中(これから始まる場合も)は、局を言い終わってから鳴らす</summary>
+        private void Notice()
+        {
+            bool bannerSoon = bannerT > 0 || (lMatch > 0 && replayTo == 0 && lMatch * 1000 + engine.kyokuSeq != bannerSeq);
+            if (bannerSoon) noticeLater = true;
+            else PlaySfx(SFX_TURN);
+        }
         public AudioSource padAudio;         // パッドから鳴らす音(自分の番・鳴けるときの notice)
 
         // ---- 宣言の声(宣言した席の位置から鳴らす) ----
