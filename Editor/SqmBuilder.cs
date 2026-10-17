@@ -250,8 +250,9 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.holoCellWind[p] = HText(cell, "Wind", at, 0.8f, new Vector2(CELL, CELL), TextAlignmentOptions.Center);
                 // 名前と点数は2行。対面(上)は 名前→点数、自分(下)は 点数→名前、左右の列は 名前→点数
                 Vector2 nPos, sPos;
-                if (col[p] == 0 && row[p] > 0) { nPos = new Vector2(g.x, g.y + 0.27f); sPos = new Vector2(g.x, g.y + 0.215f); }
-                else if (col[p] == 0) { sPos = new Vector2(g.x, g.y - 0.215f); nPos = new Vector2(g.x, g.y - 0.27f); }
+                // マスの外側(マスの端 = 中心から PITCH + CELL/2)に、点数の箱が重ならないように
+                if (col[p] == 0 && row[p] > 0) { nPos = new Vector2(g.x, g.y + 0.3f); sPos = new Vector2(g.x, g.y + 0.24f); }
+                else if (col[p] == 0) { sPos = new Vector2(g.x, g.y - 0.24f); nPos = new Vector2(g.x, g.y - 0.3f); }
                 else
                 {
                     float x = g.x + col[p] * 0.305f;
