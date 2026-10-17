@@ -62,7 +62,10 @@ namespace MonakaLabo.SquareMahjong
         public GameObject confirmButton;     // 「確認」
         public AudioSource sfx;              // 効果音
         public AudioClip[] sfxClips;         // SFX_* の順
-        [System.NonSerialized] public float sfxVolume = 0.8f;   // 音量(パッドで変える)
+        [System.NonSerialized] public float sfxVolume = 0.8f;   // 効果音の音量(パッドで変える)
+        public AudioSource[] voiceSources;   // 宣言の声を鳴らす所(席ごと 8)
+        public AudioClip[] voiceClips;       // VOICE_* の順
+        [System.NonSerialized] public float voiceVolume = 1f;   // 声の音量(パッドで変える)
         public TextMeshPro[] seatLabels;     // 席の名前 8
         public TextMeshPro[] windLabels;     // 席風 8
         public TextMeshPro[] scoreLabels;    // 点数(7セグ) 8
@@ -1441,6 +1444,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>記録1つを再生した直後に、その手に合った音を鳴らす(追いつき中は鳴らさない)</summary>
         private void SfxFor(int code)
         {
+            VoiceFor(code);
             int kind = (code >> 3) & 3;
             if (kind == K_DISCARD) PlaySfx(((code >> 5) & 1) == 1 ? SFX_RIICHI : SFX_DISCARD);
             else if (kind == K_LEGAL)
@@ -1457,6 +1461,38 @@ namespace MonakaLabo.SquareMahjong
         }
 
         private bool wasMyTurn;
+
+        // ---- 宣言の声(宣言した席の位置から鳴らす) ----
+        public const int VOICE_RIICHI = 0, VOICE_PON = 1, VOICE_CHI = 2, VOICE_KAN = 3, VOICE_RON = 4, VOICE_TSUMO = 5, VOICE_KYUSHU = 6,
+            VOICE_RON_KATA = 7, VOICE_RON_NIMAI = 8, VOICE_DOUBLE_RIICHI = 9;
+
+        private void PlayVoice(int seat, int i, int fallback)
+        {
+            if (voiceSources == null || voiceClips == null || seat < 0 || seat >= voiceSources.Length || voiceSources[seat] == null || voiceVolume <= 0) return;
+            AudioClip clip = i < voiceClips.Length ? voiceClips[i] : null;
+            if (clip == null && fallback >= 0 && fallback < voiceClips.Length) clip = voiceClips[fallback];
+            if (clip == null) return;
+            voiceSources[seat].PlayOneShot(clip, voiceVolume);
+        }
+
+        /// <summary>記録1つを再生した直後に、宣言なら声を鳴らす</summary>
+        private void VoiceFor(int code)
+        {
+            int seat = code & 7, kind = (code >> 3) & 3;
+            if (kind == K_DISCARD)
+            {
+                if (((code >> 5) & 1) == 1) PlayVoice(seat, engine.riichiDouble[seat] ? VOICE_DOUBLE_RIICHI : VOICE_RIICHI, VOICE_RIICHI);
+                return;
+            }
+            if (kind != K_LEGAL) return;
+            int ty = act[SqmEngine.O_TYPE];
+            if (ty == SqmEngine.A_PON) PlayVoice(seat, VOICE_PON, -1);
+            else if (ty == SqmEngine.A_CHI) PlayVoice(seat, VOICE_CHI, -1);
+            else if (ty == SqmEngine.A_KAN) PlayVoice(seat, VOICE_KAN, -1);
+            else if (ty == SqmEngine.A_TSUMO) PlayVoice(seat, VOICE_TSUMO, -1);
+            else if (ty == SqmEngine.A_RON) PlayVoice(seat, act[SqmEngine.O_MODE] == SqmEngine.RON_TWO ? VOICE_RON_NIMAI : VOICE_RON_KATA, VOICE_RON);
+            else if (ty == SqmEngine.A_ABORT && act[SqmEngine.O_TILE] == SqmEngine.REASON_KYUSHU) PlayVoice(seat, VOICE_KYUSHU, -1);
+        }
 
         // ================================================================ 上空のホロ
         // 左: 局・残り枚数(円のゲージ)・点棒 / 中: ドラ表示牌・ロン牌・時間 / 右: 8席の見取り図(見ている人の席が下の真ん中)

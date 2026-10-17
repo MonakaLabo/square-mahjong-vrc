@@ -369,6 +369,26 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.sfxClips = new AudioClip[names.Length];
             for (int i = 0; i < names.Length; i++)
                 table.sfxClips[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/sfx_" + names[i] + ".wav");
+
+            // 宣言の声: 席ごとに、その席の上から鳴らす(SqmTable.VOICE_* の順)
+            string[] voices = { "riichi", "pon", "chi", "kan", "ron", "tsumo", "kyushu", "ron_kata", "ron_nimai", "double_riichi" };
+            table.voiceClips = new AudioClip[voices.Length];
+            for (int i = 0; i < voices.Length; i++)
+                table.voiceClips[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_" + voices[i] + ".wav");
+            table.voiceSources = new AudioSource[8];
+            for (int s = 0; s < 8; s++)
+            {
+                var v = Group(g, "Voice_" + s);
+                v.transform.position = root.transform.TransformPoint(U(s) * 1.1f + Vector3.up * (TOP + 0.35f));
+                var va = v.AddComponent<AudioSource>();
+                va.playOnAwake = false;
+                va.spatialBlend = 1f;
+                va.rolloffMode = AudioRolloffMode.Linear;
+                va.minDistance = 2.5f;
+                va.maxDistance = 10f;
+                va.dopplerLevel = 0f;
+                table.voiceSources[s] = va;
+            }
         }
 
         /// <summary>半透明の板と、青白い縁</summary>
