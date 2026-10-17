@@ -56,7 +56,6 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             top.transform.SetParent(root.transform, false);
             top.AddComponent<MeshFilter>().sharedMesh = OctagonMesh();
             top.AddComponent<MeshRenderer>().sharedMaterials = new[] { matFelt, matRim };
-            top.AddComponent<MeshCollider>();
 
             // ---- 壁(幢 525) ----
             var wallRoot = Group(root, "Wall");

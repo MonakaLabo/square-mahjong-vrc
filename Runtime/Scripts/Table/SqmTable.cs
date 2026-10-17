@@ -10,7 +10,10 @@ namespace MonakaLabo.SquareMahjong
     /// <summary>
     /// 卓1つ。試合を進め(SqmEngine + SqmNpc)、牌・文字・ボタンを卓の上に並べる。
     ///
-    /// 同期: 卓の持ち主(ホスト)だけが試合を進める。NPC の手・自動の進行・人の操作を、1つずつ番号(code)にして記録に足し、
+    /// ホスト(sHost)は最初に座った人。試合の開始(やルールの設定)ができる。ホストが抜けたり立ったりしたら、座っている人からランダムに次のホストを選ぶ。
+    /// ホストは、同期の持ち主(Networking の Owner)も引き受ける。だれも座っていないときは、VRChat が決めた持ち主が NPC だけの試合を進める。
+    ///
+    /// 同期: 卓の持ち主だけが試合を進める。NPC の手・自動の進行・人の操作を、1つずつ番号(code)にして記録に足し、
     /// 直近 RING 個をリングで全員へ送る。ほかの人は、同じ種(シード)から同じ記録を手元のエンジンで再生する。
     /// エンジンは同じ操作なら同じ結果になる(JS 版と照合済み)ので、盤面そのものは送らない。
     /// 人の操作は、ホストへネットワークイベント(NetAct)で頼む。ホストが確かめて記録に足す。
@@ -67,6 +70,7 @@ namespace MonakaLabo.SquareMahjong
         // ---------------- 同期する状態(ホストが書く) ----------------
         [UdonSynced] private int sMatch;                     // 試合の番号(0 = まだ無い)
         [UdonSynced] private int sSeed;
+        [UdonSynced] private int sHost;                      // ホストの playerId(0 = いない)
         [UdonSynced] private int[] sPlayer = new int[NP];    // 席の人の playerId(0 = NPC)
         [UdonSynced] private int[] sStyle = new int[NP];     // 席の NPC の性格(名前と組)
         [UdonSynced] private int sCount;                     // 記録の数
@@ -84,6 +88,7 @@ namespace MonakaLabo.SquareMahjong
         private int sentAt = -1;                             // 自分の操作を送ったときの sCount(返事が来るまで二度押ししない)
         private float sentWait;
         private float wait;                                  // ホスト: 次の手までの待ち(秒)
+        private float claimWait;                             // ホストに選ばれたとき、持ち主を頼み直すまでの待ち
         private bool resultShown;                            // ホスト: 局の結果を見せる間を取ったか
         private bool dirty;
         private int[] handSlotTile;                          // 手牌の枠に入っている牌(-1 = 空)
@@ -131,7 +136,9 @@ namespace MonakaLabo.SquareMahjong
             engine.SetDefaultRules();
         }
 
+        /// <summary>同期の持ち主か(試合を進める役)。ゲームのホスト(sHost)は、ふつうこの持ち主も兼ねる</summary>
         private bool IsHost() { return Networking.IsOwner(gameObject); }
+        private int MyId() { VRCPlayerApi lp = Networking.LocalPlayer; return Utilities.IsValid(lp) ? lp.playerId : -1; }
         private bool Running() { return lMatch > 0 && engine.pendKind != SqmEngine.PEND_END; }
         private bool CaughtUp() { return lMatch == sMatch && lCount == sCount && replayTo == 0; }
         private bool IsHuman(int s) { return sPlayer[s] != 0; }
@@ -266,6 +273,9 @@ namespace MonakaLabo.SquareMahjong
             BillboardHolo();
             if (replayTo > 0) ReplayChunk();
             if (sentAt >= 0) { sentWait -= Time.deltaTime; if (sentWait <= 0 || sentAt != sCount) sentAt = -1; }
+            // ホストに選ばれていて、追いついたら、同期の持ち主を引き受ける
+            if (claimWait > 0) claimWait -= Time.deltaTime;
+            else if (sHost != 0 && sHost == MyId() && !IsHost() && CaughtUp()) { claimWait = 2f; Networking.SetOwner(Networking.LocalPlayer, gameObject); }
             if (IsHost())
             {
                 if (archiveDirty) { archiveSendWait -= Time.deltaTime; if (archiveSendWait <= 0) SendArchive(); }
@@ -371,6 +381,13 @@ namespace MonakaLabo.SquareMahjong
             Init();
             UpdateMySeat();
             if (sMatch != lMatch && sMatch > 0) ResetLocal();
+            else if (lMatch == sMatch && lCount > sCount && replayTo == 0)
+            {
+                // 持ち主が代わって、自分が足した手の一部が取り消された: 手元の記録の頭から sCount 手目までを再生し直す
+                int keep = sCount;
+                ResetLocal();
+                replayTo = keep;
+            }
             CatchUp();
             dirty = true;
         }
@@ -468,6 +485,7 @@ namespace MonakaLabo.SquareMahjong
                 for (int i = 0; i < RING && i < lCount; i++) sRing[(lCount - 1 - i) % RING] = lLog[lCount - 1 - i];
             }
             CleanSeats();
+            FixHost();
             wait = 1f;
             RequestSerialization();
             dirty = true;
@@ -478,6 +496,7 @@ namespace MonakaLabo.SquareMahjong
             if (!IsHost() || !Utilities.IsValid(player)) return;
             bool changed = false;
             for (int s = 0; s < NP; s++) if (sPlayer[s] == player.playerId) { sPlayer[s] = 0; changed = true; }
+            if (FixHost()) changed = true;
             if (changed) { RequestSerialization(); dirty = true; }
         }
 
@@ -491,6 +510,23 @@ namespace MonakaLabo.SquareMahjong
                 if (!Utilities.IsValid(p)) sPlayer[s] = 0;
             }
             UpdateMySeat();
+        }
+
+        /// <summary>
+        /// 持ち主: ホストが座っていなければ選び直す(最初に座った人 → その人が抜けたら、座っている人からランダム)。変えたら true。
+        /// 選ばれた人は、同期を受け取って追いついてから、自分で持ち主を引き受ける(Update)。
+        /// </summary>
+        private bool FixHost()
+        {
+            if (sHost != 0) for (int s = 0; s < NP; s++) if (sPlayer[s] == sHost) return false;
+            int n = 0;
+            for (int s = 0; s < NP; s++) if (sPlayer[s] != 0) n++;
+            int pick = n > 0 ? UnityEngine.Random.Range(0, n) : -1;
+            int next = 0;
+            for (int s = 0; s < NP; s++) if (sPlayer[s] != 0) { if (pick == 0) next = sPlayer[s]; pick--; }
+            if (next == sHost) return false;
+            sHost = next;
+            return true;
         }
 
         // ================================================================ 席・試合のボタン
@@ -521,6 +557,7 @@ namespace MonakaLabo.SquareMahjong
             if (seat >= 0 && sPlayer[seat] != 0 && sPlayer[seat] != pid) return;
             for (int s = 0; s < NP; s++) if (sPlayer[s] == pid) sPlayer[s] = 0;
             if (seat >= 0) sPlayer[seat] = pid;
+            FixHost();
             UpdateMySeat();
             RequestSerialization();
             dirty = true;
@@ -542,13 +579,11 @@ namespace MonakaLabo.SquareMahjong
             if (MayStart(p.playerId)) HostNewMatch();
         }
 
-        /// <summary>試合中にやり直せるのは、座っている人だけ(だれも座っていなければ、だれでも)</summary>
+        /// <summary>試合を始められるのはホストだけ(だれも座っていなければ、だれでも NPC だけの試合を始められる)</summary>
         private bool MayStart(int pid)
         {
-            if (!Running()) return true;
-            bool anyone = false;
-            for (int s = 0; s < NP; s++) { if (sPlayer[s] == pid) return true; if (sPlayer[s] != 0) anyone = true; }
-            return !anyone;
+            if (sHost != 0) return pid == sHost;
+            return !Running();
         }
 
         // ================================================================ 自分の操作
@@ -834,6 +869,7 @@ namespace MonakaLabo.SquareMahjong
             {
                 string txt = NameOf(s);
                 if (!live && sPlayer[s] == 0) txt = "空席";
+                if (sPlayer[s] != 0 && sPlayer[s] == sHost) txt = "<color=#40e0ff>HOST</color> " + txt;
                 if (live && engine.riichiOn[s]) txt += "  リーチ";
                 if (live && engine.outRole[s] == SqmEngine.ROLE_FIRST) txt += "  先発";
                 if (live && engine.outRole[s] == SqmEngine.ROLE_SECOND) txt += "  後発";
@@ -894,7 +930,7 @@ namespace MonakaLabo.SquareMahjong
             if (leaveButton != null && leaveButton.activeSelf != (humanSeat >= 0)) leaveButton.SetActive(humanSeat >= 0);
             if (newMatchButton != null)
             {
-                bool showNew = !Running() || humanSeat >= 0;
+                bool showNew = sHost != 0 ? sHost == MyId() : !Running();
                 if (newMatchButton.activeSelf != showNew) newMatchButton.SetActive(showNew);
             }
         }
@@ -932,7 +968,7 @@ namespace MonakaLabo.SquareMahjong
             if (holo == null) return;
             if (lMatch == 0)
             {
-                holo.text = "<size=140%>平方麻雀²</size>\n席の「ここで打つ」で座って、「新しい試合」で始めます\n<size=80%>だれも座らなければ、NPC だけで打ちます</size>";
+                holo.text = "<size=140%>平方麻雀²</size>\n席の「ここで打つ」で座ります。最初に座った人がホストです\nホストが「新しい試合」で始めます\n<size=80%>だれも座らなければ、NPC だけで打ちます</size>";
                 return;
             }
             string t = "";
