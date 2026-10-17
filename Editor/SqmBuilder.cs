@@ -132,22 +132,23 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // 板の中の座標(m): 原点が板の中央、x が右、y が上。読む人は -Z 側から見る。板の内側は 0.40 × 0.25
         const float PW = 0.42f, PH = 0.27f;
         static readonly Color PAD_TEXT = new Color(0.24f, 0.33f, 0.38f);
-        static Material matPadBg, matPadFrame, matPadLine, matPadTabOn, matPadLift;
+        static Material matPadPanel, matPadBg, matPadFrame, matPadLine, matPadTabOn, matPadLift;
         static Material[] matPadBtn;
 
         static void PadAssets()
         {
-            matPadBg = HoloMat("PadBg", new Color(0.886f, 0.973f, 0.988f, 1f));
+            matPadPanel = HoloMat("PadPanel", new Color(0.886f, 0.973f, 0.988f, 1f), Q_BACK);
+            matPadBg = HoloMat("PadBg", new Color(0.886f, 0.973f, 0.988f, 1f), Q_FILL);
             matPadFrame = Mat("PadFrame", new Color(0.49f, 0.51f, 0.51f), null);
             matPadLine = HoloMat("PadLine", new Color(0.29f, 0.4f, 0.44f, 1f));
-            matPadTabOn = HoloMat("PadTabOn", new Color(0.54f, 0.77f, 0.84f, 1f));
+            matPadTabOn = HoloMat("PadTabOn", new Color(0.54f, 0.77f, 0.84f, 1f), Q_FILL);
             matPadLift = HoloMat("PadLift", new Color(0.96f, 0.72f, 0.24f, 1f));
             // SqmPad.BTN_* の順: 確定・リーチ・リーチON・カン・ポン・チー・和了・パス・その他
             Color[] c = {
                 new Color(0.71f, 0.9f, 0.95f), new Color(0.97f, 0.79f, 0.56f), new Color(1f, 0.62f, 0.25f), new Color(0.97f, 0.54f, 0.82f),
                 new Color(0.62f, 0.89f, 0.64f), new Color(0.66f, 0.78f, 1f), new Color(1f, 0.54f, 0.5f), new Color(0.82f, 0.85f, 0.86f), new Color(0.88f, 0.78f, 1f) };
             matPadBtn = new Material[c.Length];
-            for (int i = 0; i < c.Length; i++) matPadBtn[i] = HoloMat("PadBtn_" + i, new Color(c[i].r, c[i].g, c[i].b, 1f));
+            for (int i = 0; i < c.Length; i++) matPadBtn[i] = HoloMat("PadBtn_" + i, new Color(c[i].r, c[i].g, c[i].b, 1f), Q_FILL);
         }
 
         static void BuildPads(GameObject root, SqmTable table)
@@ -312,7 +313,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var frame = Prim(PrimitiveType.Cube, g, "Frame", matPadFrame);
             frame.transform.localPosition = new Vector3(0, 0, 0.007f);
             frame.transform.localScale = new Vector3(PW, PH, 0.012f);
-            var panel = Prim(PrimitiveType.Quad, g, "Panel", matPadBg);
+            var panel = Prim(PrimitiveType.Quad, g, "Panel", matPadPanel);
             panel.transform.localPosition = new Vector3(0, 0, -0.0002f);
             panel.transform.localScale = new Vector3(PW - 0.02f, PH - 0.02f, 1);
             var anchor = Group(g, "Anchor");
@@ -432,7 +433,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             for (int i = 0; i < 2; i++)
             {
                 var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(PKG + "/Runtime/Textures/Sticks/" + stickTex[i] + ".png");
-                var st = Prim(PrimitiveType.Quad, play, "Stick_" + stickTex[i], ShaderMat("Holo_" + stickTex[i], "Unlit/Transparent", Color.white, tex));
+                var st = Prim(PrimitiveType.Quad, play, "Stick_" + stickTex[i], ShaderMat("Holo_" + stickTex[i], "Unlit/Transparent", Color.white, tex, Q_PART));
                 st.transform.localPosition = new Vector3(c.x - 0.055f, c.y - 0.1f - i * 0.07f, 0);
                 st.transform.localScale = new Vector3(0.18f, 0.049f, 1);
             }
@@ -848,12 +849,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             matButtonHot = Mat("ButtonHot", new Color(0.75f, 0.55f, 0.18f), null);
             matSegBox = Mat("SegBox", new Color(0.03f, 0.03f, 0.03f), null);
             // ホロ: 光の影響を受けない半透明
-            matHoloPanel = HoloMat("HoloPanel", new Color(0.08f, 0.22f, 0.36f, 0.42f));
+            matHoloPanel = HoloMat("HoloPanel", new Color(0.08f, 0.22f, 0.36f, 0.42f), Q_BACK);
             matHoloLine = HoloMat("HoloLine", new Color(0.45f, 0.85f, 1f, 0.9f));
             matHoloRed = HoloMat("HoloRed", new Color(1f, 0.32f, 0.26f, 0.95f));
             matHoloYellow = HoloMat("HoloYellow", new Color(1f, 0.82f, 0.4f, 0.95f));
-            matHoloFill = HoloMat("HoloFill", new Color(0.05f, 0.12f, 0.18f, 0.6f));
-            matHoloTurn = HoloMat("HoloTurn", new Color(0.45f, 0.85f, 1f, 0.95f));
+            matHoloFill = HoloMat("HoloFill", new Color(0.05f, 0.12f, 0.18f, 0.6f), Q_FILL);
+            matHoloTurn = HoloMat("HoloTurn", new Color(0.45f, 0.85f, 1f, 0.95f), Q_FILL);
             matHoloSegBox = HoloMat("HoloSegBox", new Color(0.04f, 0.01f, 0.01f, 0.85f));
             matFaces = new Material[47];
             for (int t = 0; t < 47; t++)
@@ -886,9 +887,13 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             return m;
         }
 
-        static Material HoloMat(string name, Color color) { return ShaderMat(name, "Sprites/Default", color, null); }
+        // 半透明の描く順: 背景の板(Q_BACK) → 枠・線・下地・点棒(Q_PART) → 枠の上の塗り(Q_FILL) → 文字(TextMeshPro は 3000)。
+        // 同じ順番どうしだと距離で前後が入れ替わり、背景が文字の上に描かれて薄く見えることがあるので、順番を決めておく
+        const int Q_BACK = 2980, Q_PART = 2990, Q_FILL = 2995;
 
-        static Material ShaderMat(string name, string shader, Color color, Texture2D tex)
+        static Material HoloMat(string name, Color color, int queue = Q_PART) { return ShaderMat(name, "Sprites/Default", color, null, queue); }
+
+        static Material ShaderMat(string name, string shader, Color color, Texture2D tex, int queue = -1)
         {
             string path = GEN + "/" + name + ".mat";
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -900,6 +905,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             m.shader = Shader.Find(shader);
             m.color = color;
             if (tex != null) m.mainTexture = tex;
+            m.renderQueue = queue;
             EditorUtility.SetDirty(m);
             return m;
         }
