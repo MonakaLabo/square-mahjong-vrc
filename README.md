@@ -3,6 +3,8 @@
 **8人・1316枚・なんでも倍の麻雀「平方麻雀」を、VRChat のワールドに置いて遊べるギミックです。**
 最大8人で卓を囲み、空いた席は NPC が打ちます。1人でも、NPC 7人を相手に遊べます。
 
+SavannaMonaka が、Claude(Anthropic の AI)といっしょに作りました。
+
 *A VRChat world gimmick for "Square Mahjong" — an 8-player, 1,316-tile mahjong variant. Up to 8 players; empty seats are filled by NPCs. (UI is Japanese only.)*
 
 - ルールブック・ブラウザ版: <https://monakalabo.github.io/square-mahjong/>(ルールブック v0.8)
