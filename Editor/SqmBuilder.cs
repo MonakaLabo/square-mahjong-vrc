@@ -548,6 +548,33 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             }
 
             BuildResult(holo, table);
+
+            // ---- 局の始まりの帯(ホロの手前に重ねる。ふだんは隠す) ----
+            var banner = Group(holo, "KyokuBanner");
+            banner.transform.localPosition = new Vector3(0, 0.02f, -0.03f);
+            table.kyokuBanner = banner.transform;
+            // ホロの文字(3000)より後に描く素材にする(手前に重ねても、後ろの文字が透けて乗らないように)
+            var edge = Prim(PrimitiveType.Quad, banner, "Edge", HoloMat("BannerLine", new Color(0.45f, 0.85f, 1f, 0.95f), 3001));
+            edge.transform.localPosition = new Vector3(0, 0, 0.006f);
+            edge.transform.localScale = new Vector3(1.31f, 0.35f, 1);
+            var bfill = Prim(PrimitiveType.Quad, banner, "Fill", HoloMat("BannerBack", new Color(0.04f, 0.1f, 0.16f, 0.92f), 3002));
+            bfill.transform.localPosition = new Vector3(0, 0, 0.005f);
+            bfill.transform.localScale = new Vector3(1.29f, 0.33f, 1);
+            table.kyokuBannerText = HText(banner, "Text", Vector2.zero, 1.6f, new Vector2(1.25f, 0.32f), TextAlignmentOptions.Center);
+            table.kyokuBannerText.color = new Color(1f, 0.86f, 0.5f);
+            var bf = holoFont != null ? holoFont : font;
+            if (bf != null)
+            {
+                string mp = GEN + "/BannerText.mat";
+                var tm = AssetDatabase.LoadAssetAtPath<Material>(mp);
+                if (tm == null) { tm = new Material(bf.material); AssetDatabase.CreateAsset(tm, mp); }
+                else tm.CopyPropertiesFromMaterial(bf.material);
+                tm.shader = bf.material.shader;
+                tm.renderQueue = 3005;
+                EditorUtility.SetDirty(tm);
+                table.kyokuBannerText.fontSharedMaterial = tm;
+            }
+            banner.SetActive(false);
         }
 
         /// <summary>結果の画面(和了・流局・終局)。ホロの板の中に重ねる</summary>
@@ -649,10 +676,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             a.maxDistance = 9f;
             a.dopplerLevel = 0f;
             table.sfx = a;
-            string[] names = { "discard", "call", "riichi", "win", "end", "turn", "click" };
+            string[] names = { "discard", "call", "riichi", "win", "end", "turn", "click", "kyoku" };
             table.sfxClips = new AudioClip[names.Length];
             for (int i = 0; i < names.Length; i++)
                 table.sfxClips[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/sfx_" + names[i] + ".wav");
+
+            // 局の始まりの声(Runtime/Audio/Voice/voice_kyoku_1〜8.wav。無いものは効果音で代わる)
+            table.kyokuVoices = new AudioClip[8];
+            for (int i = 0; i < 8; i++)
+                table.kyokuVoices[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_kyoku_" + (i + 1) + ".wav");
 
             // 宣言の声: 席ごとに、その席の上から鳴らす(SqmTable.VOICE_* の順)
             string[] voices = { "riichi", "pon", "chi", "kan", "ron", "tsumo", "kyushu", "ron_kata", "ron_nimai", "double_riichi" };

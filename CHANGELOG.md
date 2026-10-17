@@ -4,6 +4,7 @@
 
 - ユーザー名用の動的フォールバックを軽く: 源ノ明朝を間引いた SqmFallback-Medium.otf(約 8,800 字・2.9MB、SIL OFL)を同梱し、メニュー「動的フォールバックを作る」はこれを使う(24MB → 約 3MB)。前に作った「〇〇_Dynamic」は予備から外す
 - 間引いたフォントを作るスクリプト Tools~/make-fallback-font.py
+- 局の始まりの演出: ホロの手前に「東2局」(本場・オーラス)の帯が開いて閉じる。声(Runtime/Audio/Voice/voice_kyoku_1〜8.wav)があれば鳴らし、無ければ効果音 sfx_kyoku
 
 ## 0.3.0
 

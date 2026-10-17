@@ -45,6 +45,9 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] centerFaces;
         public Transform holoRoot;           // 上空のホロ全体(見る人の方へ向ける)
         public TextMeshPro holoTitle;        // ホロの題字(試合が無いとき)
+        public Transform kyokuBanner;        // 局の始まりに出す「東2局」(ホロの手前)
+        public TextMeshPro kyokuBannerText;
+        public AudioClip[] kyokuVoices;      // 「東一局」〜「東八局」の声(無ければ効果音)
         public TextMeshPro holo;             // ホロのお知らせ(下の行)
         public GameObject holoPlay;          // 試合中だけ出す部分
         public TextMeshPro holoRound, holoLeft, holoSticks, holoSetTime, holoKyokuTime, holoCenter;
@@ -322,9 +325,50 @@ namespace MonakaLabo.SquareMahjong
             dirty = true;
         }
 
+        // ---- 局の始まりの演出 ----
+        public const float BANNER_TIME = 2.2f;
+        private int bannerSeq = -1;
+        private float bannerT;
+
+        /// <summary>新しい局が始まったら、ホロの手前に「東2局」を出して声(か効果音)を鳴らす。追いつき中は出さない</summary>
+        private void CheckKyokuBanner()
+        {
+            if (lMatch == 0 || engine.kyokuSeq == bannerSeq) return;
+            bannerSeq = engine.kyokuSeq;
+            if (replayTo > 0 || engine.kyokuSeq <= 0 || engine.phase == SqmEngine.PH_MATCH_OVER) return;
+            if (kyokuBannerText != null)
+            {
+                string t = "東" + engine.kyoku + "局";
+                if (engine.honba > 0) t += "<size=45%>  " + engine.honba + "本場</size>";
+                if (engine.kyoku >= engine.rKyokuCount) t += "\n<size=40%>オーラス</size>";
+                kyokuBannerText.text = t;
+            }
+            bannerT = BANNER_TIME;
+            AudioClip v = kyokuVoices != null && engine.kyoku >= 1 && engine.kyoku <= kyokuVoices.Length ? kyokuVoices[engine.kyoku - 1] : null;
+            if (v != null && sfx != null && voiceVolume > 0) sfx.PlayOneShot(v, voiceVolume);
+            else PlaySfx(SFX_KYOKU);
+        }
+
+        /// <summary>帯がすっと開いて、少し止まって、閉じる</summary>
+        private void AnimateBanner()
+        {
+            if (kyokuBanner == null) return;
+            bool on = bannerT > 0;
+            if (kyokuBanner.gameObject.activeSelf != on) kyokuBanner.gameObject.SetActive(on);
+            if (!on) return;
+            bannerT -= Time.deltaTime;
+            float e = BANNER_TIME - bannerT;               // 経った時間
+            float open = Mathf.Clamp01(e / 0.25f);         // 0.25 秒で開く
+            float close = Mathf.Clamp01(bannerT / 0.35f);  // 最後の 0.35 秒で閉じる
+            float k = Mathf.Min(open, close);
+            k = 1f - (1f - k) * (1f - k);                  // なめらかに
+            kyokuBanner.localScale = new Vector3(0.6f + 0.4f * k, k, 1f);
+        }
+
         private void Update()
         {
             BillboardHolo();
+            AnimateBanner();
             if (replayTo > 0) ReplayChunk();
             if (sentAt >= 0) { sentWait -= Time.deltaTime; if (sentWait <= 0 || sentAt != sCount) sentAt = -1; }
             // ホストに選ばれていて、追いついたら、同期の持ち主を引き受ける
@@ -349,7 +393,7 @@ namespace MonakaLabo.SquareMahjong
                 archiveAskWait -= Time.deltaTime;
                 if (archiveAskWait <= 0 && lMatch == sMatch && lCount < sCount && replayTo == 0) AskArchive();
             }
-            if (dirty) { dirty = false; Refresh(); }
+            if (dirty) { dirty = false; Refresh(); CheckKyokuBanner(); }
             clockWait -= Time.deltaTime;
             if (clockWait <= 0) { clockWait = 0.1f; RefreshHoloTime(); }
         }
@@ -1472,7 +1516,7 @@ namespace MonakaLabo.SquareMahjong
         }
 
         // ================================================================ 効果音
-        public const int SFX_DISCARD = 0, SFX_CALL = 1, SFX_RIICHI = 2, SFX_WIN = 3, SFX_END = 4, SFX_TURN = 5, SFX_CLICK = 6;
+        public const int SFX_DISCARD = 0, SFX_CALL = 1, SFX_RIICHI = 2, SFX_WIN = 3, SFX_END = 4, SFX_TURN = 5, SFX_CLICK = 6, SFX_KYOKU = 7;
 
         public void PlaySfx(int i)
         {

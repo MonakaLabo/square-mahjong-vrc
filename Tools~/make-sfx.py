@@ -1,6 +1,6 @@
 # 仮の効果音を作る(合成音)。 python make-sfx.py
 # Runtime/Audio/sfx_*.wav に書く。本番の音ができたら、同じ名前で置き換える。
-#   discard 打牌 / call ポン・チー・カン / riichi リーチ / win ロン・ツモ / end 局の終わり・流局 / turn 自分の番 / click 確認など
+#   discard 打牌 / call ポン・チー・カン / riichi リーチ / win ロン・ツモ / end 局の終わり・流局 / turn 自分の番 / click 確認など / kyoku 局の始まり
 import os
 import wave
 
@@ -88,6 +88,15 @@ b = make(0.35)
 place(b, tone(1046.5, 0.3, 12, (1.0, 0.2)), 0)
 if not os.path.exists(os.path.join(OUT, 'sfx_turn.wav')):   # 録音の notice があれば、それを残す
     save('turn', b, 0.55)
+
+# 局の始まり(局の声が無いときの代わり): 太鼓のような低い音 + 鈴を1回
+b = make(1.3)
+n = int(SR * 0.5)
+t = np.arange(n) / SR
+place(b, np.sin(2 * np.pi * (95 - 40 * t) * t) * env(n, 0.003, 7) * 1.2, 0)
+place(b, rng.standard_normal(int(SR * 0.03)) * env(int(SR * 0.03), 0.001, 90) * 0.4, 0)
+place(b, tone(1318.5, 1.1, 3.5, (1.0, 0.0, 0.3, 0.0, 0.1)) * 0.45, 0.06)
+save('kyoku', b, 0.75)
 
 # 確認など: 短いクリック
 b = make(0.08)

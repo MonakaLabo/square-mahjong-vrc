@@ -45,7 +45,7 @@ namespace TMPro
     public enum TextOverflowModes { Overflow, Ellipsis }
     public class TextMeshPro : UnityEngine.MonoBehaviour
     {
-        public string text; public TMP_FontAsset font; public float fontSize; public bool enableAutoSizing;
+        public string text; public TMP_FontAsset font; public UnityEngine.Material fontSharedMaterial; public float fontSize; public bool enableAutoSizing;
         public TextAlignmentOptions alignment; public UnityEngine.Color color;
         public bool enableWordWrapping; public TextOverflowModes overflowMode; public float fontSizeMin, fontSizeMax, lineSpacing;
         public UnityEngine.RectTransform rectTransform => null;
