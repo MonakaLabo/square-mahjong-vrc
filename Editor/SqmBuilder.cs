@@ -261,7 +261,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
                 string lower = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
-                if (lower.Contains("jp") || lower.Contains("japan") || lower.Contains("noto") || lower.Contains("gothic") || lower.Contains("mplus") || lower.Contains("ja"))
+                if (lower.Contains("jp") || lower.Contains("japan") || lower.Contains("noto") || lower.Contains("gothic") || lower.Contains("mplus") || lower.Contains("ja") || lower.Contains("sourcehan") || lower.Contains("mincho"))
                 {
                     font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(path);
                     if (font != null) return;
