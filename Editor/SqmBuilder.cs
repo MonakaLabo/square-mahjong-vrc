@@ -80,6 +80,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             // ---- 文字 ----
             table.holo = Text(root, "Hologram", new Vector3(0, TOP + 0.75f, 0), Quaternion.identity, 0.55f, new Vector2(1.6f, 0.9f));
             table.holo.text = "平方麻雀²";
+            table.holoRoot = table.holo.transform;
             table.seatLabels = new TextMeshPro[8];
             var labels = Group(root, "SeatLabels");
             for (int s = 0; s < 8; s++)

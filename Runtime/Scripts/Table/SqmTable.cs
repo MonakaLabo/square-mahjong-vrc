@@ -27,6 +27,7 @@ namespace MonakaLabo.SquareMahjong
         public Transform[] centerTiles;      // 中央: ドラ表示牌 18 + ロン牌 12
         public MeshRenderer[] centerFaces;
         public TextMeshPro holo;             // 卓の上空の表示
+        public Transform holoRoot;           // 上空の表示の向きを変える用(Udon では TextMeshPro.transform が使えない)
         public TextMeshPro[] seatLabels;     // 席の名前・点数 8
         public GameObject[] joinButtons;     // 席の「ここで打つ」 8
         public Transform controls;           // 自分の前に出る操作ボタンのまとまり
@@ -596,9 +597,9 @@ namespace MonakaLabo.SquareMahjong
             VRCPlayerApi lp = Networking.LocalPlayer;
             if (lp == null) return;
             Vector3 head = lp.GetTrackingData(VRCPlayerApi.TrackingDataType.Head).position;
-            Vector3 d = holo.transform.position - head;
+            Vector3 d = holoRoot.position - head;
             d.y = 0;
-            if (d.sqrMagnitude > 0.0001f) holo.transform.rotation = Quaternion.LookRotation(d, Vector3.up);
+            if (d.sqrMagnitude > 0.0001f) holoRoot.rotation = Quaternion.LookRotation(d, Vector3.up);
         }
     }
 }
