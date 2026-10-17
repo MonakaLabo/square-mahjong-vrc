@@ -342,7 +342,7 @@ namespace MonakaLabo.SquareMahjong
             }
             if (dirty) { dirty = false; Refresh(); }
             clockWait -= Time.deltaTime;
-            if (clockWait <= 0) { clockWait = 0.25f; RefreshHoloTime(); }
+            if (clockWait <= 0) { clockWait = 0.1f; RefreshHoloTime(); }
         }
 
         private float clockWait;
@@ -1562,16 +1562,19 @@ namespace MonakaLabo.SquareMahjong
         {
             if (lMatch == 0 || sStartMs == 0) return;
             int now = Networking.GetServerTimeInMilliseconds();
-            int setEnd = sEndMs != 0 ? sEndMs : now;
-            int kyokuEnd = sKyokuEndMs != 0 ? sKyokuEndMs : now;
-            if (holoSetTime != null) holoSetTime.text = Clock(setEnd - sStartMs);
-            if (holoKyokuTime != null) holoKyokuTime.text = Clock(kyokuEnd - sKyokuMs);
+            // どちらもセットの開始からの秒で数える(局の時間も同じ瞬間に1秒進むように)
+            int setEnd = Sec((sEndMs != 0 ? sEndMs : now) - sStartMs);
+            int kyokuEnd = Sec((sKyokuEndMs != 0 ? sKyokuEndMs : now) - sStartMs);
+            int kyokuStart = Sec(sKyokuMs - sStartMs);
+            if (holoSetTime != null) holoSetTime.text = Clock(setEnd);
+            if (holoKyokuTime != null) holoKyokuTime.text = Clock(kyokuEnd - kyokuStart);
         }
 
-        private string Clock(int ms)
+        private int Sec(int ms) { return ms <= 0 ? 0 : ms / 1000; }
+
+        private string Clock(int sec)
         {
-            if (ms < 0) ms = 0;
-            int sec = ms / 1000;
+            if (sec < 0) sec = 0;
             int h = sec / 3600, m = sec / 60 % 60, ss = sec % 60;
             return h.ToString("00") + ":" + m.ToString("00") + ":" + ss.ToString("00");
         }
