@@ -685,6 +685,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.kyokuVoices = new AudioClip[8];
             for (int i = 0; i < 8; i++)
                 table.kyokuVoices[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_kyoku_" + (i + 1) + ".wav");
+            table.honbaVoices = new AudioClip[5];
+            for (int i = 0; i < 5; i++)
+                table.honbaVoices[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_honba_" + (i + 1) + ".wav");
+            table.voiceOorasu = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_oorasu.wav");
+            table.voiceRyuukyoku = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_ryuukyoku.wav");
+            table.voiceShuukyoku = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_shuukyoku.wav");
 
             // 宣言の声: 席ごとに、その席の上から鳴らす(SqmTable.VOICE_* の順)
             string[] voices = { "riichi", "pon", "chi", "kan", "ron", "tsumo", "kyushu", "ron_kata", "ron_nimai", "double_riichi" };

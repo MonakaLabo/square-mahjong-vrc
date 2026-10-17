@@ -7,6 +7,7 @@ namespace UdonSharp
         public virtual void OnDeserialization() { }
         public void RequestSerialization() { }
         public void SendCustomEvent(string eventName) { }
+        public void SendCustomEventDelayedSeconds(string eventName, float delaySeconds) { }
         public void SendCustomNetworkEvent(VRC.Udon.Common.Interfaces.NetworkEventTarget target, string eventName, params object[] args) { }
         public virtual void OnOwnershipTransferred(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnPlayerLeft(VRC.SDKBase.VRCPlayerApi player) { }

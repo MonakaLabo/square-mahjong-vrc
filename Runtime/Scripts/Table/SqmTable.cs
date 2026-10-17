@@ -48,6 +48,8 @@ namespace MonakaLabo.SquareMahjong
         public Transform kyokuBanner;        // 局の始まりに出す「東2局」(ホロの手前)
         public TextMeshPro kyokuBannerText;
         public AudioClip[] kyokuVoices;      // 「東一局」〜「東八局」の声(無ければ効果音)
+        public AudioClip[] honbaVoices;      // 「一本場」〜「五本場」
+        public AudioClip voiceOorasu, voiceRyuukyoku, voiceShuukyoku;
         public TextMeshPro holo;             // ホロのお知らせ(下の行)
         public GameObject holoPlay;          // 試合中だけ出す部分
         public TextMeshPro holoRound, holoLeft, holoSticks, holoSetTime, holoKyokuTime, holoCenter;
@@ -344,9 +346,44 @@ namespace MonakaLabo.SquareMahjong
                 kyokuBannerText.text = t;
             }
             bannerT = BANNER_TIME;
+            // 声は「東八局」→「二本場」→「オーラス」のように続けて鳴らす
+            bannerQN = 0; bannerQi = 0;
             AudioClip v = kyokuVoices != null && engine.kyoku >= 1 && engine.kyoku <= kyokuVoices.Length ? kyokuVoices[engine.kyoku - 1] : null;
-            if (v != null && sfx != null && voiceVolume > 0) sfx.PlayOneShot(v, voiceVolume);
-            else PlaySfx(SFX_KYOKU);
+            if (v == null) { PlaySfx(SFX_KYOKU); return; }
+            bannerQ[bannerQN++] = v;
+            if (engine.honba >= 1 && honbaVoices != null && engine.honba <= honbaVoices.Length && honbaVoices[engine.honba - 1] != null) bannerQ[bannerQN++] = honbaVoices[engine.honba - 1];
+            if (engine.kyoku >= engine.rKyokuCount && voiceOorasu != null) bannerQ[bannerQN++] = voiceOorasu;
+            PlayBannerNext();
+        }
+
+        private AudioClip[] bannerQ = new AudioClip[3];
+        private int bannerQN, bannerQi;
+
+        public void PlayBannerNext()
+        {
+            if (bannerQi >= bannerQN) return;
+            AudioClip c = bannerQ[bannerQi++];
+            PlayCenterVoice(c);
+            if (bannerQi < bannerQN) SendCustomEventDelayedSeconds(nameof(PlayBannerNext), c.length + 0.08f);
+        }
+
+        /// <summary>卓の中央から声を鳴らす(局・流局・終局の読み上げ)</summary>
+        private void PlayCenterVoice(AudioClip c)
+        {
+            if (c == null || sfx == null || voiceVolume <= 0) return;
+            sfx.PlayOneShot(c, voiceVolume);
+        }
+
+        private int resultVoiceKey = -1;
+
+        /// <summary>結果の画面が新しく出たとき、流局・終局を読み上げる(追いつき中は読まない)</summary>
+        private void ResultVoice(int page)
+        {
+            int key = page == 100 ? lMatch * 100000 : page == 99 ? lMatch * 100000 + engine.kyokuSeq * 10 + 1 : -1;
+            if (key < 0 || key == resultVoiceKey) return;
+            resultVoiceKey = key;
+            if (replayTo > 0) return;
+            PlayCenterVoice(page == 100 ? voiceShuukyoku : voiceRyuukyoku);
         }
 
         /// <summary>帯がすっと開いて、少し止まって、閉じる</summary>
@@ -1920,6 +1957,7 @@ namespace MonakaLabo.SquareMahjong
             int page = CurrentPage();
             if (holoPlay != null && holoPlay.activeSelf != (page < 0)) holoPlay.SetActive(page < 0);
             RefreshResult(page);
+            ResultVoice(page);
         }
 
         private void HoloTile(MeshRenderer r, int tile)
