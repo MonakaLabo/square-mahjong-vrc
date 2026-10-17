@@ -55,6 +55,74 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             EditorUtility.DisplayDialog("平方麻雀", msg, "OK");
         }
 
+        /// <summary>
+        /// メニュー「Tools/平方麻雀/動的フォールバックを作る」: ユーザー名の漢字など、静的なフォントに無い文字を、その場で作って出すためのフォント。
+        /// Project で選んだフォント(選んでいなければ Assets の SourceHanSerif-Medium)から「元の名前_Dynamic.asset」を作り、
+        /// Assets にある卓用の TMP フォント(DSEG を除く)すべての予備(Fallback)に入れる。
+        /// 元のフォントがビルドに入るので、ワールドは重くなる(源ノ明朝で約 24MB)。ビルドの前に、作った文字は消す(Clear Dynamic Data on Build)。
+        /// </summary>
+        [MenuItem("Tools/平方麻雀/動的フォールバックを作る")]
+        public static void MakeFallback()
+        {
+            Font src = null;
+            foreach (var o in Selection.objects) if (o is Font f && !f.name.ToLowerInvariant().Contains("dseg")) { src = f; break; }
+            if (src == null)
+            {
+                foreach (var guid in AssetDatabase.FindAssets("t:Font", new[] { "Assets" }))
+                {
+                    var f = AssetDatabase.LoadAssetAtPath<Font>(AssetDatabase.GUIDToAssetPath(guid));
+                    if (f == null) continue;
+                    string lower = f.name.ToLowerInvariant();
+                    if (lower.Contains("dseg")) continue;
+                    if (src == null || lower.Contains("medium")) src = f;
+                }
+            }
+            if (src == null)
+            {
+                EditorUtility.DisplayDialog("平方麻雀", "フォント(.ttf / .otf)を Project で選んでから、もう一度実行してください。", "OK");
+                return;
+            }
+            string srcPath = AssetDatabase.GetAssetPath(src);
+            string outPath = Path.Combine(Path.GetDirectoryName(srcPath), src.name + "_Dynamic.asset").Replace('\\', '/');
+            var dyn = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(outPath);
+            if (dyn == null)
+            {
+                dyn = TMP_FontAsset.CreateFontAsset(src, 64, 7, GlyphRenderMode.SDFAA, 1024, 1024, AtlasPopulationMode.Dynamic, true);
+                if (dyn == null) { EditorUtility.DisplayDialog("平方麻雀", src.name + " から作れませんでした。", "OK"); return; }
+                dyn.name = Path.GetFileNameWithoutExtension(outPath);
+                AssetDatabase.CreateAsset(dyn, outPath);
+                foreach (var tex in dyn.atlasTextures)
+                {
+                    if (tex == null) continue;
+                    tex.name = dyn.name + " Atlas";
+                    AssetDatabase.AddObjectToAsset(tex, dyn);
+                }
+                dyn.material.name = dyn.name + " Material";
+                AssetDatabase.AddObjectToAsset(dyn.material, dyn);
+            }
+            // ビルドの前に、エディタで作った文字を消す(ワールドが無駄に大きくならないように)
+            var so = new SerializedObject(dyn);
+            var clear = so.FindProperty("m_ClearDynamicDataOnBuild");
+            if (clear != null) { clear.boolValue = true; so.ApplyModifiedPropertiesWithoutUndo(); }
+            EditorUtility.SetDirty(dyn);
+
+            // 卓用の TMP フォントの予備に入れる
+            var added = new List<string>();
+            foreach (var guid in AssetDatabase.FindAssets("t:TMP_FontAsset", new[] { "Assets" }))
+            {
+                var fa = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(AssetDatabase.GUIDToAssetPath(guid));
+                if (fa == null || fa == dyn || fa.name.ToLowerInvariant().Contains("dseg")) continue;
+                if (fa.fallbackFontAssetTable == null) fa.fallbackFontAssetTable = new List<TMP_FontAsset>();
+                if (fa.fallbackFontAssetTable.Contains(dyn)) continue;
+                fa.fallbackFontAssetTable.Add(dyn);
+                EditorUtility.SetDirty(fa);
+                added.Add(fa.name);
+            }
+            AssetDatabase.SaveAssets();
+            EditorUtility.DisplayDialog("平方麻雀", "動的フォールバック: " + dyn.name + "\n\n予備に入れたフォント:\n  " + (added.Count > 0 ? string.Join("\n  ", added) : "(すでに入っていました)")
+                + "\n\nあとで TMP フォントを作り直したら、もう一度このメニューを実行してください。", "OK");
+        }
+
         static string OutPath(Font f)
         {
             string src = AssetDatabase.GetAssetPath(f);

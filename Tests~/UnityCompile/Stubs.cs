@@ -38,6 +38,7 @@ namespace TMPro
         public UnityEngine.Texture2D[] atlasTextures;
         public UnityEngine.Material material;
         public System.Collections.Generic.List<TMP_Character> characterTable;
+        public System.Collections.Generic.List<TMP_FontAsset> fallbackFontAssetTable;
     }
     public enum TextAlignmentOptions { Center, Right, Left, TopLeft }
     public enum TextOverflowModes { Overflow, Ellipsis }
