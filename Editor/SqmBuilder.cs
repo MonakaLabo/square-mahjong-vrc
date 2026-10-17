@@ -126,8 +126,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
             // ---- 卓の中央(王牌部)の Resync・Reset(牌と同じ大きさ) ----
             var center = Group(root, "CenterButtons");
-            Button(center, "resync", "Resync", table, "Resync", new Vector3(-0.022f, TOP + TH / 2, 0), Quaternion.identity, new Vector3(TW, TH, TT), out _);
-            Button(center, "reset", "Reset", table, "ResetMatch", new Vector3(0.022f, TOP + TH / 2, 0), Quaternion.identity, new Vector3(TW, TH, TT), out _);
+            // 寝かせて、文字を上に向ける(0番の席から読める向き)
+            var faceUp = Quaternion.LookRotation(Vector3.down, -U(0));
+            Button(center, "resync", "Resync", table, "Resync", new Vector3(-0.016f, TOP + TT / 2, 0), faceUp, new Vector3(TW, TH, TT), out _);
+            Button(center, "reset", "Reset", table, "ResetMatch", new Vector3(0.016f, TOP + TT / 2, 0), faceUp, new Vector3(TW, TH, TT), out _);
 
             // ---- 自分の前に出る操作ボタン ----
             var controls = new GameObject("Controls");
