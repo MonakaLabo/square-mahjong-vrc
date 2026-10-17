@@ -1629,8 +1629,9 @@ namespace MonakaLabo.SquareMahjong
                     bool idle = humanSeat < 0 && sPlayer[s] == 0 && !npcOnly;
                     bool join = idle;
                     bool newGame = idle && sHost == 0 && !Running();
-                    string name = mine || idle ? "" : SeatDisplayName(s);
-                    b.ShowIdle(idle, join, newGame, name);
+                    // 見せるのは、自分の席の板と、座れる空席の板だけ(NPC だけの試合中は全部隠す)
+                    b.SetVisible(mine || idle);
+                    b.ShowIdle(idle, join, newGame, "");
                     b.SetGrabbable(mine && pad != null && pad.grabbable);
                 }
             }

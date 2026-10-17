@@ -328,6 +328,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             body.newButton = PadBtn(idle, "new_game", "NEW GAME", matPadBtn[0], new Vector2(0, -0.07f), new Vector2(0.16f, 0.045f), 0.14f, out _, out _);
             TableKey(body.newButton, table, "NewMatch");
             body.nameText = PText(g, "Name", Vector2.zero, 0.14f, new Vector2(0.38f, 0.05f), TextAlignmentOptions.Center);
+            body.visuals = new[] { frame, panel, anchor, idle, body.nameText.gameObject };
+            body.body = col;
             return body;
         }
 

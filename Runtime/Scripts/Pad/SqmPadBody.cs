@@ -20,6 +20,8 @@ namespace MonakaLabo.SquareMahjong
         public GameObject idleRoot;         // 待機中の表示(平方麻雀・JOIN・NEW GAME)
         public GameObject joinButton, newButton;
         public TextMeshPro nameText;        // ほかの人の席のパッドに出す名前
+        public GameObject[] visuals;        // 板の見た目(隠すときに消す)
+        public Collider body;               // 掴む所
 
         public const float SNAP = 0.3f;     // 元の場所からこの距離(m)以内で離すと、くっつく
         private Vector3 homePos;
@@ -65,6 +67,14 @@ namespace MonakaLabo.SquareMahjong
             if (pickup == null || pickup.pickupable == on) return;
             pickup.pickupable = on;
             if (!on && pickup.IsHeld) pickup.Drop();
+        }
+
+        /// <summary>板ごと出す/隠す(手元だけ。位置の同期には関わらない)</summary>
+        public void SetVisible(bool on)
+        {
+            if (visuals != null)
+                for (int i = 0; i < visuals.Length; i++) if (visuals[i] != null && visuals[i].activeSelf != on) visuals[i].SetActive(on);
+            if (body != null && body.enabled != on) body.enabled = on;
         }
 
         /// <summary>中身の無いときの表示(待機中・ほかの人の席)</summary>
