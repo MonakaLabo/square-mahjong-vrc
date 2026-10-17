@@ -16,7 +16,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
     public static class SqmFontMaker
     {
         const string CHARS = "Packages/jp.monakalabo.square-mahjong/Runtime/Fonts/SqmCharacters.txt";
-        const string SEG_CHARS = "0123456789-!. ";
+        const string SEG_CHARS = "0123456789-:!. ";
 
         [MenuItem("Tools/平方麻雀/TMP フォントを作る")]
         public static void Make()

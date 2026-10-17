@@ -39,13 +39,13 @@ namespace TMPro
         public UnityEngine.Material material;
         public System.Collections.Generic.List<TMP_Character> characterTable;
     }
-    public enum TextAlignmentOptions { Center, Right }
+    public enum TextAlignmentOptions { Center, Right, Left }
     public enum TextOverflowModes { Overflow, Ellipsis }
     public class TextMeshPro : UnityEngine.MonoBehaviour
     {
         public string text; public TMP_FontAsset font; public float fontSize; public bool enableAutoSizing;
         public TextAlignmentOptions alignment; public UnityEngine.Color color;
-        public bool enableWordWrapping; public TextOverflowModes overflowMode;
+        public bool enableWordWrapping; public TextOverflowModes overflowMode; public float fontSizeMin, fontSizeMax;
         public UnityEngine.RectTransform rectTransform => null;
     }
 }
