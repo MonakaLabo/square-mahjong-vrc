@@ -36,6 +36,8 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro[] btnLabels;
         public Material[] btnMats;           // BTN_* の順
         public GameObject confirmRoot;       // 大きな「確認」
+        public MeshRenderer[] callTiles;     // 鳴ける牌 2(捨てられた牌)
+        public GameObject callLabel;
 
         // 点数
         public GameObject scoreRoot;
@@ -52,6 +54,8 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro[] rowLabels, rowValues;   // 6
         public GameObject[] rowLeft, rowRight;       // ◀ ▶
 
+        public const string VERSION = "0.3.0";
+        public const string CREDIT = "Made by SavannaMonaka with Claude";
         public const int TAB_GAME = 0, TAB_SCORE = 1, TAB_RULE = 2, TAB_SETTING = 3;
         public const int ROWS = 6;
         public const int BTN_DISCARD = 0, BTN_RIICHI = 1, BTN_RIICHI_ON = 2, BTN_KAN = 3, BTN_PON = 4, BTN_CHI = 5, BTN_WIN = 6, BTN_PASS = 7, BTN_OTHER = 8;
@@ -186,6 +190,11 @@ namespace MonakaLabo.SquareMahjong
                 }
             }
             for (int i = m; i < meldTiles.Length; i++) Tile(meldTiles[i], -1);
+            // 鳴ける牌(捨てられた牌)
+            bool anyCall = false;
+            if (callTiles != null)
+                for (int k = 0; k < callTiles.Length; k++) { int t = table.PadCallTile(k); Tile(callTiles[k], t); if (t >= 0) anyCall = true; }
+            SetActive(callLabel, anyCall);
 
             // 操作ボタン
             for (int i = 0; i < 6; i++) { slotAct[i] = ACT_NONE; slotArg[i] = 0; }
@@ -345,7 +354,7 @@ namespace MonakaLabo.SquareMahjong
                 rowLabels[r].text = has ? (rule ? table.RuleName(i) : SettingName(i)) : "";
                 rowValues[r].text = has ? (rule ? table.RuleOptLabel(i, table.RuleValue(i)) : SettingValue(i)) : "";
                 bool arrows = has && (rule ? edit : SettingHasArrows(i));
-                bool action = has && !rule && !SettingHasArrows(i);
+                bool action = has && !rule && !SettingHasArrows(i) && !IsCreditRow(i);
                 SetActive(rowLeft[r], arrows);
                 SetActive(rowRight[r], arrows || action);
             }
@@ -355,6 +364,7 @@ namespace MonakaLabo.SquareMahjong
         {
             int i = listTop + r;
             if (tab == TAB_RULE) { table.RequestRule(i, dir); return; }
+            if (i >= SettingCount() || IsCreditRow(i)) return;
             DoSetting(i, dir);
             Refresh();
         }
@@ -375,10 +385,13 @@ namespace MonakaLabo.SquareMahjong
             return -1;
         }
 
-        private int SettingCount() { return table.IsHostMe() ? 7 + KickCount() : 5; }
+        // いちばん下は作者とバージョン(押せない)
+        private int SettingCount() { return (table.IsHostMe() ? 7 + KickCount() : 5) + 1; }
+        private bool IsCreditRow(int i) { return i == SettingCount() - 1; }
 
         private string SettingName(int i)
         {
+            if (IsCreditRow(i)) return "<size=80%>" + CREDIT + "</size>";
             if (i == 0) return "効果音の音量";
             if (i == 1) return "声の音量";
             if (i == 2) return "パッドを掴めるようにする";
@@ -394,6 +407,7 @@ namespace MonakaLabo.SquareMahjong
 
         private string SettingValue(int i)
         {
+            if (IsCreditRow(i)) return "v" + VERSION;
             if (i == 0) return Bar(sfxStep);
             if (i == 1) return Bar(voiceStep);
             if (i == 2) return grabbable ? "ON" : "OFF";

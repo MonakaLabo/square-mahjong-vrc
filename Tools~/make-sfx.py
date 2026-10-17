@@ -61,11 +61,14 @@ place(b, tone(880, 0.35, 9), 0)
 place(b, tone(1318.5, 0.35, 9), 0.08)
 save('call', b)
 
-# リーチ: 上がっていく3音 + 余韻
+# リーチ: 点棒を置く「カチッ」と、柔らかい和音を同時に1回(上がっていく音の並びは、地震速報のチャイムに似るので使わない)
 b = make(0.9)
-for i, f in enumerate([659.3, 880, 1174.7]):
-    place(b, tone(f, 0.7, 5, (1.0, 0.3, 0.1, 0.05)), i * 0.09)
-save('riichi', b)
+n = int(SR * 0.025)
+place(b, rng.standard_normal(n) * env(n, 0.0005, 160) * 0.8, 0)
+place(b, tone(1200, 0.08, 60, (1.0, 0.4)), 0)
+for f in [784, 987.8, 1174.7]:
+    place(b, tone(f, 0.8, 5.5, (1.0, 0.25, 0.08), attack=0.008) * 0.5, 0.012)
+save('riichi', b, 0.7)
 
 # 和了: 和音の駆け上がり(サイバーっぽく少し矩形波まじり)
 b = make(1.6)
@@ -80,10 +83,11 @@ place(b, tone(784, 0.9, 4), 0)
 place(b, tone(523.3, 0.9, 3.5), 0.18)
 save('end', b, 0.7)
 
-# 自分の番: やわらかい1音(いまは録音の notice を使っている。このスクリプトを流すと仮の音に戻る)
+# 自分の番: やわらかい1音(録音の notice を置いてあれば作らない)
 b = make(0.35)
 place(b, tone(1046.5, 0.3, 12, (1.0, 0.2)), 0)
-save('turn', b, 0.55)
+if not os.path.exists(os.path.join(OUT, 'sfx_turn.wav')):   # 録音の notice があれば、それを残す
+    save('turn', b, 0.55)
 
 # 確認など: 短いクリック
 b = make(0.08)

@@ -906,7 +906,8 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < drN && n < SLOT_HAND; i++) handSlotTile[baseSlot + n++] = dr[i];
             for (int i = n; i < SLOT_HAND; i++) handSlotTile[baseSlot + i] = -1;
             Vector3 u = U(s), r = R(s);
-            float width = n * (TW + 0.001f) + (drN > 0 ? 0.012f : 0);
+            // 門前の部分だけで中央にそろえ、ツモ牌はその右に足す(ツモっても手牌がずれないように)
+            float width = mainN * (TW + 0.001f);
             for (int i = 0; i < SLOT_HAND; i++)
             {
                 int slot = baseSlot + i;
@@ -1469,6 +1470,7 @@ namespace MonakaLabo.SquareMahjong
         public void PlaySfx(int i)
         {
             if (sfx == null || sfxClips == null || i >= sfxClips.Length || sfxClips[i] == null || sfxVolume <= 0) return;
+            if (i == SFX_TURN && padAudio != null && padAudio.gameObject.activeInHierarchy) { padAudio.PlayOneShot(sfxClips[i], sfxVolume); return; }
             sfx.PlayOneShot(sfxClips[i], sfxVolume);
         }
 
@@ -1489,9 +1491,15 @@ namespace MonakaLabo.SquareMahjong
             bool myTurn = humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
             if (myTurn && !wasMyTurn) PlaySfx(SFX_TURN);
             wasMyTurn = myTurn;
+            bool myCall = false;
+            if (humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_CALLS)
+                for (int i = 0; i < engine.pendN; i++) if (engine.pendSeats[i] == humanSeat) myCall = true;
+            if (myCall && !wasMyCall) PlaySfx(SFX_TURN);   // 鳴ける(ロンできる)ときも知らせる
+            wasMyCall = myCall;
         }
 
-        private bool wasMyTurn;
+        private bool wasMyTurn, wasMyCall;
+        public AudioSource padAudio;         // パッドから鳴らす音(自分の番・鳴けるときの notice)
 
         // ---- 宣言の声(宣言した席の位置から鳴らす) ----
         public const int VOICE_RIICHI = 0, VOICE_PON = 1, VOICE_CHI = 2, VOICE_KAN = 3, VOICE_RON = 4, VOICE_TSUMO = 5, VOICE_KYUSHU = 6,
@@ -1543,6 +1551,13 @@ namespace MonakaLabo.SquareMahjong
         public bool NoHost() { return sHost == 0; }
         public int SeatPlayer(int s) { return sPlayer[s]; }
         public string SeatDisplayName(int s) { string n = NameOf(s); return n.Length > 0 ? n : (sPlayer[s] == 0 ? "空席" : "?"); }
+        /// <summary>鳴ける牌(捨てられた牌、搶槓なら加槓の牌)。k 枚目。無ければ -1</summary>
+        public int PadCallTile(int k)
+        {
+            if (humanSeat < 0 || lMatch == 0 || engine.pendKind != SqmEngine.PEND_CALLS || optN == 0 || !engine.dcActive) return -1;
+            return k < engine.dcN ? engine.dcT[k] : -1;
+        }
+
         public int PadMainN() { return humanSeat >= 0 && handMainN != null ? handMainN[humanSeat] : 0; }
         public int PadSlotTile(int i) { return humanSeat >= 0 ? handSlotTile[humanSeat * SLOT_HAND + i] : -1; }
         public bool PadSelected(int i) { int slot = humanSeat * SLOT_HAND + i; return slot == sel0 || slot == sel1; }

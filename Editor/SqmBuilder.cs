@@ -182,6 +182,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
             var content = Group(table.padBodies[0].contentAnchor.gameObject, "PadContent");
             pad.content = content;
+            // パッドから鳴らす音(自分の番・鳴けるとき)
+            var pa = content.AddComponent<AudioSource>();
+            pa.playOnAwake = false;
+            pa.spatialBlend = 1f;
+            pa.rolloffMode = AudioRolloffMode.Linear;
+            pa.minDistance = 1f;
+            pa.maxDistance = 4f;
+            pa.dopplerLevel = 0f;
+            table.padAudio = pa;
 
             // ---- 上の帯: タブ ----
             string[] tabs = { "対局", "点数", "ルール", "設定" };
@@ -239,6 +248,20 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 t.transform.localScale = new Vector3(0.012f, 0.016f, 1);
                 t.SetActive(false);
                 pad.meldTiles[i] = t.GetComponent<MeshRenderer>();
+            }
+            // 鳴ける牌(捨てられた牌)。ツモ牌と同じ、上の段の右に出す
+            var callLabel = PText(game, "CallLabel", new Vector2(0.075f, 0.04f), 0.06f, new Vector2(0.06f, 0.02f), TextAlignmentOptions.Right);
+            callLabel.text = "鳴ける牌";
+            callLabel.gameObject.SetActive(false);
+            pad.callLabel = callLabel.gameObject;
+            pad.callTiles = new MeshRenderer[2];
+            for (int i = 0; i < 2; i++)
+            {
+                var t = Prim(PrimitiveType.Quad, game, "call_" + i, matHoloFaces[0]);
+                t.transform.localPosition = new Vector3(0.135f + i * 0.024f, 0.04f, -0.0005f);
+                t.transform.localScale = new Vector3(0.022f, 0.03f, 1);
+                t.SetActive(false);
+                pad.callTiles[i] = t.GetComponent<MeshRenderer>();
             }
             pad.btnRoots = new GameObject[6];
             pad.btnBacks = new MeshRenderer[6];
@@ -355,7 +378,11 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             body.newButton = PadBtn(idle, "new_game", "NEW GAME", matPadBtn[0], new Vector2(0, -0.07f), new Vector2(0.16f, 0.045f), 0.14f, out _, out _);
             TableKey(body.newButton, table, "NewMatch");
             body.nameText = PText(g, "Name", Vector2.zero, 0.14f, new Vector2(0.38f, 0.05f), TextAlignmentOptions.Center);
-            body.visuals = new[] { frame, panel, anchor, idle, body.nameText.gameObject };
+            // 裏に作者とバージョン
+            var credit = Text(g, "Credit", new Vector3(0, 0, 0.0135f), Quaternion.Euler(0, 180, 0), 0.1f, new Vector2(0.38f, 0.06f));
+            credit.color = new Color(0.85f, 0.88f, 0.9f);
+            credit.text = "平方麻雀 v" + SqmPad.VERSION + "\n<size=70%>" + SqmPad.CREDIT + "</size>";
+            body.visuals = new[] { frame, panel, anchor, idle, body.nameText.gameObject, credit.gameObject };
             body.body = col;
             return body;
         }
