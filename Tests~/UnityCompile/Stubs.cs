@@ -31,6 +31,7 @@ namespace UdonSharpEditor
 namespace TMPro
 {
     public enum AtlasPopulationMode { Static, Dynamic }
+    public static class ShaderUtilities { public static void UpdateShaderRatios(UnityEngine.Material m) { } }
     public class TMP_Character { }
     public class TMP_FontAsset : UnityEngine.ScriptableObject
     {

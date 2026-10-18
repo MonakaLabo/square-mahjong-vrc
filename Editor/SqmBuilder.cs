@@ -142,14 +142,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // 本体(板)は席ごとに8枚。卓の右寄りに少し傾けて付ける。中身(SqmPad)は1組で、座った人の手元で自分の席の板に付ける。
         // 板の中の座標(m): 原点が板の中央、x が右、y が上。読む人は -Z 側から見る。板の内側は 0.40 × 0.25
         const float PW = 0.42f, PH = 0.27f;
-        static readonly Color PAD_TEXT = new Color(0.24f, 0.33f, 0.38f);
+        static readonly Color PAD_TEXT = new Color(0.1f, 0.16f, 0.2f);
         static Material matPadPanel, matPadBg, matPadFrame, matPadLine, matPadTabOn, matPadLift;
         static Material[] matPadBtn;
 
         static void PadAssets()
         {
-            matPadPanel = HoloMat("PadPanel", new Color(0.886f, 0.973f, 0.988f, 1f), Q_BACK);
-            matPadBg = HoloMat("PadBg", new Color(0.886f, 0.973f, 0.988f, 1f), Q_FILL);
+            // 背景は白に近すぎると、ワールドの光の演出(ブルームなど)でにじんで文字が薄く見えるので、少し落とす
+            matPadPanel = HoloMat("PadPanel", new Color(0.78f, 0.9f, 0.93f, 1f), Q_BACK);
+            matPadBg = HoloMat("PadBg", new Color(0.78f, 0.9f, 0.93f, 1f), Q_FILL);
             matPadFrame = Mat("PadFrame", new Color(0.49f, 0.51f, 0.51f), null);
             matPadLine = HoloMat("PadLine", new Color(0.29f, 0.4f, 0.44f, 1f));
             matPadTabOn = HoloMat("PadTabOn", new Color(0.54f, 0.77f, 0.84f, 1f), Q_FILL);
@@ -387,9 +388,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             return body;
         }
 
+        /// <summary>パッドの文字: 太字のフォント(あれば)を、さらに太らせて少し大きく。背景との差を強くする(VR で小さい明朝の細い線が消えないように)</summary>
         static TextMeshPro PText(GameObject parent, string name, Vector2 at, float size, Vector2 rect, TextAlignmentOptions align)
         {
-            var t = Text(parent, name, new Vector3(at.x, at.y, -0.0006f), Quaternion.identity, size, rect);
+            var t = Text(parent, name, new Vector3(at.x, at.y, -0.0006f), Quaternion.identity, size * 1.12f, rect);
+            var pf = holoFont != null ? holoFont : font;
+            if (pf != null) { t.font = pf; t.fontSharedMaterial = TextMat(pf, "PadText", 0.18f); }
             t.color = PAD_TEXT;
             t.alignment = align;
             return t;
@@ -571,6 +575,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 else tm.CopyPropertiesFromMaterial(bf.material);
                 tm.shader = bf.material.shader;
                 tm.renderQueue = 3005;
+                if (tm.HasProperty("_PerspectiveFilter")) tm.SetFloat("_PerspectiveFilter", 0f);
                 EditorUtility.SetDirty(tm);
                 table.kyokuBannerText.fontSharedMaterial = tm;
             }
@@ -735,7 +740,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         static TextMeshPro HText(GameObject parent, string name, Vector2 at, float size, Vector2 rect, TextAlignmentOptions align)
         {
             var t = Text(parent, name, new Vector3(at.x, at.y, -0.002f), Quaternion.identity, size, rect);
-            if (holoFont != null) t.font = holoFont;
+            if (holoFont != null) { t.font = holoFont; t.fontSharedMaterial = TextMat(holoFont, "HoloText", 0.08f); }
             t.color = HOLO_TEXT;
             t.alignment = align;
             return t;
@@ -751,7 +756,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 b.transform.localScale = new Vector3(rect.x, rect.y, 1);
             }
             var t = Text(parent, name, new Vector3(at.x, at.y, -0.002f), Quaternion.identity, size, rect - new Vector2(0.02f, 0));
-            if (segFont != null) t.font = segFont;
+            if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f); }
             t.color = new Color(1f, 0.3f, 0.22f);
             t.alignment = TextAlignmentOptions.Center;
             t.enableWordWrapping = false;
@@ -803,6 +808,25 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         }
 
         // ================================================================ 部品
+        /// <summary>
+        /// 文字の素材(フォントごとに1つずつ作って使い回す)。TextMeshPro の初期の素材は、斜めから見るほど輪郭をぼかす
+        /// 補正(Perspective Filter = 0.875)が入っていて、VR で角度や距離によって文字が消える。これを切って、少し太らせる(dilate)。
+        /// </summary>
+        static Material TextMat(TMP_FontAsset f, string kind, float dilate)
+        {
+            if (f == null || f.material == null) return null;
+            string path = GEN + "/" + kind + "_" + f.name + ".mat";
+            var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (m == null) { m = new Material(f.material); AssetDatabase.CreateAsset(m, path); }
+            else { m.shader = f.material.shader; m.CopyPropertiesFromMaterial(f.material); }
+            m.name = kind + "_" + f.name;
+            if (m.HasProperty("_PerspectiveFilter")) m.SetFloat("_PerspectiveFilter", 0f);
+            if (m.HasProperty("_FaceDilate")) m.SetFloat("_FaceDilate", dilate);
+            ShaderUtilities.UpdateShaderRatios(m);
+            EditorUtility.SetDirty(m);
+            return m;
+        }
+
         static Vector3 U(int s) { float a = s * 45f * Mathf.Deg2Rad; return new Vector3(Mathf.Sin(a), 0, -Mathf.Cos(a)); }
         static Vector3 R(int s) { float a = s * 45f * Mathf.Deg2Rad; return new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)); }
 
@@ -872,7 +896,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             g.transform.localPosition = pos;
             g.transform.localRotation = rot;
             var t = g.AddComponent<TextMeshPro>();
-            if (font != null) t.font = font;
+            if (font != null) { t.font = font; t.fontSharedMaterial = TextMat(font, "Text", 0.05f); }
             t.fontSize = size;
             t.enableAutoSizing = false;
             t.alignment = TextAlignmentOptions.Center;
@@ -896,7 +920,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             TextMeshPro Seg(string name, Color c)
             {
                 var t = Text(g, name, lift, flat, 0.3f, new Vector2(w - 0.016f, h));
-                if (segFont != null) t.font = segFont;
+                if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f); }
                 t.alignment = TextAlignmentOptions.Right;
                 t.enableWordWrapping = false;
                 t.color = c;
