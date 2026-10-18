@@ -54,7 +54,7 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro[] rowLabels, rowValues;   // 6
         public GameObject[] rowLeft, rowRight;       // ◀ ▶
 
-        public const string VERSION = "0.3.1";
+        public const string VERSION = "0.3.2";
         public const string CREDIT = "Made by SavannaMonaka with Claude";
         public const int TAB_GAME = 0, TAB_SCORE = 1, TAB_RULE = 2, TAB_SETTING = 3;
         public const int ROWS = 6;
