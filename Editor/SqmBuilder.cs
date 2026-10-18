@@ -104,7 +104,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 var lf = holoFont != null ? holoFont : font;   // 縁の文字は太字で(細い線が欠けないように)
                 if (lf != null)
                 {
-                    foreach (var lt in new[] { table.windLabels[s], table.seatLabels[s] }) { lt.font = lf; lt.fontSharedMaterial = TextMat(lf, "RimText", 0.2f, -1, 0.875f);   // 寝かせた文字は、ぼかし補正を初期値のまま(弱めると細い線が欠ける) }
+                    // 寝かせた文字は、ぼかし補正を初期値のまま(弱めると細い線が欠ける)
+                    foreach (var lt in new[] { table.windLabels[s], table.seatLabels[s] }) { lt.font = lf; lt.fontSharedMaterial = TextMat(lf, "RimText", 0.2f, -1, 0.875f); }
                 }
                 table.seatLabels[s].enableWordWrapping = false;
                 table.seatLabels[s].overflowMode = TextOverflowModes.Ellipsis;
