@@ -104,7 +104,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 var lf = holoFont != null ? holoFont : font;   // 縁の文字は太字で(細い線が欠けないように)
                 if (lf != null)
                 {
-                    foreach (var lt in new[] { table.windLabels[s], table.seatLabels[s] }) { lt.font = lf; lt.fontSharedMaterial = TextMat(lf, "RimText", 0.15f); }
+                    foreach (var lt in new[] { table.windLabels[s], table.seatLabels[s] }) { lt.font = lf; lt.fontSharedMaterial = TextMat(lf, "RimText", 0.2f, -1, 0.875f);   // 寝かせた文字は、ぼかし補正を初期値のまま(弱めると細い線が欠ける) }
                 }
                 table.seatLabels[s].enableWordWrapping = false;
                 table.seatLabels[s].overflowMode = TextOverflowModes.Ellipsis;
@@ -761,7 +761,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 b.transform.localScale = new Vector3(rect.x, rect.y, 1);
             }
             var t = Text(parent, name, new Vector3(at.x, at.y, -0.002f), Quaternion.identity, size, rect - new Vector2(0.02f, 0));
-            if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f); }
+            if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f, -1, 0.6f); }
             t.color = new Color(1f, 0.3f, 0.22f);
             t.alignment = TextAlignmentOptions.Center;
             t.enableWordWrapping = false;
@@ -903,7 +903,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             g.transform.localPosition = pos;
             g.transform.localRotation = rot;
             var t = g.AddComponent<TextMeshPro>();
-            if (font != null) { t.font = font; t.fontSharedMaterial = TextMat(font, "Text", 0.12f); }
+            if (font != null) { t.font = font; t.fontSharedMaterial = TextMat(font, "Text", 0.2f, -1, 0.875f); }
             t.fontSize = size;
             t.enableAutoSizing = false;
             t.alignment = TextAlignmentOptions.Center;
@@ -928,7 +928,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             TextMeshPro Seg(string name, Color c)
             {
                 var t = Text(g, name, lift, flat, 0.3f, new Vector2(w - 0.016f, h));
-                if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f); }
+                if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f, -1, 0.6f); }
                 t.alignment = TextAlignmentOptions.Right;
                 t.enableWordWrapping = false;
                 t.color = c;
@@ -939,7 +939,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 // 消えている画(薄い 8888888)は、点数より必ず先に描く(同じ順番だと、見る位置で入れ替わって点数を隠す)
                 var ghost = Seg("ghost", new Color(0.32f, 0.04f, 0.03f));
                 ghost.text = "8888888";
-                ghost.fontSharedMaterial = TextMat(segFont, "SegGhost", 0f, 2998);
+                ghost.fontSharedMaterial = TextMat(segFont, "SegGhost", 0f, 2998, 0.6f);
             }
             var lit = Seg("value", new Color(1f, 0.16f, 0.1f));
             lit.transform.localPosition = lift + Vector3.up * 0.0004f;
