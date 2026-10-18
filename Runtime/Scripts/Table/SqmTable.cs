@@ -1931,7 +1931,7 @@ namespace MonakaLabo.SquareMahjong
                 if (holoPlay != null && holoPlay.activeSelf) holoPlay.SetActive(false);
                 RefreshResult(-1);
                 holo.text = "";
-                if (holoTitle != null) holoTitle.text = "<size=180%>平方麻雀²</size>\n席の「ここで打つ」で座ります。最初に座った人がホストです\nホストが「新しい試合」で始めます\n<size=80%>だれも座らなければ、NPC だけで打ちます</size>";
+                if (holoTitle != null) holoTitle.text = "<size=180%>平方麻雀²</size>\n手元のパッドの「JOIN」で席に着きます。最初に座った人がホストです\nホストがパッドの「NEW GAME」で始めます\n<size=80%>だれも座らずに「NEW GAME」を押すと、NPC だけで打ちます</size>";
                 return;
             }
             string top = "";
