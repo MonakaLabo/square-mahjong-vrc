@@ -100,7 +100,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 Quaternion flat = Quaternion.AngleAxis(-LABEL_TILT, r) * Quaternion.LookRotation(Vector3.down, -u);
                 var seat = Group(labels, "seat_" + s);
                 table.windLabels[s] = Text(seat, "wind", at - r * 0.34f, flat, 0.45f, new Vector2(0.07f, 0.07f));
-                table.seatLabels[s] = Text(seat, "name", at - r * 0.06f, flat, 0.24f, new Vector2(0.44f, 0.06f));
+                table.seatLabels[s] = Text(seat, "name", at - r * 0.06f, flat, 0.26f, new Vector2(0.44f, 0.06f));
+                var lf = holoFont != null ? holoFont : font;   // 縁の文字は太字で(細い線が欠けないように)
+                if (lf != null)
+                {
+                    foreach (var lt in new[] { table.windLabels[s], table.seatLabels[s] }) { lt.font = lf; lt.fontSharedMaterial = TextMat(lf, "RimText", 0.15f); }
+                }
                 table.seatLabels[s].enableWordWrapping = false;
                 table.seatLabels[s].overflowMode = TextOverflowModes.Ellipsis;
                 table.scoreLabels[s] = SegDisplay(seat, at + r * 0.27f + Vector3.up * 0.012f, u, LABEL_TILT);
@@ -393,7 +398,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         {
             var t = Text(parent, name, new Vector3(at.x, at.y, -0.0006f), Quaternion.identity, size * 1.12f, rect);
             var pf = holoFont != null ? holoFont : font;
-            if (pf != null) { t.font = pf; t.fontSharedMaterial = TextMat(pf, "PadText", 0.18f); }
+            if (pf != null) { t.font = pf; t.fontSharedMaterial = TextMat(pf, "PadText", 0.18f, -1, 0.25f); }
             t.color = PAD_TEXT;
             t.alignment = align;
             return t;
@@ -810,9 +815,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // ================================================================ 部品
         /// <summary>
         /// 文字の素材(フォントごとに1つずつ作って使い回す)。TextMeshPro の初期の素材は、斜めから見るほど輪郭をぼかす
-        /// 補正(Perspective Filter = 0.875)が入っていて、VR で角度や距離によって文字が消える。これを切って、少し太らせる(dilate)。
+        /// 補正(Perspective Filter = 0.875)が強すぎて、VR で角度や距離によって文字が消える。かといって 0 にすると、浅い角度で
+        /// 細い線がドットの抜けのように欠ける。なので弱めに残し(perspective)、少し太らせる(dilate)。
         /// </summary>
-        static Material TextMat(TMP_FontAsset f, string kind, float dilate, int queue = -1)
+        static Material TextMat(TMP_FontAsset f, string kind, float dilate, int queue = -1, float perspective = 0.35f)
         {
             if (f == null || f.material == null) return null;
             string path = GEN + "/" + kind + "_" + f.name + ".mat";
@@ -820,7 +826,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             if (m == null) { m = new Material(f.material); AssetDatabase.CreateAsset(m, path); }
             else { m.shader = f.material.shader; m.CopyPropertiesFromMaterial(f.material); }
             m.name = kind + "_" + f.name;
-            if (m.HasProperty("_PerspectiveFilter")) m.SetFloat("_PerspectiveFilter", 0f);
+            if (m.HasProperty("_PerspectiveFilter")) m.SetFloat("_PerspectiveFilter", perspective);
             if (m.HasProperty("_FaceDilate")) m.SetFloat("_FaceDilate", dilate);
             ShaderUtilities.UpdateShaderRatios(m);
             m.renderQueue = queue;   // -1 = シェーダーのまま(3000)
@@ -897,7 +903,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             g.transform.localPosition = pos;
             g.transform.localRotation = rot;
             var t = g.AddComponent<TextMeshPro>();
-            if (font != null) { t.font = font; t.fontSharedMaterial = TextMat(font, "Text", 0.05f); }
+            if (font != null) { t.font = font; t.fontSharedMaterial = TextMat(font, "Text", 0.12f); }
             t.fontSize = size;
             t.enableAutoSizing = false;
             t.alignment = TextAlignmentOptions.Center;
@@ -1068,7 +1074,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
         // ================================================================ 卓の形(サイバーな全自動卓)
         // 天板(フェルト)の周りに、少し立ち上がった縁。縁の上に席風・名前・点数(7セグ)と、光る線。脚は上がすぼんだ八角の台。
-        const float LABEL_TILT = 30f;   // 縁の上の表示(席風・名前・点数・確定)を、座る人の方へ起こす角度
+        const float LABEL_TILT = 40f;   // 縁の上の表示(席風・名前・点数・確定)を、座る人の方へ起こす角度
         const float FELT_AP = SqmTable.FELT_AP, RIM_AP = SqmTable.RIM_AP, RIM_H = SqmTable.RIM_H, SKIRT = 0.045f;
 
         /// <summary>八角形の角(中心からの距離 = 辺までの距離 ap、高さ y)。0番の席の辺を挟む角から順に</summary>
