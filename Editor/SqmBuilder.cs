@@ -95,14 +95,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             for (int s = 0; s < 8; s++)
             {
                 Vector3 u = U(s), r = R(s);
-                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + SqmTable.RIM_H + 0.002f);   // 縁の上
-                Quaternion flat = Quaternion.LookRotation(Vector3.down, -u);
+                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + SqmTable.RIM_H + 0.012f);   // 縁の上(起こしたぶん少し浮かせる)
+                // 縁の上の表示は、座る人の方へ LABEL_TILT 度起こす(寝かせたままだと、低い目線からは真横になって読めない)
+                Quaternion flat = Quaternion.AngleAxis(-LABEL_TILT, r) * Quaternion.LookRotation(Vector3.down, -u);
                 var seat = Group(labels, "seat_" + s);
                 table.windLabels[s] = Text(seat, "wind", at - r * 0.34f, flat, 0.45f, new Vector2(0.07f, 0.07f));
                 table.seatLabels[s] = Text(seat, "name", at - r * 0.06f, flat, 0.24f, new Vector2(0.44f, 0.06f));
                 table.seatLabels[s].enableWordWrapping = false;
                 table.seatLabels[s].overflowMode = TextOverflowModes.Ellipsis;
-                table.scoreLabels[s] = SegDisplay(seat, at + r * 0.27f, u);
+                table.scoreLabels[s] = SegDisplay(seat, at + r * 0.27f + Vector3.up * 0.012f, u, LABEL_TILT);
             }
 
             // ---- 卓の中央(王牌部)の Resync・Reset(牌と同じ大きさ) ----
@@ -121,7 +122,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 Vector3 u = U(s), r = R(s);
                 table.discardButtons[s] = Button(discards, "discard_" + s, "確定", table, "Discard",
-                    u * SqmTable.R_LABEL + r * 0.43f + Vector3.up * (TOP + SqmTable.RIM_H + 0.008f), Quaternion.LookRotation(Vector3.down, -u), new Vector3(0.07f, 0.045f, 0.016f), out _);
+                    u * SqmTable.R_LABEL + r * 0.43f + Vector3.up * (TOP + SqmTable.RIM_H + 0.014f), Quaternion.AngleAxis(-LABEL_TILT, r) * Quaternion.LookRotation(Vector3.down, -u), new Vector3(0.07f, 0.045f, 0.016f), out _);
                 table.discardButtons[s].SetActive(false);
             }
 
@@ -907,11 +908,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         }
 
         /// <summary>点数の表示: 黒い枠に赤い7セグ。消えている画も薄く見せる(DSEG7 フォントがあるとき)</summary>
-        static TextMeshPro SegDisplay(GameObject parent, Vector3 at, Vector3 u)
+        static TextMeshPro SegDisplay(GameObject parent, Vector3 at, Vector3 u, float tilt = 0f)
         {
             const float w = 0.2f, h = 0.05f;
             var g = Group(parent, "score");
             g.transform.localPosition = at;
+            g.transform.localRotation = Quaternion.AngleAxis(-tilt, Vector3.Cross(Vector3.up, -u));   // 席の方へ起こす
             var box = Prim(PrimitiveType.Cube, g, "Box", matSegBox);
             box.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
             box.transform.localScale = new Vector3(w, 0.004f, h);
@@ -1066,6 +1068,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
         // ================================================================ 卓の形(サイバーな全自動卓)
         // 天板(フェルト)の周りに、少し立ち上がった縁。縁の上に席風・名前・点数(7セグ)と、光る線。脚は上がすぼんだ八角の台。
+        const float LABEL_TILT = 30f;   // 縁の上の表示(席風・名前・点数・確定)を、座る人の方へ起こす角度
         const float FELT_AP = SqmTable.FELT_AP, RIM_AP = SqmTable.RIM_AP, RIM_H = SqmTable.RIM_H, SKIRT = 0.045f;
 
         /// <summary>八角形の角(中心からの距離 = 辺までの距離 ap、高さ y)。0番の席の辺を挟む角から順に</summary>

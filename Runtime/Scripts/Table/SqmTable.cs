@@ -95,7 +95,7 @@ namespace MonakaLabo.SquareMahjong
         public const float TOP = 0.76f;      // 卓の天板の高さ
         public const float TW = 0.026f, TH = 0.035f, TT = 0.02f; // 牌の幅・高さ・厚み
         public const float R_HAND = 1.06f, R_MELD = 0.965f, R_LABEL = 1.15f;
-        public const float FELT_AP = 1.09f, RIM_AP = 1.21f, RIM_H = 0.025f;   // 天板(フェルト)の端・縁の外側(中心から辺まで)・縁の高さ
+        public const float FELT_AP = 1.09f, RIM_AP = 1.21f, RIM_H = 0.012f;   // 天板(フェルト)の端・縁の外側(中心から辺まで)・縁の高さ
         public const float CENTER_AP = 0.2f, CENTER_H = 0.004f, R_STICK = 0.6f; // 中央のパネル・リーチ棒の位置
         public const int SLOT_HAND = 28, SLOT_RIVER = 36, SLOT_MELD = 28, N_DORA = 18, N_RON = 12, N_OPT = 12;
         public const int WALL_PER_SIDE = 75, WALLLESS_SIDE = 7;
