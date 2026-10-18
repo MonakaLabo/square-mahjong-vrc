@@ -44,6 +44,10 @@ namespace MonakaLabo.SquareMahjong
         public Transform[] centerTiles;      // 中央: ドラ表示牌 18 + ロン牌 12
         public MeshRenderer[] centerFaces;
         public Transform holoRoot;           // 上空のホロ全体(見る人の方へ向ける)
+        public Transform centerButtons;      // 中央の Resync・Reset(見ている人の席へ向ける)
+        public GameObject[] riichiSticks;    // 席ごとのリーチ棒 8
+        public MeshRenderer[] rimLights;     // 縁の光る線 8
+        public Material matLightIdle, matLightTurn, matLightRiichi;
         public TextMeshPro holoTitle;        // ホロの題字(試合が無いとき)
         public Transform kyokuBanner;        // 局の始まりに出す「東2局」(ホロの手前)
         public TextMeshPro kyokuBannerText;
@@ -90,7 +94,9 @@ namespace MonakaLabo.SquareMahjong
         // ---------------- 大きさ(m) ----------------
         public const float TOP = 0.76f;      // 卓の天板の高さ
         public const float TW = 0.026f, TH = 0.035f, TT = 0.02f; // 牌の幅・高さ・厚み
-        public const float R_HAND = 1.06f, R_MELD = 0.965f, R_LABEL = 1.13f;
+        public const float R_HAND = 1.06f, R_MELD = 0.965f, R_LABEL = 1.15f;
+        public const float FELT_AP = 1.09f, RIM_AP = 1.21f, RIM_H = 0.025f;   // 天板(フェルト)の端・縁の外側(中心から辺まで)・縁の高さ
+        public const float CENTER_AP = 0.2f, CENTER_H = 0.004f, R_STICK = 0.6f; // 中央のパネル・リーチ棒の位置
         public const int SLOT_HAND = 28, SLOT_RIVER = 36, SLOT_MELD = 28, N_DORA = 18, N_RON = 12, N_OPT = 12;
         public const int WALL_PER_SIDE = 75, WALLLESS_SIDE = 7;
         public const int NP = 8, NT = 47;
@@ -1085,28 +1091,46 @@ namespace MonakaLabo.SquareMahjong
             for (int i = n; i < SLOT_MELD; i++) Place(meldTiles[baseSlot + i], meldFaces[baseSlot + i], -1, Vector3.zero, s, true, false, false, false);
         }
 
+        /// <summary>
+        /// 中央のパネル: 奥にロン牌の列、真ん中に Resync・Reset、手前にドラ表示牌(増えたら手前へ段を足す)。見ている人の席から見た向き
+        /// </summary>
         private void RefreshCenter()
         {
             int view = humanSeat >= 0 ? humanSeat : 0;
             Vector3 u = U(view), r = R(view);
+            const int PER_ROW = 8;
+            float y = TOP + CENTER_H + TT / 2, step = TW + 0.002f, rowStep = TH + 0.003f;
+            int dn = engine.doraIndN;
             for (int i = 0; i < N_DORA; i++)
             {
-                bool show = i < engine.doraIndN && engine.phase != SqmEngine.PH_DEAL;
-                Vector3 pos = u * 0.06f + r * ((i - (engine.doraIndN - 1) / 2f) * (TW + 0.002f)) + Vector3.up * (TOP + TT / 2);
+                bool show = i < dn && engine.phase != SqmEngine.PH_DEAL;
+                int row = i / PER_ROW, inRow = Mathf.Min(PER_ROW, dn - row * PER_ROW);
+                Vector3 pos = u * (0.06f + row * rowStep) + r * ((i % PER_ROW - (inRow - 1) / 2f) * step) + Vector3.up * y;
                 Place(centerTiles[i], centerFaces[i], show ? engine.doraInd[i] : -1, pos, view, true, show, true, false);
             }
+            int rn = engine.ronTilesLen;
             for (int i = 0; i < N_RON; i++)
             {
-                bool show = i < engine.ronTilesLen && engine.phase != SqmEngine.PH_DEAL;
+                bool show = i < rn && engine.phase != SqmEngine.PH_DEAL;
                 int t = show ? engine.ronTiles[i] : -1;
-                Vector3 pos = -u * 0.06f + r * ((i - (engine.ronTilesLen - 1) / 2f) * (TW + 0.002f)) + Vector3.up * (TOP + TT / 2);
+                int row = i / PER_ROW, inRow = Mathf.Min(PER_ROW, rn - row * PER_ROW);
+                Vector3 pos = -u * (0.06f + row * rowStep) + r * ((i % PER_ROW - (inRow - 1) / 2f) * step) + Vector3.up * y;
                 Place(centerTiles[N_DORA + i], centerFaces[N_DORA + i], t, pos, view, true, show, t >= 0, false);
             }
+            if (centerButtons != null) centerButtons.localRotation = Quaternion.Euler(0, -view * 45f, 0);
         }
 
         private void RefreshLabel(int s)
         {
             bool live = lMatch > 0;
+            bool riichi = live && engine.riichiOn[s] && engine.phase != SqmEngine.PH_DEAL;
+            if (riichiSticks != null && s < riichiSticks.Length && riichiSticks[s] != null && riichiSticks[s].activeSelf != riichi) riichiSticks[s].SetActive(riichi);
+            if (rimLights != null && s < rimLights.Length && rimLights[s] != null)
+            {
+                bool turn = Running() && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == s;
+                Material m = turn ? matLightTurn : riichi ? matLightRiichi : matLightIdle;
+                if (m != null && rimLights[s].sharedMaterial != m) rimLights[s].sharedMaterial = m;
+            }
             if (seatLabels != null && s < seatLabels.Length && seatLabels[s] != null)
             {
                 string txt = NameOf(s);
