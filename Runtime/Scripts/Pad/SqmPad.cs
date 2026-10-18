@@ -260,9 +260,11 @@ namespace MonakaLabo.SquareMahjong
                     p = new Vector3(-(rowN - 1) * STEP / 2 + c * STEP, r == 0 ? Y1 : Y2, 0);
                 }
                 else p = new Vector3(0.135f + (i - mainN) * STEP, YD, 0);
+                // 板から数 mm 離す(近すぎると VR で奥行きの判定が揺れて、ちらついたり消えたりする)
+                p.z = -0.003f;
                 handTiles[i].transform.localPosition = p;
-                handLift[i].transform.localPosition = p + new Vector3(0, 0, 0.0008f);
-                if (handDim != null) handDim[i].transform.localPosition = p + new Vector3(0, 0, -0.001f);
+                handLift[i].transform.localPosition = p + new Vector3(0, 0, 0.0015f);
+                if (handDim != null) handDim[i].transform.localPosition = p + new Vector3(0, 0, -0.0015f);
             }
         }
 

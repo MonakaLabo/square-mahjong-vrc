@@ -95,7 +95,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             for (int s = 0; s < 8; s++)
             {
                 Vector3 u = U(s), r = R(s);
-                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + SqmTable.RIM_H + 0.002f);   // 縁の上
+                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + SqmTable.RIM_H + 0.006f);   // 縁の上(面から少し離す。近すぎると VR で文字がちらつく)
                 // 縁の上の表示(LABEL_TILT 度だけ座る人の方へ起こせる。いまは 0 = 寝かせたまま)
                 Quaternion flat = Quaternion.AngleAxis(-LABEL_TILT, r) * Quaternion.LookRotation(Vector3.down, -u);
                 var seat = Group(labels, "seat_" + s);
@@ -233,7 +233,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 lift.SetActive(false);
                 pad.handLift[i] = lift;
                 var t = Prim(PrimitiveType.Quad, game, "tile_" + i.ToString("00"), matHoloFaces[0]);
-                t.transform.localPosition = new Vector3(0, 0, -0.0005f);
+                t.transform.localPosition = new Vector3(0, 0, -0.003f);
                 t.transform.localScale = new Vector3(0.022f, 0.03f, 1);
                 var box = t.AddComponent<BoxCollider>();
                 box.isTrigger = true;
@@ -251,7 +251,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             for (int i = 0; i < 24; i++)
             {
                 var t = Prim(PrimitiveType.Quad, game, "meld_" + i.ToString("00"), matHoloFaces[0]);
-                t.transform.localPosition = new Vector3(-0.185f + i * 0.0125f, 0.04f, -0.0005f);
+                t.transform.localPosition = new Vector3(-0.185f + i * 0.0125f, 0.04f, -0.003f);
                 t.transform.localScale = new Vector3(0.012f, 0.016f, 1);
                 t.SetActive(false);
                 pad.meldTiles[i] = t.GetComponent<MeshRenderer>();
@@ -265,7 +265,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             for (int i = 0; i < 2; i++)
             {
                 var t = Prim(PrimitiveType.Quad, game, "call_" + i, matHoloFaces[0]);
-                t.transform.localPosition = new Vector3(0.135f + i * 0.024f, 0.04f, -0.0005f);
+                t.transform.localPosition = new Vector3(0.135f + i * 0.024f, 0.04f, -0.003f);
                 t.transform.localScale = new Vector3(0.022f, 0.03f, 1);
                 t.SetActive(false);
                 pad.callTiles[i] = t.GetComponent<MeshRenderer>();
@@ -298,10 +298,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 var at = new Vector2(col[p] * 0.127f, 0.002f + row[p] * 0.056f);
                 var frame = Prim(PrimitiveType.Quad, boxes, "frame_" + p, matPadLine);
-                frame.transform.localPosition = new Vector3(at.x, at.y, 0.0006f);
+                frame.transform.localPosition = new Vector3(at.x, at.y, -0.0015f);
                 frame.transform.localScale = new Vector3(0.12f, 0.05f, 1);
                 var fill = Prim(PrimitiveType.Quad, boxes, "fill_" + p, matPadBg);
-                fill.transform.localPosition = new Vector3(at.x, at.y, 0.0003f);
+                fill.transform.localPosition = new Vector3(at.x, at.y, -0.003f);
                 fill.transform.localScale = new Vector3(0.117f, 0.047f, 1);
                 pad.boxFills[p] = fill.GetComponent<MeshRenderer>();
                 pad.boxTexts[p] = PText(boxes, "text_" + p, at, 0.055f, new Vector2(0.11f, 0.044f), TextAlignmentOptions.TopLeft);
@@ -373,7 +373,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             panel.transform.localPosition = new Vector3(0, 0, -0.0002f);
             panel.transform.localScale = new Vector3(PW - 0.02f, PH - 0.02f, 1);
             var anchor = Group(g, "Anchor");
-            anchor.transform.localPosition = new Vector3(0, 0, -0.0012f);
+            anchor.transform.localPosition = new Vector3(0, 0, -0.003f);
             body.contentAnchor = anchor.transform;
 
             // 待機中: 平方麻雀・JOIN・NEW GAME
@@ -386,7 +386,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             TableKey(body.newButton, table, "NewMatch");
             body.nameText = PText(g, "Name", Vector2.zero, 0.14f, new Vector2(0.38f, 0.05f), TextAlignmentOptions.Center);
             // 裏に作者とバージョン
-            var credit = Text(g, "Credit", new Vector3(0, 0, 0.0135f), Quaternion.Euler(0, 180, 0), 0.1f, new Vector2(0.38f, 0.06f));
+            var credit = Text(g, "Credit", new Vector3(0, 0, 0.017f), Quaternion.Euler(0, 180, 0), 0.1f, new Vector2(0.38f, 0.06f));
             credit.color = new Color(0.85f, 0.88f, 0.9f);
             credit.text = "平方麻雀 v" + SqmPad.VERSION + "\n<size=70%>" + SqmPad.CREDIT + "</size>";
             body.visuals = new[] { frame, panel, anchor, idle, body.nameText.gameObject, credit.gameObject };
@@ -397,7 +397,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         /// <summary>パッドの文字: 太字のフォント(あれば)を、さらに太らせて少し大きく。背景との差を強くする(VR で小さい明朝の細い線が消えないように)</summary>
         static TextMeshPro PText(GameObject parent, string name, Vector2 at, float size, Vector2 rect, TextAlignmentOptions align)
         {
-            var t = Text(parent, name, new Vector3(at.x, at.y, -0.0006f), Quaternion.identity, size * 1.12f, rect);
+            var t = Text(parent, name, new Vector3(at.x, at.y, -0.005f), Quaternion.identity, size * 1.12f, rect);
             var pf = holoFont != null ? holoFont : font;
             if (pf != null) { t.font = pf; t.fontSharedMaterial = TextMat(pf, "PadText", 0.18f, -1, 0.25f); }
             t.color = PAD_TEXT;
@@ -408,7 +408,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         static void PadLine(GameObject parent, Vector2 at, Vector2 size)
         {
             var l = Prim(PrimitiveType.Quad, parent, "Line", matPadLine);
-            l.transform.localPosition = new Vector3(at.x, at.y, -0.0003f);
+            l.transform.localPosition = new Vector3(at.x, at.y, -0.0015f);
             l.transform.localScale = new Vector3(size.x, size.y, 1);
         }
 
@@ -418,13 +418,13 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var g = Group(parent, name);
             g.transform.localPosition = new Vector3(at.x, at.y, 0);
             var b = Prim(PrimitiveType.Quad, g, "Back", mat);
-            b.transform.localPosition = new Vector3(0, 0, -0.0003f);
+            b.transform.localPosition = new Vector3(0, 0, -0.0025f);
             b.transform.localScale = new Vector3(size.x, size.y, 1);
             back = b.GetComponent<MeshRenderer>();
             var edge = Prim(PrimitiveType.Quad, g, "Edge", matPadLine);
             edge.transform.localScale = new Vector3(size.x + 0.0015f, size.y + 0.0015f, 1);
             text = PText(g, "Label", Vector2.zero, fontSize, size, TextAlignmentOptions.Center);
-            text.transform.localPosition = new Vector3(0, 0, -0.0008f);
+            text.transform.localPosition = new Vector3(0, 0, -0.006f);
             text.enableWordWrapping = false;
             text.text = label;
             // 押せる所は四角全体(文字より手前に、少し厚めに)
@@ -533,10 +533,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 var at = g + new Vector2(col[p] * PITCH, row[p] * PITCH);
                 var cell = Group(map, "cell_" + p);
                 var frame = Prim(PrimitiveType.Quad, cell, "Frame", matHoloLine);
-                frame.transform.localPosition = new Vector3(at.x, at.y, 0.002f);
+                frame.transform.localPosition = new Vector3(at.x, at.y, 0.005f);
                 frame.transform.localScale = new Vector3(CELL, CELL, 1);
                 var fill = Prim(PrimitiveType.Quad, cell, "Fill", matHoloFill);
-                fill.transform.localPosition = new Vector3(at.x, at.y, 0.001f);
+                fill.transform.localPosition = new Vector3(at.x, at.y, 0.0025f);
                 fill.transform.localScale = new Vector3(CELL - 0.008f, CELL - 0.008f, 1);
                 table.holoCellFrame[p] = frame.GetComponent<MeshRenderer>();
                 table.holoCellFill[p] = fill.GetComponent<MeshRenderer>();
@@ -617,7 +617,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 q.SetActive(false);
                 table.resHand[i] = q.GetComponent<MeshRenderer>();
                 var m = Prim(PrimitiveType.Quad, hand, "mark_" + i.ToString("00"), matHoloRed);
-                m.transform.localPosition = new Vector3(x, 0.105f, 0.002f);
+                m.transform.localPosition = new Vector3(x, 0.105f, 0.004f);
                 m.transform.localScale = new Vector3(TWH + 0.01f, THH + 0.01f, 1);
                 m.SetActive(false);
                 table.resHandMark[i] = m;
@@ -745,7 +745,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         /// <summary>ホロの文字(太めの明朝・青白)</summary>
         static TextMeshPro HText(GameObject parent, string name, Vector2 at, float size, Vector2 rect, TextAlignmentOptions align)
         {
-            var t = Text(parent, name, new Vector3(at.x, at.y, -0.002f), Quaternion.identity, size, rect);
+            var t = Text(parent, name, new Vector3(at.x, at.y, -0.004f), Quaternion.identity, size, rect);
             if (holoFont != null) { t.font = holoFont; t.fontSharedMaterial = TextMat(holoFont, "HoloText", 0.08f); }
             t.color = HOLO_TEXT;
             t.alignment = align;
@@ -758,10 +758,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             if (box)
             {
                 var b = Prim(PrimitiveType.Quad, parent, name + "Box", matHoloSegBox);
-                b.transform.localPosition = new Vector3(at.x, at.y, 0.001f);
+                b.transform.localPosition = new Vector3(at.x, at.y, 0.002f);
                 b.transform.localScale = new Vector3(rect.x, rect.y, 1);
             }
-            var t = Text(parent, name, new Vector3(at.x, at.y, -0.002f), Quaternion.identity, size, rect - new Vector2(0.02f, 0));
+            var t = Text(parent, name, new Vector3(at.x, at.y, -0.004f), Quaternion.identity, size, rect - new Vector2(0.02f, 0));
             if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f, -1, 0.6f); }
             t.color = new Color(1f, 0.3f, 0.22f);
             t.alignment = TextAlignmentOptions.Center;
@@ -863,10 +863,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var body = Prim(PrimitiveType.Cube, root, "Body", matBody);
             body.transform.localScale = new Vector3(TW, TH, TT);
             var back = Prim(PrimitiveType.Quad, root, "Back", matBack);
-            back.transform.localPosition = new Vector3(0, 0, -TT / 2 - 0.0004f);
+            back.transform.localPosition = new Vector3(0, 0, -TT / 2 - 0.001f);
             back.transform.localScale = new Vector3(TW, TH, 1);
             var f = Prim(PrimitiveType.Quad, root, "Face", matFaces[0]);
-            f.transform.localPosition = new Vector3(0, 0, TT / 2 + 0.0004f);
+            f.transform.localPosition = new Vector3(0, 0, TT / 2 + 0.001f);
             f.transform.localRotation = Quaternion.Euler(0, 180, 0);
             f.transform.localScale = new Vector3(TW * 0.94f, TH * 0.95f, 1);
             face = f.GetComponent<MeshRenderer>();
@@ -891,7 +891,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var body = Prim(PrimitiveType.Cube, root, "Body", matBody);
             body.transform.localScale = new Vector3(TW, TT * 2, TH);
             var topQ = Prim(PrimitiveType.Quad, root, "Top", matBack);
-            topQ.transform.localPosition = new Vector3(0, TT + 0.0004f, 0);
+            topQ.transform.localPosition = new Vector3(0, TT + 0.001f, 0);
             topQ.transform.localRotation = Quaternion.Euler(90, 0, 0);
             topQ.transform.localScale = new Vector3(TW, TH, 1);
             return root;
@@ -925,7 +925,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             box.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
             box.transform.localScale = new Vector3(w, 0.004f, h);
             Quaternion flat = Quaternion.LookRotation(Vector3.down, -u);
-            Vector3 lift = Vector3.up * 0.0025f;
+            Vector3 lift = Vector3.up * 0.006f;
             TextMeshPro Seg(string name, Color c)
             {
                 var t = Text(g, name, lift, flat, 0.3f, new Vector2(w - 0.016f, h));
@@ -943,7 +943,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 ghost.fontSharedMaterial = TextMat(segFont, "SegGhost", 0f, 2998, 0.6f);
             }
             var lit = Seg("value", new Color(1f, 0.16f, 0.1f));
-            lit.transform.localPosition = lift + Vector3.up * 0.0004f;
+            lit.transform.localPosition = lift + Vector3.up * 0.001f;
             lit.text = "0";
             return lit;
         }
@@ -1214,14 +1214,14 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             for (int s = 0; s < 8; s++)
             {
                 Vector3 u = U(s);
-                table.rimLights[s] = LightLine(lights, "light_" + s, u * lineAp + Vector3.up * (TOP + RIM_H + 0.0006f), u, lineAp * 0.828f - 0.03f, 0.006f, matLightIdle);
+                table.rimLights[s] = LightLine(lights, "light_" + s, u * lineAp + Vector3.up * (TOP + RIM_H + 0.003f), u, lineAp * 0.828f - 0.03f, 0.006f, matLightIdle);
             }
             // 天板の外側の下にも、細い線(卓の輪郭を見せる)
             for (int s = 0; s < 8; s++)
             {
                 Vector3 u = U(s);
                 var q = Prim(PrimitiveType.Quad, lights, "skirt_" + s, matLightIdle);
-                q.transform.localPosition = u * (RIM_AP + 0.0006f) + Vector3.up * (TOP - SKIRT + 0.008f);
+                q.transform.localPosition = u * (RIM_AP + 0.002f) + Vector3.up * (TOP - SKIRT + 0.008f);
                 q.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
                 q.transform.localScale = new Vector3(RIM_AP * 0.828f - 0.01f, 0.004f, 1);
             }
@@ -1235,7 +1235,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 Vector3 u = U(s);
                 float ap = SqmTable.CENTER_AP - 0.008f;
-                LightLine(center, "edge_" + s, u * ap + Vector3.up * (TOP + SqmTable.CENTER_H + 0.0006f), u, ap * 0.828f - 0.01f, 0.004f, matLightIdle);
+                LightLine(center, "edge_" + s, u * ap + Vector3.up * (TOP + SqmTable.CENTER_H + 0.003f), u, ap * 0.828f - 0.01f, 0.004f, matLightIdle);
             }
 
             // リーチ棒(席ごと。リーチしたときだけ出る)
