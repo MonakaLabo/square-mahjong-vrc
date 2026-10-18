@@ -17,7 +17,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         const string PREFAB = PKG + "/Runtime/Prefabs/SquareMahjongTable.prefab";
         const float TOP = SqmTable.TOP, TW = SqmTable.TW, TH = SqmTable.TH, TT = SqmTable.TT;
 
-        static Material matBody, matBack, matFelt, matRim, matButton, matButtonHot, matSegBox;
+        static Material matBody, matBack, matFelt, matRim, matButton, matButtonHot, matSegBox, matPedestal, matLightIdle, matLightTurn, matLightRiichi;
         static Material matHoloPanel, matHoloLine, matHoloRed, matHoloYellow, matHoloFill, matHoloTurn, matHoloSegBox;
         static Material[] matHoloFaces;
         static Material[] matFaces;
@@ -55,10 +55,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.faceMats = matFaces;
 
             // ---- 卓 ----
-            var top = new GameObject("TableTop");
-            top.transform.SetParent(root.transform, false);
-            top.AddComponent<MeshFilter>().sharedMesh = OctagonMesh();
-            top.AddComponent<MeshRenderer>().sharedMaterials = new[] { matFelt, matRim };
+            BuildTableBody(root, table);
 
             // ---- 壁(幢 525) ----
             var wallRoot = Group(root, "Wall");
@@ -90,7 +87,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             // ---- 文字 ----
             BuildHolo(root, table);
             BuildAudio(root, table);
-            // 席ごとに、卓の縁へ寝かせて並べる(その席から読める向き): 左から 席風・名前・点数(7セグ)
+            // 席ごとに、卓の縁の上へ寝かせて並べる(その席から読める向き): 左から 席風・名前・点数(7セグ)
             table.seatLabels = new TextMeshPro[8];
             table.windLabels = new TextMeshPro[8];
             table.scoreLabels = new TextMeshPro[8];
@@ -98,22 +95,31 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             for (int s = 0; s < 8; s++)
             {
                 Vector3 u = U(s), r = R(s);
-                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + 0.002f);
-                Quaternion flat = Quaternion.LookRotation(Vector3.down, -u);
+                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + SqmTable.RIM_H + 0.002f);   // 縁の上
+                // 縁の上の表示(LABEL_TILT 度だけ座る人の方へ起こせる。いまは 0 = 寝かせたまま)
+                Quaternion flat = Quaternion.AngleAxis(-LABEL_TILT, r) * Quaternion.LookRotation(Vector3.down, -u);
                 var seat = Group(labels, "seat_" + s);
                 table.windLabels[s] = Text(seat, "wind", at - r * 0.34f, flat, 0.45f, new Vector2(0.07f, 0.07f));
-                table.seatLabels[s] = Text(seat, "name", at - r * 0.06f, flat, 0.24f, new Vector2(0.44f, 0.06f));
+                table.seatLabels[s] = Text(seat, "name", at - r * 0.06f, flat, 0.26f, new Vector2(0.44f, 0.06f));
+                var lf = holoFont != null ? holoFont : font;   // 縁の文字は太字で(細い線が欠けないように)
+                if (lf != null)
+                {
+                    // 寝かせた文字は、ぼかし補正を初期値のまま(弱めると細い線が欠ける)
+                    foreach (var lt in new[] { table.windLabels[s], table.seatLabels[s] }) { lt.font = lf; lt.fontSharedMaterial = TextMat(lf, "RimText", 0.2f, -1, 0.875f); }
+                }
                 table.seatLabels[s].enableWordWrapping = false;
                 table.seatLabels[s].overflowMode = TextOverflowModes.Ellipsis;
-                table.scoreLabels[s] = SegDisplay(seat, at + r * 0.27f, u);
+                table.scoreLabels[s] = SegDisplay(seat, at + r * 0.27f, u, LABEL_TILT);
             }
 
             // ---- 卓の中央(王牌部)の Resync・Reset(牌と同じ大きさ) ----
             var center = Group(root, "CenterButtons");
-            // 寝かせて、文字を上に向ける(0番の席から読める向き)
+            table.centerButtons = center.transform;   // 見ている人の席へ向ける(SqmTable.RefreshCenter)
+            // 寝かせて、文字を上に向ける(0番の席から読める向き。まとまりごと回す)
             var faceUp = Quaternion.LookRotation(Vector3.down, -U(0));
-            Button(center, "resync", "Resync", table, "Resync", new Vector3(-0.016f, TOP + TT / 2, 0), faceUp, new Vector3(TW, TH, TT), out _);
-            Button(center, "reset", "Reset", table, "ResetMatch", new Vector3(0.016f, TOP + TT / 2, 0), faceUp, new Vector3(TW, TH, TT), out _);
+            float cy = TOP + SqmTable.CENTER_H + TT / 2;
+            Button(center, "resync", "Resync", table, "Resync", new Vector3(-0.016f, cy, 0), faceUp, new Vector3(TW, TH, TT), out _);
+            Button(center, "reset", "Reset", table, "ResetMatch", new Vector3(0.016f, cy, 0), faceUp, new Vector3(TW, TH, TT), out _);
 
             // ---- 卓の上の「確定」(打牌の確定。自分の番だけ、自分の席に出る) ----
             table.discardButtons = new GameObject[8];
@@ -122,7 +128,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 Vector3 u = U(s), r = R(s);
                 table.discardButtons[s] = Button(discards, "discard_" + s, "確定", table, "Discard",
-                    u * 1.11f + r * 0.43f + Vector3.up * (TOP + 0.008f), Quaternion.LookRotation(Vector3.down, -u), new Vector3(0.07f, 0.045f, 0.016f), out _);
+                    u * SqmTable.R_LABEL + r * 0.43f + Vector3.up * (TOP + SqmTable.RIM_H + 0.008f), Quaternion.AngleAxis(-LABEL_TILT, r) * Quaternion.LookRotation(Vector3.down, -u), new Vector3(0.07f, 0.045f, 0.016f), out _);
                 table.discardButtons[s].SetActive(false);
             }
 
@@ -339,7 +345,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             g.transform.SetParent(parent.transform, false);
             // 手前(座る人)へ向けて 45° 傾け、板の上辺を卓の縁(天板の角)に接するように置く
             Vector3 padUp = (-u + Vector3.up).normalized;
-            Vector3 edge = u * 1.18f + Vector3.up * TOP;
+            Vector3 edge = u * (SqmTable.RIM_AP + 0.01f) + Vector3.up * (TOP + SqmTable.RIM_H);
             g.transform.localPosition = edge - padUp * (PH / 2) + r * 0.3f;
             g.transform.localRotation = Quaternion.LookRotation((-u + Vector3.down).normalized, padUp);
             // 掴む判定は板の裏側に薄く置く(ボタンの判定より奥にして、ボタンを押すじゃまをしない)
@@ -393,7 +399,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         {
             var t = Text(parent, name, new Vector3(at.x, at.y, -0.0006f), Quaternion.identity, size * 1.12f, rect);
             var pf = holoFont != null ? holoFont : font;
-            if (pf != null) { t.font = pf; t.fontSharedMaterial = TextMat(pf, "PadText", 0.18f); }
+            if (pf != null) { t.font = pf; t.fontSharedMaterial = TextMat(pf, "PadText", 0.18f, -1, 0.25f); }
             t.color = PAD_TEXT;
             t.alignment = align;
             return t;
@@ -756,7 +762,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 b.transform.localScale = new Vector3(rect.x, rect.y, 1);
             }
             var t = Text(parent, name, new Vector3(at.x, at.y, -0.002f), Quaternion.identity, size, rect - new Vector2(0.02f, 0));
-            if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f); }
+            if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f, -1, 0.6f); }
             t.color = new Color(1f, 0.3f, 0.22f);
             t.alignment = TextAlignmentOptions.Center;
             t.enableWordWrapping = false;
@@ -810,9 +816,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // ================================================================ 部品
         /// <summary>
         /// 文字の素材(フォントごとに1つずつ作って使い回す)。TextMeshPro の初期の素材は、斜めから見るほど輪郭をぼかす
-        /// 補正(Perspective Filter = 0.875)が入っていて、VR で角度や距離によって文字が消える。これを切って、少し太らせる(dilate)。
+        /// 補正(Perspective Filter = 0.875)が強すぎて、VR で角度や距離によって文字が消える。かといって 0 にすると、浅い角度で
+        /// 細い線がドットの抜けのように欠ける。なので弱めに残し(perspective)、少し太らせる(dilate)。
         /// </summary>
-        static Material TextMat(TMP_FontAsset f, string kind, float dilate, int queue = -1)
+        static Material TextMat(TMP_FontAsset f, string kind, float dilate, int queue = -1, float perspective = 0.35f)
         {
             if (f == null || f.material == null) return null;
             string path = GEN + "/" + kind + "_" + f.name + ".mat";
@@ -820,7 +827,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             if (m == null) { m = new Material(f.material); AssetDatabase.CreateAsset(m, path); }
             else { m.shader = f.material.shader; m.CopyPropertiesFromMaterial(f.material); }
             m.name = kind + "_" + f.name;
-            if (m.HasProperty("_PerspectiveFilter")) m.SetFloat("_PerspectiveFilter", 0f);
+            if (m.HasProperty("_PerspectiveFilter")) m.SetFloat("_PerspectiveFilter", perspective);
             if (m.HasProperty("_FaceDilate")) m.SetFloat("_FaceDilate", dilate);
             ShaderUtilities.UpdateShaderRatios(m);
             m.renderQueue = queue;   // -1 = シェーダーのまま(3000)
@@ -897,7 +904,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             g.transform.localPosition = pos;
             g.transform.localRotation = rot;
             var t = g.AddComponent<TextMeshPro>();
-            if (font != null) { t.font = font; t.fontSharedMaterial = TextMat(font, "Text", 0.05f); }
+            if (font != null) { t.font = font; t.fontSharedMaterial = TextMat(font, "Text", 0.2f, -1, 0.875f); }
             t.fontSize = size;
             t.enableAutoSizing = false;
             t.alignment = TextAlignmentOptions.Center;
@@ -908,11 +915,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         }
 
         /// <summary>点数の表示: 黒い枠に赤い7セグ。消えている画も薄く見せる(DSEG7 フォントがあるとき)</summary>
-        static TextMeshPro SegDisplay(GameObject parent, Vector3 at, Vector3 u)
+        static TextMeshPro SegDisplay(GameObject parent, Vector3 at, Vector3 u, float tilt = 0f)
         {
             const float w = 0.2f, h = 0.05f;
             var g = Group(parent, "score");
             g.transform.localPosition = at;
+            g.transform.localRotation = Quaternion.AngleAxis(-tilt, Vector3.Cross(Vector3.up, -u));   // 席の方へ起こす
             var box = Prim(PrimitiveType.Cube, g, "Box", matSegBox);
             box.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
             box.transform.localScale = new Vector3(w, 0.004f, h);
@@ -921,7 +929,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             TextMeshPro Seg(string name, Color c)
             {
                 var t = Text(g, name, lift, flat, 0.3f, new Vector2(w - 0.016f, h));
-                if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f); }
+                if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f, -1, 0.6f); }
                 t.alignment = TextAlignmentOptions.Right;
                 t.enableWordWrapping = false;
                 t.color = c;
@@ -932,7 +940,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 // 消えている画(薄い 8888888)は、点数より必ず先に描く(同じ順番だと、見る位置で入れ替わって点数を隠す)
                 var ghost = Seg("ghost", new Color(0.32f, 0.04f, 0.03f));
                 ghost.text = "8888888";
-                ghost.fontSharedMaterial = TextMat(segFont, "SegGhost", 0f, 2998);
+                ghost.fontSharedMaterial = TextMat(segFont, "SegGhost", 0f, 2998, 0.6f);
             }
             var lit = Seg("value", new Color(1f, 0.16f, 0.1f));
             lit.transform.localPosition = lift + Vector3.up * 0.0004f;
@@ -967,8 +975,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             if (!AssetDatabase.IsValidFolder(GEN)) AssetDatabase.CreateFolder(PKG + "/Runtime", "Generated");
             matBody = Mat("TileBody", new Color(0.97f, 0.94f, 0.86f), null);
             matBack = Mat("TileBack", new Color(0.13f, 0.50f, 0.32f), null);
-            matFelt = Mat("TableFelt", new Color(0.10f, 0.36f, 0.23f), null);
-            matRim = Mat("TableRim", new Color(0.35f, 0.22f, 0.13f), null);
+            // シックでサイバー: 天板は紺に近い墨色、縁はつやのある黒、脚は暗い金属。光る線は青白(リーチは赤)
+            matFelt = Mat("TableFelt", new Color(0.055f, 0.08f, 0.11f), null);
+            matFelt.SetFloat("_Glossiness", 0.12f);
+            matRim = Mat("TableRim", new Color(0.03f, 0.032f, 0.038f), null);
+            matRim.SetFloat("_Glossiness", 0.78f);
+            matPedestal = Mat("TablePedestal", new Color(0.13f, 0.14f, 0.16f), null);
+            matPedestal.SetFloat("_Metallic", 0.85f);
+            matPedestal.SetFloat("_Glossiness", 0.6f);
+            matLightIdle = HoloMat("LightIdle", new Color(0.16f, 0.42f, 0.56f, 1f), 2000);
+            matLightTurn = HoloMat("LightTurn", new Color(0.55f, 0.95f, 1f, 1f), 2000);
+            matLightRiichi = HoloMat("LightRiichi", new Color(1f, 0.32f, 0.26f, 1f), 2000);
             matButton = Mat("Button", new Color(0.18f, 0.16f, 0.14f), null);
             matButtonHot = Mat("ButtonHot", new Color(0.75f, 0.55f, 0.18f), null);
             matSegBox = Mat("SegBox", new Color(0.03f, 0.03f, 0.03f), null);
@@ -1056,54 +1073,193 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             }
         }
 
-        /// <summary>八角形の卓(天板 + 縁)。サブメッシュ0 = 天板、1 = 側面</summary>
-        static Mesh OctagonMesh()
+        // ================================================================ 卓の形(サイバーな全自動卓)
+        // 天板(フェルト)の周りに、少し立ち上がった縁。縁の上に席風・名前・点数(7セグ)と、光る線。脚は上がすぼんだ八角の台。
+        const float LABEL_TILT = 0f;    // 縁の上の表示(席風・名前・点数・確定)を、座る人の方へ起こす角度(いまは起こさない)
+        const float FELT_AP = SqmTable.FELT_AP, RIM_AP = SqmTable.RIM_AP, RIM_H = SqmTable.RIM_H, SKIRT = 0.045f;
+
+        /// <summary>八角形の角(中心からの距離 = 辺までの距離 ap、高さ y)。0番の席の辺を挟む角から順に</summary>
+        static Vector3[] OctRing(float ap, float y)
         {
-            string path = GEN + "/TableOctagon.asset";
-            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
-            if (mesh != null) return mesh;
-            mesh = new Mesh { name = "TableOctagon" };
-            const float apothem = 1.17f, thick = 0.06f;
-            float rad = apothem / Mathf.Cos(22.5f * Mathf.Deg2Rad);
-            var v = new System.Collections.Generic.List<Vector3>();
-            var topTris = new System.Collections.Generic.List<int>();
-            var sideTris = new System.Collections.Generic.List<int>();
-            v.Add(new Vector3(0, TOP, 0));
+            float rad = ap / Mathf.Cos(22.5f * Mathf.Deg2Rad);
+            var p = new Vector3[8];
             for (int k = 0; k < 8; k++)
             {
-                float a = (k * 45f + 22.5f) * Mathf.Deg2Rad;
-                v.Add(new Vector3(Mathf.Sin(a) * rad, TOP, -Mathf.Cos(a) * rad));
+                float a = (k * 45f - 22.5f) * Mathf.Deg2Rad;
+                p[k] = new Vector3(Mathf.Sin(a) * rad, y, -Mathf.Cos(a) * rad);
             }
-            for (int k = 0; k < 8; k++) { topTris.Add(0); topTris.Add(1 + (k + 1) % 8); topTris.Add(1 + k); }
-            int baseIdx = v.Count;
+            return p;
+        }
+
+        /// <summary>2つの八角形の輪のあいだを面でつなぐ(表裏どちらからも見えるように両面)</summary>
+        static void Strip(System.Collections.Generic.List<Vector3> v, System.Collections.Generic.List<int> tris, Vector3[] a, Vector3[] b)
+        {
             for (int k = 0; k < 8; k++)
             {
-                Vector3 a = v[1 + k], b = v[1 + (k + 1) % 8];
-                int i0 = v.Count;
-                v.Add(a); v.Add(b); v.Add(b + Vector3.down * thick); v.Add(a + Vector3.down * thick);
-                sideTris.Add(i0); sideTris.Add(i0 + 1); sideTris.Add(i0 + 2);
-                sideTris.Add(i0); sideTris.Add(i0 + 2); sideTris.Add(i0 + 3);
+                int j = (k + 1) % 8, i0 = v.Count;
+                v.Add(a[k]); v.Add(a[j]); v.Add(b[j]); v.Add(b[k]);
+                tris.Add(i0); tris.Add(i0 + 1); tris.Add(i0 + 2); tris.Add(i0); tris.Add(i0 + 2); tris.Add(i0 + 3);
+                tris.Add(i0); tris.Add(i0 + 2); tris.Add(i0 + 1); tris.Add(i0); tris.Add(i0 + 3); tris.Add(i0 + 2);
             }
-            // 脚の代わりの柱
-            int p0 = v.Count;
-            float pw = 0.2f;
-            Vector3[] pc = { new Vector3(-pw, 0, -pw), new Vector3(pw, 0, -pw), new Vector3(pw, 0, pw), new Vector3(-pw, 0, pw) };
-            for (int k = 0; k < 4; k++)
+        }
+
+        /// <summary>八角形の面(上向き up = true、下向き false)</summary>
+        static void Fan(System.Collections.Generic.List<Vector3> v, System.Collections.Generic.List<int> tris, Vector3[] ring, bool up)
+        {
+            int c = v.Count;
+            v.Add(new Vector3(0, ring[0].y, 0));
+            for (int k = 0; k < 8; k++) v.Add(ring[k]);
+            for (int k = 0; k < 8; k++)
             {
-                Vector3 a = pc[k], b = pc[(k + 1) % 4];
-                int i0 = v.Count;
-                v.Add(a + Vector3.up * (TOP - thick)); v.Add(b + Vector3.up * (TOP - thick)); v.Add(b); v.Add(a);
-                sideTris.Add(i0); sideTris.Add(i0 + 1); sideTris.Add(i0 + 2);
-                sideTris.Add(i0); sideTris.Add(i0 + 2); sideTris.Add(i0 + 3);
+                int a = c + 1 + k, b = c + 1 + (k + 1) % 8;
+                if (up) { tris.Add(c); tris.Add(b); tris.Add(a); } else { tris.Add(c); tris.Add(a); tris.Add(b); }
             }
-            mesh.SetVertices(v);
-            mesh.subMeshCount = 2;
-            mesh.SetTriangles(topTris, 0);
-            mesh.SetTriangles(sideTris, 1);
+        }
+
+        static Mesh SaveMesh(Mesh mesh, string path)
+        {
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
+            var old = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (old != null) { old.Clear(); EditorUtility.CopySerialized(mesh, old); EditorUtility.SetDirty(old); return old; }
             AssetDatabase.CreateAsset(mesh, path);
             return mesh;
         }
+
+        /// <summary>天板と縁。サブメッシュ 0 = フェルト、1 = 縁(内側の斜面・上面・外側の面取り・側面・底)</summary>
+        static Mesh TableMesh()
+        {
+            var mesh = new Mesh { name = "SqmTableTop" };
+            var v = new System.Collections.Generic.List<Vector3>();
+            var felt = new System.Collections.Generic.List<int>();
+            var rim = new System.Collections.Generic.List<int>();
+            Fan(v, felt, OctRing(FELT_AP, TOP), true);
+            var inLow = OctRing(FELT_AP, TOP);
+            var inTop = OctRing(FELT_AP + 0.012f, TOP + RIM_H);          // 内側は斜めに立ち上がる
+            var outTop = OctRing(RIM_AP - 0.012f, TOP + RIM_H);
+            var outEdge = OctRing(RIM_AP, TOP + RIM_H - 0.012f);         // 外側の角は面取り
+            var outLow = OctRing(RIM_AP, TOP - SKIRT);
+            Strip(v, rim, inLow, inTop);
+            Strip(v, rim, inTop, outTop);
+            Strip(v, rim, outTop, outEdge);
+            Strip(v, rim, outEdge, outLow);
+            Fan(v, rim, OctRing(RIM_AP, TOP - SKIRT), false);
+            mesh.SetVertices(v);
+            mesh.subMeshCount = 2;
+            mesh.SetTriangles(felt, 0);
+            mesh.SetTriangles(rim, 1);
+            return SaveMesh(mesh, GEN + "/SqmTableTop.asset");
+        }
+
+        /// <summary>脚: 上がすぼんだ八角の台(床から天板の下まで)</summary>
+        static Mesh PedestalMesh()
+        {
+            var mesh = new Mesh { name = "SqmPedestal" };
+            var v = new System.Collections.Generic.List<Vector3>();
+            var t = new System.Collections.Generic.List<int>();
+            float topY = TOP - SKIRT;
+            var b0 = OctRing(0.46f, 0f);
+            var b1 = OctRing(0.46f, 0.05f);     // 床に接する台座
+            var b2 = OctRing(0.40f, 0.07f);
+            var top = OctRing(0.2f, topY);
+            Strip(v, t, b0, b1);
+            Strip(v, t, b1, b2);
+            Strip(v, t, b2, top);
+            Fan(v, t, b2, true);
+            mesh.SetVertices(v);
+            mesh.SetTriangles(t, 0);
+            return SaveMesh(mesh, GEN + "/SqmPedestal.asset");
+        }
+
+        /// <summary>中央のパネル(ロン牌・Resync/Reset・ドラ表示牌を載せる、黒い八角の板)</summary>
+        static Mesh CenterPanelMesh()
+        {
+            var mesh = new Mesh { name = "SqmCenterPanel" };
+            var v = new System.Collections.Generic.List<Vector3>();
+            var t = new System.Collections.Generic.List<int>();
+            float h = SqmTable.CENTER_H;
+            Fan(v, t, OctRing(SqmTable.CENTER_AP, TOP + h), true);
+            Strip(v, t, OctRing(SqmTable.CENTER_AP, TOP + h), OctRing(SqmTable.CENTER_AP + 0.004f, TOP));
+            mesh.SetVertices(v);
+            mesh.SetTriangles(t, 0);
+            return SaveMesh(mesh, GEN + "/SqmCenterPanel.asset");
+        }
+
+        /// <summary>光る線(寝かせた細い板)。at は中心、u は卓の中心 → 席の向き</summary>
+        static MeshRenderer LightLine(GameObject parent, string name, Vector3 at, Vector3 u, float length, float width, Material mat)
+        {
+            var q = Prim(PrimitiveType.Quad, parent, name, mat);
+            q.transform.localPosition = at;
+            q.transform.localRotation = Quaternion.LookRotation(Vector3.down, -u);
+            q.transform.localScale = new Vector3(length, width, 1);
+            return q.GetComponent<MeshRenderer>();
+        }
+
+        static void BuildTableBody(GameObject root, SqmTable table)
+        {
+            var top = new GameObject("TableTop");
+            top.transform.SetParent(root.transform, false);
+            top.AddComponent<MeshFilter>().sharedMesh = TableMesh();
+            top.AddComponent<MeshRenderer>().sharedMaterials = new[] { matFelt, matRim };
+            var leg = new GameObject("Pedestal");
+            leg.transform.SetParent(root.transform, false);
+            leg.AddComponent<MeshFilter>().sharedMesh = PedestalMesh();
+            leg.AddComponent<MeshRenderer>().sharedMaterial = matPedestal;
+
+            // 縁の光る線(席ごと。手番の席だけ明るく、リーチの席は赤く)
+            table.rimLights = new MeshRenderer[8];
+            table.matLightIdle = matLightIdle; table.matLightTurn = matLightTurn; table.matLightRiichi = matLightRiichi;
+            var lights = Group(root, "RimLights");
+            float lineAp = FELT_AP + 0.02f;
+            for (int s = 0; s < 8; s++)
+            {
+                Vector3 u = U(s);
+                table.rimLights[s] = LightLine(lights, "light_" + s, u * lineAp + Vector3.up * (TOP + RIM_H + 0.0006f), u, lineAp * 0.828f - 0.03f, 0.006f, matLightIdle);
+            }
+            // 天板の外側の下にも、細い線(卓の輪郭を見せる)
+            for (int s = 0; s < 8; s++)
+            {
+                Vector3 u = U(s);
+                var q = Prim(PrimitiveType.Quad, lights, "skirt_" + s, matLightIdle);
+                q.transform.localPosition = u * (RIM_AP + 0.0006f) + Vector3.up * (TOP - SKIRT + 0.008f);
+                q.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
+                q.transform.localScale = new Vector3(RIM_AP * 0.828f - 0.01f, 0.004f, 1);
+            }
+
+            // 中央のパネル(黒い八角の板と、光る縁)
+            var center = new GameObject("CenterPanel");
+            center.transform.SetParent(root.transform, false);
+            center.AddComponent<MeshFilter>().sharedMesh = CenterPanelMesh();
+            center.AddComponent<MeshRenderer>().sharedMaterial = matRim;
+            for (int s = 0; s < 8; s++)
+            {
+                Vector3 u = U(s);
+                float ap = SqmTable.CENTER_AP - 0.008f;
+                LightLine(center, "edge_" + s, u * ap + Vector3.up * (TOP + SqmTable.CENTER_H + 0.0006f), u, ap * 0.828f - 0.01f, 0.004f, matLightIdle);
+            }
+
+            // リーチ棒(席ごと。リーチしたときだけ出る)
+            table.riichiSticks = new GameObject[8];
+            var sticks = Group(root, "RiichiSticks");
+            var stickTex = AssetDatabase.LoadAssetAtPath<Texture2D>(PKG + "/Runtime/Textures/Sticks/stick_1000.png");
+            var stickMat = ShaderMat("StickTop", "Unlit/Transparent", Color.white, stickTex, Q_PART);
+            for (int s = 0; s < 8; s++)
+            {
+                Vector3 u = U(s);
+                var g = Group(sticks, "stick_" + s);
+                g.transform.localPosition = u * SqmTable.R_STICK + Vector3.up * TOP;
+                g.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
+                var body = Prim(PrimitiveType.Cube, g, "Body", matBody);
+                body.transform.localPosition = new Vector3(0, 0.003f, 0);
+                body.transform.localScale = new Vector3(0.115f, 0.006f, 0.03f);
+                var face = Prim(PrimitiveType.Quad, g, "Face", stickMat);
+                face.transform.localPosition = new Vector3(0, 0.0062f, 0);
+                face.transform.localRotation = Quaternion.Euler(90, 180, 0);
+                face.transform.localScale = new Vector3(0.12f, 0.0326f, 1);
+                g.SetActive(false);
+                table.riichiSticks[s] = g;
+            }
+        }
+
     }
 }

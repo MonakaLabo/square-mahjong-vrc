@@ -53,7 +53,8 @@ b = make(0.12)
 n = int(SR * 0.03)
 place(b, rng.standard_normal(n) * env(n, 0.0005, 120), 0)
 place(b, tone(820, 0.1, 45, (1.0, 0.5, 0.2)), 0)
-save('discard', b, 0.7)
+if not os.path.exists(os.path.join(OUT, 'sfx_discard.wav')):   # 録音の打牌の音(dahai)があれば、それを残す
+    save('discard', b, 0.7)
 
 # 鳴き: 2音の明るいチャイム
 b = make(0.45)
