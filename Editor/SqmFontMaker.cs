@@ -18,9 +18,22 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         const string CHARS = "Packages/jp.monakalabo.square-mahjong/Runtime/Fonts/SqmCharacters.txt";
         const string SEG_CHARS = "0123456789-:!. ";
 
+        /// <summary>
+        /// TMP Essential Resources(TextMeshPro のシェーダー)が読み込まれているか。無いとフォントを作れないので、案内して読み込みの画面を開く
+        /// </summary>
+        static bool HasTmpEssentials()
+        {
+            if (Shader.Find("TextMeshPro/Mobile/Distance Field") != null && Shader.Find("TextMeshPro/Distance Field") != null) return true;
+            if (EditorUtility.DisplayDialog("平方麻雀", "TextMeshPro の「TMP Essential Resources」がまだ読み込まれていません。
+読み込みの画面を開くので、Import を押してから、もう一度このメニューを実行してください。", "開く", "やめる"))
+                EditorApplication.ExecuteMenuItem("Window/TextMeshPro/Import TMP Essential Resources");
+            return false;
+        }
+
         [MenuItem("Tools/平方麻雀/TMP フォントを作る")]
         public static void Make()
         {
+            if (!HasTmpEssentials()) return;
             var fonts = new List<Font>();
             foreach (var o in Selection.objects) if (o is Font f) fonts.Add(f);
             if (fonts.Count == 0)
@@ -66,6 +79,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         [MenuItem("Tools/平方麻雀/動的フォールバックを作る")]
         public static void MakeFallback()
         {
+            if (!HasTmpEssentials()) return;
             Font src = null;
             foreach (var o in Selection.objects) if (o is Font f && !f.name.ToLowerInvariant().Contains("dseg")) { src = f; break; }
             if (src == null)
