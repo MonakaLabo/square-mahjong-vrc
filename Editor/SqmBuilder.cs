@@ -812,7 +812,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         /// 文字の素材(フォントごとに1つずつ作って使い回す)。TextMeshPro の初期の素材は、斜めから見るほど輪郭をぼかす
         /// 補正(Perspective Filter = 0.875)が入っていて、VR で角度や距離によって文字が消える。これを切って、少し太らせる(dilate)。
         /// </summary>
-        static Material TextMat(TMP_FontAsset f, string kind, float dilate)
+        static Material TextMat(TMP_FontAsset f, string kind, float dilate, int queue = -1)
         {
             if (f == null || f.material == null) return null;
             string path = GEN + "/" + kind + "_" + f.name + ".mat";
@@ -823,6 +823,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             if (m.HasProperty("_PerspectiveFilter")) m.SetFloat("_PerspectiveFilter", 0f);
             if (m.HasProperty("_FaceDilate")) m.SetFloat("_FaceDilate", dilate);
             ShaderUtilities.UpdateShaderRatios(m);
+            m.renderQueue = queue;   // -1 = シェーダーのまま(3000)
             EditorUtility.SetDirty(m);
             return m;
         }
@@ -926,7 +927,13 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 t.color = c;
                 return t;
             }
-            if (segFont != null) Seg("ghost", new Color(0.32f, 0.04f, 0.03f)).text = "8888888";
+            if (segFont != null)
+            {
+                // 消えている画(薄い 8888888)は、点数より必ず先に描く(同じ順番だと、見る位置で入れ替わって点数を隠す)
+                var ghost = Seg("ghost", new Color(0.32f, 0.04f, 0.03f));
+                ghost.text = "8888888";
+                ghost.fontSharedMaterial = TextMat(segFont, "SegGhost", 0f, 2998);
+            }
             var lit = Seg("value", new Color(1f, 0.16f, 0.1f));
             lit.transform.localPosition = lift + Vector3.up * 0.0004f;
             lit.text = "0";
