@@ -24,8 +24,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         static bool HasTmpEssentials()
         {
             if (Shader.Find("TextMeshPro/Mobile/Distance Field") != null && Shader.Find("TextMeshPro/Distance Field") != null) return true;
-            if (EditorUtility.DisplayDialog("平方麻雀", "TextMeshPro の「TMP Essential Resources」がまだ読み込まれていません。
-読み込みの画面を開くので、Import を押してから、もう一度このメニューを実行してください。", "開く", "やめる"))
+            if (EditorUtility.DisplayDialog("平方麻雀", "TextMeshPro の「TMP Essential Resources」がまだ読み込まれていません。\n読み込みの画面を開くので、Import を押してから、もう一度このメニューを実行してください。", "開く", "やめる"))
                 EditorApplication.ExecuteMenuItem("Window/TextMeshPro/Import TMP Essential Resources");
             return false;
         }
