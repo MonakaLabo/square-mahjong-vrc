@@ -81,7 +81,8 @@ namespace MonakaLabo.SquareMahjong
         [System.NonSerialized] public float voiceVolume = 1f;   // 声の音量(パッドで変える)
         public TextMeshPro[] seatLabels;     // 席の名前 8
         public TextMeshPro[] windLabels;     // 席風 8
-        public TextMeshPro[] scoreLabels;    // 点数(7セグ) 8
+        public TextMeshPro[] scoreLabels;    // 点数(7セグ) 8。この3つは卓の下の写し場にあり、labelCamera で画像に写して縁に貼る
+        public Camera labelCamera;           // 縁の文字を画像に写すカメラ(文字が変わったときだけ動かす)
         public GameObject[] joinButtons;     // 席の「ここで打つ」 8
         public GameObject leaveButton;       // 「席を立つ」
         public GameObject newMatchButton;    // 「新しい試合」
@@ -1156,6 +1157,7 @@ namespace MonakaLabo.SquareMahjong
                 windLabels[s].text = live ? WindName(engine.SeatWindOf(s, engine.dealer)) : "";
             if (scoreLabels != null && s < scoreLabels.Length && scoreLabels[s] != null)
                 scoreLabels[s].text = live ? engine.score[s].ToString() : "";
+            CheckLabelChanged(s);
             if (joinButtons != null && s < joinButtons.Length && joinButtons[s] != null)
             {
                 // 座っていない人に、空いている席だけ出す。NPC だけの試合中はどこにも座れない
@@ -1165,6 +1167,36 @@ namespace MonakaLabo.SquareMahjong
         }
 
         private string WindName(int t) { return tileNames[t - 36]; }
+
+        private string[] labelShown;
+        private int labelOffFrame;
+
+        /// <summary>席 s の縁の文字が、前に写したときから変わっていたら写し直す</summary>
+        private void CheckLabelChanged(int s)
+        {
+            if (labelCamera == null) return;
+            if (labelShown == null) labelShown = new string[NP];
+            string key = (seatLabels != null && seatLabels[s] != null ? seatLabels[s].text : "")
+                + "|" + (windLabels != null && windLabels[s] != null ? windLabels[s].text : "")
+                + "|" + (scoreLabels != null && scoreLabels[s] != null ? scoreLabels[s].text : "");
+            if (labelShown[s] == key) return;
+            labelShown[s] = key;
+            RenderLabels();
+        }
+
+        /// <summary>縁の文字の画像を写す: カメラを数フレームだけ動かして止める(続けて変わったら、止めるのを延ばす)</summary>
+        private void RenderLabels()
+        {
+            if (labelCamera == null) return;
+            if (!labelCamera.enabled) labelCamera.enabled = true;
+            labelOffFrame = Time.frameCount + 2;
+            SendCustomEventDelayedFrames(nameof(StopLabelCamera), 3);
+        }
+
+        public void StopLabelCamera()
+        {
+            if (labelCamera != null && Time.frameCount >= labelOffFrame) labelCamera.enabled = false;
+        }
 
         private void RefreshControls()
         {

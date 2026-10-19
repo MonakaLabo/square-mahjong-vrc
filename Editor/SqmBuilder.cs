@@ -88,29 +88,76 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             BuildHolo(root, table);
             BuildAudio(root, table);
             // 席ごとに、卓の縁の上へ寝かせて並べる(その席から読める向き): 左から 席風・名前・点数(7セグ)
+            // 文字は縁に直接置かず、卓の下の離れた所(写し場)に並べてカメラで1枚の画像(RimLabels)に写し、その画像を縁に貼る。
+            // 寝かせた TextMeshPro の文字は、座った目線のような浅い角度だと縦が数ピクセルにつぶれ、頭が少し動くだけでちらつく
+            // (文字の絵にミップマップが無いため)。画像にすればミップマップと異方性フィルタが効いて落ち着く。
+            // 写すのは文字が変わったときだけ(SqmTable.RefreshLabel → RenderLabels)
             table.seatLabels = new TextMeshPro[8];
             table.windLabels = new TextMeshPro[8];
             table.scoreLabels = new TextMeshPro[8];
             var labels = Group(root, "SeatLabels");
+            var studio = Group(root, "LabelStudio");
+            studio.transform.localPosition = new Vector3(0, -30f, 0);   // 床の下の、誰にも見えない所
+            var labelTex = LabelTexture();
+            var cam = Group(studio, "Camera").AddComponent<Camera>();
+            cam.transform.localPosition = new Vector3(0, 0, -0.2f);
+            cam.orthographic = true;
+            cam.orthographicSize = LABEL_HALF;
+            cam.nearClipPlane = 0.1f;
+            cam.farClipPlane = 0.3f;
+            cam.clearFlags = CameraClearFlags.SolidColor;
+            cam.backgroundColor = new Color(0, 0, 0, 0);
+            cam.cullingMask = 1 << studio.layer;
+            cam.stereoTargetEye = StereoTargetEyeMask.None;
+            cam.allowHDR = false;
+            cam.allowMSAA = false;
+            cam.useOcclusionCulling = false;
+            cam.depth = -10;
+            cam.targetTexture = labelTex;
+            cam.enabled = false;   // ふだんは止めておく
+            table.labelCamera = cam;
+
+            var bv = new Vector3[32];
+            var buv = new Vector2[32];
+            var btri = new int[48];
             for (int s = 0; s < 8; s++)
             {
                 Vector3 u = U(s), r = R(s);
-                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + SqmTable.RIM_H + 0.006f);   // 縁の上(面から少し離す。近すぎると VR で文字がちらつく)
-                // 縁の上の表示(LABEL_TILT 度だけ座る人の方へ起こせる。いまは 0 = 寝かせたまま)
-                Quaternion flat = Quaternion.AngleAxis(-LABEL_TILT, r) * Quaternion.LookRotation(Vector3.down, -u);
-                var seat = Group(labels, "seat_" + s);
-                table.windLabels[s] = Text(seat, "wind", at - r * 0.34f, flat, 0.45f, new Vector2(0.07f, 0.07f));
-                table.seatLabels[s] = Text(seat, "name", at - r * 0.06f, flat, 0.26f, new Vector2(0.44f, 0.06f));
+                Vector3 at = u * SqmTable.R_LABEL + Vector3.up * (TOP + SqmTable.RIM_H);
+                // 写し場では、上から席 0, 1, … の順に1行ずつ並べる(カメラの方を向けて。左右の並びは縁の上と同じ)
+                var row = Group(studio, "seat_" + s);
+                row.transform.localPosition = new Vector3(0, LABEL_HALF - LABEL_ROW * (s + 0.5f), 0);
+                table.windLabels[s] = Text(row, "wind", new Vector3(-0.34f, 0, 0), Quaternion.identity, 0.45f, new Vector2(0.07f, 0.07f));
+                table.seatLabels[s] = Text(row, "name", new Vector3(-0.06f, 0, 0), Quaternion.identity, 0.26f, new Vector2(0.44f, 0.06f));
                 var lf = holoFont != null ? holoFont : font;   // 縁の文字は太字で(細い線が欠けないように)
                 if (lf != null)
-                {
-                    // 寝かせた文字は、ぼかし補正を初期値のまま(弱めると細い線が欠ける)
-                    foreach (var lt in new[] { table.windLabels[s], table.seatLabels[s] }) { lt.font = lf; lt.fontSharedMaterial = TextMat(lf, "RimText", 0.2f, -1, 0.875f); }
-                }
+                    foreach (var lt in new[] { table.windLabels[s], table.seatLabels[s] }) { lt.font = lf; lt.fontSharedMaterial = TextMat(lf, "RimText", 0.2f, -1, 0f); }
                 table.seatLabels[s].enableWordWrapping = false;
                 table.seatLabels[s].overflowMode = TextOverflowModes.Ellipsis;
-                table.scoreLabels[s] = SegDisplay(seat, at + r * 0.27f, u, LABEL_TILT);
+                table.scoreLabels[s] = SegText(row, new Vector3(0.27f, 0, 0));
+                SegBox(labels, at + r * 0.27f + Vector3.up * 0.003f, u);   // 7セグの黒い箱だけは縁に置く
+
+                // 縁に貼る板(画像の s 行目)。箱より上に、面から少し離して置く
+                Vector3 c = at + Vector3.up * 0.007f, ax = r * LABEL_HALF, ay = -u * (LABEL_ROW / 2);
+                float v0 = 1f - (s + 1) / 8f, v1 = 1f - s / 8f;
+                int k = s * 4;
+                bv[k] = c - ax - ay; buv[k] = new Vector2(0, v0);
+                bv[k + 1] = c + ax - ay; buv[k + 1] = new Vector2(1, v0);
+                bv[k + 2] = c + ax + ay; buv[k + 2] = new Vector2(1, v1);
+                bv[k + 3] = c - ax + ay; buv[k + 3] = new Vector2(0, v1);
+                btri[s * 6] = k; btri[s * 6 + 1] = k + 2; btri[s * 6 + 2] = k + 1;
+                btri[s * 6 + 3] = k; btri[s * 6 + 4] = k + 3; btri[s * 6 + 5] = k + 2;
             }
+            var boardMesh = new Mesh { name = "RimLabels" };
+            boardMesh.vertices = bv;
+            boardMesh.uv = buv;
+            boardMesh.triangles = btri;
+            var board = Group(labels, "RimLabels");
+            board.AddComponent<MeshFilter>().sharedMesh = SaveMesh(boardMesh, GEN + "/RimLabels.asset");
+            var boardRenderer = board.AddComponent<MeshRenderer>();
+            boardRenderer.sharedMaterial = LabelMat(labelTex);
+            boardRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            boardRenderer.receiveShadows = false;
 
             // ---- 卓の中央(王牌部)の Resync・Reset(牌と同じ大きさ) ----
             var center = Group(root, "CenterButtons");
@@ -925,21 +972,24 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         }
 
         /// <summary>点数の表示: 黒い枠に赤い7セグ。消えている画も薄く見せる(DSEG7 フォントがあるとき)</summary>
-        static TextMeshPro SegDisplay(GameObject parent, Vector3 at, Vector3 u, float tilt = 0f)
+        /// <summary>7セグの黒い箱(縁の上。数字は写し場で描いて、縁の画像に入れる)</summary>
+        static void SegBox(GameObject parent, Vector3 at, Vector3 u)
         {
-            const float w = 0.2f, h = 0.05f;
+            var box = Prim(PrimitiveType.Cube, parent, "score_box", matSegBox);
+            box.transform.localPosition = at;
+            box.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
+            box.transform.localScale = new Vector3(SEG_W, 0.004f, SEG_H);
+        }
+
+        /// <summary>7セグの数字(写し場に、カメラの方へ向けて置く)。消えている画の薄い 8888888 の上に、光っている数字を重ねる</summary>
+        static TextMeshPro SegText(GameObject parent, Vector3 at)
+        {
             var g = Group(parent, "score");
             g.transform.localPosition = at;
-            g.transform.localRotation = Quaternion.AngleAxis(-tilt, Vector3.Cross(Vector3.up, -u));   // 席の方へ起こす
-            var box = Prim(PrimitiveType.Cube, g, "Box", matSegBox);
-            box.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
-            box.transform.localScale = new Vector3(w, 0.004f, h);
-            Quaternion flat = Quaternion.LookRotation(Vector3.down, -u);
-            Vector3 lift = Vector3.up * 0.006f;
             TextMeshPro Seg(string name, Color c)
             {
-                var t = Text(g, name, lift, flat, 0.3f, new Vector2(w - 0.016f, h));
-                if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f, -1, 0.6f); }
+                var t = Text(g, name, Vector3.zero, Quaternion.identity, 0.3f, new Vector2(SEG_W - 0.016f, SEG_H));
+                if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "SegText", 0f, -1, 0f); }
                 t.alignment = TextAlignmentOptions.Right;
                 t.enableWordWrapping = false;
                 t.color = c;
@@ -947,15 +997,47 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             }
             if (segFont != null)
             {
-                // 消えている画(薄い 8888888)は、点数より必ず先に描く(同じ順番だと、見る位置で入れ替わって点数を隠す)
+                // 消えている画(薄い 8888888)は、点数より必ず先に描く
                 var ghost = Seg("ghost", new Color(0.32f, 0.04f, 0.03f));
                 ghost.text = "8888888";
-                ghost.fontSharedMaterial = TextMat(segFont, "SegGhost", 0f, 2998, 0.6f);
+                ghost.fontSharedMaterial = TextMat(segFont, "SegGhost", 0f, 2998, 0f);
             }
             var lit = Seg("value", new Color(1f, 0.16f, 0.1f));
-            lit.transform.localPosition = lift + Vector3.up * 0.001f;
+            lit.transform.localPosition = new Vector3(0, 0, -0.001f);   // カメラ寄り
             lit.text = "0";
             return lit;
+        }
+
+        /// <summary>縁の文字を写す画像(ミップマップ付き。浅い角度でもちらつかないように異方性フィルタも効かせる)</summary>
+        static RenderTexture LabelTexture()
+        {
+            string path = GEN + "/RimLabels.renderTexture";
+            var rt = AssetDatabase.LoadAssetAtPath<RenderTexture>(path);
+            if (rt == null)
+            {
+                rt = new RenderTexture(LABEL_TEX, LABEL_TEX, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.sRGB);
+                rt.useMipMap = true;
+                rt.autoGenerateMips = true;
+                AssetDatabase.CreateAsset(rt, path);
+            }
+            rt.anisoLevel = 16;
+            rt.filterMode = FilterMode.Trilinear;
+            rt.wrapMode = TextureWrapMode.Clamp;
+            EditorUtility.SetDirty(rt);
+            return rt;
+        }
+
+        /// <summary>縁に貼る板の素材(写した画像を、乗算済みのアルファでそのまま重ねる)</summary>
+        static Material LabelMat(Texture tex)
+        {
+            var sh = Shader.Find("SquareMahjong/RimLabel");
+            string path = GEN + "/RimLabels.mat";
+            var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (m == null) { m = new Material(sh); AssetDatabase.CreateAsset(m, path); }
+            else m.shader = sh;
+            m.mainTexture = tex;
+            EditorUtility.SetDirty(m);
+            return m;
         }
 
         static GameObject Button(GameObject parent, string name, string label, SqmTable table, string eventName, Vector3 pos, Quaternion rot, Vector3 size, out TextMeshPro text)
@@ -1085,6 +1167,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
         // ================================================================ 卓の形(サイバーな全自動卓)
         // 天板(フェルト)の周りに、少し立ち上がった縁。縁の上に席風・名前・点数(7セグ)と、光る線。脚は上がすぼんだ八角の台。
+        const float LABEL_HALF = 0.38f;   // 縁の文字1行の横幅の半分(写し場のカメラが写す範囲の半分も同じ)
+        const float LABEL_ROW = 0.095f;   // 1行の高さ(8行で LABEL_HALF * 2 = 正方形)
+        const int LABEL_TEX = 2048;       // 縁の文字の画像の大きさ(1行 2048 x 256)
+        const float SEG_W = 0.2f, SEG_H = 0.05f;
         const float LABEL_TILT = 0f;    // 縁の上の表示(席風・名前・点数・確定)を、座る人の方へ起こす角度(いまは起こさない)
         const float FELT_AP = SqmTable.FELT_AP, RIM_AP = SqmTable.RIM_AP, RIM_H = SqmTable.RIM_H, SKIRT = 0.045f;
 
