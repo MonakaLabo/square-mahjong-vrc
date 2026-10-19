@@ -1,6 +1,6 @@
 # 変更履歴
 
-## 0.3.5(未リリース)
+## 0.3.5
 
 - デバッグモードは、Scripting Define Symbols に SQM_DEBUG があるプロジェクトでだけ使えるようにする(無いプロジェクトでは、いつも OFF で Inspector にも出ない)
 - デバッグモードをワールドのスイッチで切り替えられるようにする: SqmTable の Debug Toggle に置いた GameObject が表示中の間だけデバッグモードになる(LuraSwitch などでその GameObject を ON/OFF する)。Udon のイベント DebugOn / DebugOff / DebugToggle でも切り替えられる
