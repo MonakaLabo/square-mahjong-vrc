@@ -1,5 +1,9 @@
 # 変更履歴
 
+## 0.3.5(未リリース)
+
+- デバッグモードをワールドのスイッチで切り替えられるようにする: SqmTable の Debug Toggle に置いた GameObject が表示中の間だけデバッグモードになる(LuraSwitch などでその GameObject を ON/OFF する)。Udon のイベント DebugOn / DebugOff / DebugToggle でも切り替えられる
+
 ## 0.3.4
 
 - パッドを VRChat 標準のビーム(UI のレーザー)で押せるようにする: 押せる所ごとに透明な UI のボタン(VRCUiShape)を重ね、手で触って押す当たり判定は外す

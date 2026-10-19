@@ -34,6 +34,7 @@ namespace MonakaLabo.SquareMahjong
         public SqmPadBody[] padBodies;       // 席ごとのパッドの本体 8
         [Tooltip("デバッグ用の機能(切るべき牌の表示・次の局の仕込み)をパッドの設定タブに出す。公開するワールドでは OFF に")]
         public bool debugEnabled;
+        public GameObject debugToggle;       // これが表示中(Active)の間だけデバッグモードにする(LuraSwitch などのスイッチで切り替える用。空なら debugEnabled のまま)
         public Material[] faceMats;          // 牌の表面 47種
         public Transform[] wallStacks;       // 壁の幢 525
         public Transform[] handTiles;        // 手牌 8席 × 28(SLOT_HAND)
@@ -434,6 +435,7 @@ namespace MonakaLabo.SquareMahjong
 
         private void Update()
         {
+            if (debugToggle != null && debugToggle.activeInHierarchy != debugEnabled) SetDebug(debugToggle.activeInHierarchy);
             BillboardHolo();
             AnimateBanner();
             if (replayTo > 0) ReplayChunk();
@@ -2008,6 +2010,18 @@ namespace MonakaLabo.SquareMahjong
         }
 
         /// <summary>仕込めるのはホストだけ(だれも座っていなければ、だれでも)</summary>
+        /// <summary>デバッグモードを入れる/切る(スイッチの Udon イベントからも呼べる: DebugOn / DebugOff / DebugToggle)</summary>
+        public void SetDebug(bool on)
+        {
+            if (debugEnabled == on) return;
+            debugEnabled = on;
+            RefreshPads();
+        }
+
+        public void DebugOn() { SetDebug(true); }
+        public void DebugOff() { SetDebug(false); }
+        public void DebugToggle() { SetDebug(!debugEnabled); }
+
         public bool CanRig() { return debugEnabled && humanSeat >= 0 && (sHost == 0 || sHost == MyId()); }
 
         /// <summary>デバッグ: 次の局で、自分の席に役のひな形を仕込む(試合の前なら、次の試合の最初の局)</summary>
