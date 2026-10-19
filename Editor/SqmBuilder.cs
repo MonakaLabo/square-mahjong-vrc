@@ -1128,9 +1128,11 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             matPedestal = Mat("TablePedestal", new Color(0.13f, 0.14f, 0.16f), null);
             matPedestal.SetFloat("_Metallic", 0.85f);
             matPedestal.SetFloat("_Glossiness", 0.6f);
-            matLightIdle = HoloMat("LightIdle", new Color(0.16f, 0.42f, 0.56f, 1f), 2000);
-            matLightTurn = HoloMat("LightTurn", new Color(0.55f, 0.95f, 1f, 1f), 2000);
-            matLightRiichi = HoloMat("LightRiichi", new Color(1f, 0.32f, 0.26f, 1f), 2000);
+            // 光る線は、天板(2000)の後に重ねる
+            var lineTex = LineTexture();
+            matLightIdle = ShaderMat("LightIdle", "Sprites/Default", new Color(0.16f, 0.42f, 0.56f, 1f), lineTex, 2460);
+            matLightTurn = ShaderMat("LightTurn", "Sprites/Default", new Color(0.55f, 0.95f, 1f, 1f), lineTex, 2460);
+            matLightRiichi = ShaderMat("LightRiichi", "Sprites/Default", new Color(1f, 0.32f, 0.26f, 1f), lineTex, 2460);
             matButton = Mat("Button", new Color(0.18f, 0.16f, 0.14f), null);
             matButtonHot = Mat("ButtonHot", new Color(0.75f, 0.55f, 0.18f), null);
             matSegBox = Mat("SegBox", new Color(0.03f, 0.03f, 0.03f), null);
@@ -1334,14 +1336,47 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             return SaveMesh(mesh, GEN + "/SqmCenterPanel.asset");
         }
 
-        /// <summary>光る線(寝かせた細い板)。at は中心、u は卓の中心 → 席の向き</summary>
+        /// <summary>
+        /// 光る線(寝かせた板)。at は中心、u は卓の中心 → 席の向き、width は光って見える芯の太さ。
+        /// 細い板そのものを光らせると、浅い角度で板の縁がピクセルにかかったり外れたりしてちらつくので、
+        /// 板は芯より太くして、芯の外が透明になっていく絵(LineTexture。ミップマップ付き)を貼る
+        /// </summary>
         static MeshRenderer LightLine(GameObject parent, string name, Vector3 at, Vector3 u, float length, float width, Material mat)
         {
             var q = Prim(PrimitiveType.Quad, parent, name, mat);
             q.transform.localPosition = at;
             q.transform.localRotation = Quaternion.LookRotation(Vector3.down, -u);
-            q.transform.localScale = new Vector3(length, width, 1);
+            q.transform.localScale = new Vector3(length, width / LINE_CORE, 1);
             return q.GetComponent<MeshRenderer>();
+        }
+
+        const float LINE_CORE = 0.4f;   // 光る線の絵のうち、芯(不透明)の割合
+
+        /// <summary>光る線の絵: 横は一様、縦(線の幅の向き)は真ん中が不透明で、外へ向かってなめらかに透明になる</summary>
+        static Texture2D LineTexture()
+        {
+            string path = GEN + "/LightLine.asset";
+            var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            if (tex == null)
+            {
+                tex = new Texture2D(4, 64, TextureFormat.RGBA32, true);
+                AssetDatabase.CreateAsset(tex, path);
+            }
+            else if (tex.width != 4 || tex.height != 64) tex.Reinitialize(4, 64, TextureFormat.RGBA32, true);
+            for (int y = 0; y < 64; y++)
+            {
+                float d = Mathf.Abs((y + 0.5f) / 64f - 0.5f) * 2f;          // 真ん中 0 → 端 1
+                float a = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(LINE_CORE, 1f, d));
+                if (y == 0 || y == 63) a = 0f;                             // いちばん外は必ず透明(板の縁を見せない)
+                for (int x = 0; x < 4; x++) tex.SetPixel(x, y, new Color(1, 1, 1, a));
+            }
+            tex.Apply(true);
+            tex.wrapModeU = TextureWrapMode.Repeat;
+            tex.wrapModeV = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Trilinear;
+            tex.anisoLevel = 16;
+            EditorUtility.SetDirty(tex);
+            return tex;
         }
 
         static void BuildTableBody(GameObject root, SqmTable table)
@@ -1372,7 +1407,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 var q = Prim(PrimitiveType.Quad, lights, "skirt_" + s, matLightIdle);
                 q.transform.localPosition = u * (RIM_AP + 0.002f) + Vector3.up * (TOP - SKIRT + 0.008f);
                 q.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
-                q.transform.localScale = new Vector3(RIM_AP * 0.828f - 0.01f, 0.004f, 1);
+                q.transform.localScale = new Vector3(RIM_AP * 0.828f - 0.01f, 0.004f / LINE_CORE, 1);   // 芯 4mm(LightLine と同じ絵)
             }
 
             // 中央のパネル(黒い八角の板と、光る縁)
@@ -1380,33 +1415,13 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             center.transform.SetParent(root.transform, false);
             center.AddComponent<MeshFilter>().sharedMesh = CenterPanelMesh();
             center.AddComponent<MeshRenderer>().sharedMaterial = matRim;
+            // 中央のパネルの光る縁(席ごと。ふだんは青、その席がリーチしていると赤)
+            table.centerLights = new MeshRenderer[8];
             for (int s = 0; s < 8; s++)
             {
                 Vector3 u = U(s);
                 float ap = SqmTable.CENTER_AP - 0.008f;
-                LightLine(center, "edge_" + s, u * ap + Vector3.up * (TOP + SqmTable.CENTER_H + 0.003f), u, ap * 0.828f - 0.01f, 0.004f, matLightIdle);
-            }
-
-            // リーチ棒(席ごと。リーチしたときだけ出る)
-            table.riichiSticks = new GameObject[8];
-            var sticks = Group(root, "RiichiSticks");
-            var stickTex = AssetDatabase.LoadAssetAtPath<Texture2D>(PKG + "/Runtime/Textures/Sticks/stick_1000.png");
-            var stickMat = ShaderMat("StickTop", "Unlit/Transparent", Color.white, stickTex, Q_PART);
-            for (int s = 0; s < 8; s++)
-            {
-                Vector3 u = U(s);
-                var g = Group(sticks, "stick_" + s);
-                g.transform.localPosition = u * SqmTable.R_STICK + Vector3.up * TOP;
-                g.transform.localRotation = Quaternion.LookRotation(-u, Vector3.up);
-                var body = Prim(PrimitiveType.Cube, g, "Body", matBody);
-                body.transform.localPosition = new Vector3(0, 0.003f, 0);
-                body.transform.localScale = new Vector3(0.115f, 0.006f, 0.03f);
-                var face = Prim(PrimitiveType.Quad, g, "Face", stickMat);
-                face.transform.localPosition = new Vector3(0, 0.0062f, 0);
-                face.transform.localRotation = Quaternion.Euler(90, 180, 0);
-                face.transform.localScale = new Vector3(0.12f, 0.0326f, 1);
-                g.SetActive(false);
-                table.riichiSticks[s] = g;
+                table.centerLights[s] = LightLine(center, "edge_" + s, u * ap + Vector3.up * (TOP + SqmTable.CENTER_H + 0.003f), u, ap * 0.828f - 0.01f, 0.004f, matLightIdle);
             }
         }
 

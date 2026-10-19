@@ -47,7 +47,7 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] centerFaces;
         public Transform holoRoot;           // 上空のホロ全体(見る人の方へ向ける)
         public Transform centerButtons;      // 中央の Resync・Reset(見ている人の席へ向ける)
-        public GameObject[] riichiSticks;    // 席ごとのリーチ棒 8
+        public MeshRenderer[] centerLights;  // 中央のパネルの光る縁 8(リーチした席の辺が赤くなる)
         public MeshRenderer[] rimLights;     // 縁の光る線 8
         public Material matLightIdle, matLightTurn, matLightRiichi;
         public TextMeshPro holoTitle;        // ホロの題字(試合が無いとき)
@@ -99,7 +99,7 @@ namespace MonakaLabo.SquareMahjong
         public const float TW = 0.026f, TH = 0.035f, TT = 0.02f; // 牌の幅・高さ・厚み
         public const float R_HAND = 1.06f, R_MELD = 0.965f, R_LABEL = 1.15f;
         public const float FELT_AP = 1.09f, RIM_AP = 1.21f, RIM_H = 0.012f;   // 天板(フェルト)の端・縁の外側(中心から辺まで)・縁の高さ
-        public const float CENTER_AP = 0.2f, CENTER_H = 0.004f, R_STICK = 0.6f; // 中央のパネル・リーチ棒の位置
+        public const float CENTER_AP = 0.2f, CENTER_H = 0.004f;   // 中央のパネルの大きさ・高さ
         public const int SLOT_HAND = 28, SLOT_RIVER = 36, SLOT_MELD = 28, N_DORA = 18, N_RON = 12, N_OPT = 12;
         public const int WALL_PER_SIDE = 75, WALLLESS_SIDE = 7;
         public const int NP = 8, NT = 47;
@@ -1135,7 +1135,11 @@ namespace MonakaLabo.SquareMahjong
         {
             bool live = lMatch > 0;
             bool riichi = live && engine.riichiOn[s] && engine.phase != SqmEngine.PH_DEAL;
-            if (riichiSticks != null && s < riichiSticks.Length && riichiSticks[s] != null && riichiSticks[s].activeSelf != riichi) riichiSticks[s].SetActive(riichi);
+            if (centerLights != null && s < centerLights.Length && centerLights[s] != null)
+            {
+                Material cm = riichi ? matLightRiichi : matLightIdle;
+                if (cm != null && centerLights[s].sharedMaterial != cm) centerLights[s].sharedMaterial = cm;
+            }
             if (rimLights != null && s < rimLights.Length && rimLights[s] != null)
             {
                 bool turn = Running() && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == s;
