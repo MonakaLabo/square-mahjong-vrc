@@ -422,7 +422,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             rb.useGravity = false;
             var pickup = g.AddComponent<VRC.SDK3.Components.VRCPickup>();
             pickup.pickupable = false;
-            pickup.AutoHold = VRC.SDKBase.VRC_Pickup.AutoHoldMode.Yes;
+            pickup.AutoHold = VRC.SDKBase.VRC_Pickup.AutoHoldMode.No;   // 握っている間だけ持つ(離したら手から離れる)
+            pickup.orientation = VRC.SDKBase.VRC_Pickup.PickupOrientation.Any;
             pickup.InteractionText = "パッド";
             g.AddComponent<VRC.SDK3.Components.VRCObjectSync>();
             var body = UdonSharpUndo.AddComponent<SqmPadBody>(g);

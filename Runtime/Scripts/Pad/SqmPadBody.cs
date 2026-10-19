@@ -29,7 +29,47 @@ namespace MonakaLabo.SquareMahjong
         private Quaternion homeRot;
         private bool homeSet;
 
+        // 掴んだ所を保つ: VRChat の掴む処理は、掴む判定(左右の端)のうち片方に手を合わせてしまうので、
+        // 掴む直前の板の位置を手からの相対で覚え、持っている間は毎フレームその位置に置き直す
+        private Vector3 lastPos, holdPos;
+        private Quaternion lastRot, holdRot;
+        private bool holding;
+        private int holdHand;   // 0 = 右手, 1 = 左手
+
         private void Start() { SetHome(); }
+
+        private void Update()
+        {
+            if (holding || !grab) return;
+            lastPos = transform.position;
+            lastRot = transform.rotation;
+        }
+
+        public override void OnPickup()
+        {
+            VRCPlayerApi lp = Networking.LocalPlayer;
+            if (!Utilities.IsValid(lp) || pickup == null) return;
+            holdHand = pickup.currentHand == VRC_Pickup.PickupHand.Left ? 1 : 0;
+            VRCPlayerApi.TrackingData td = HandData(lp);
+            Quaternion inv = Quaternion.Inverse(td.rotation);
+            holdPos = inv * (lastPos - td.position);
+            holdRot = inv * lastRot;
+            holding = true;
+        }
+
+        public override void PostLateUpdate()
+        {
+            if (!holding) return;
+            VRCPlayerApi lp = Networking.LocalPlayer;
+            if (pickup == null || !pickup.IsHeld || !Utilities.IsValid(lp)) { holding = false; return; }
+            VRCPlayerApi.TrackingData td = HandData(lp);
+            transform.SetPositionAndRotation(td.position + td.rotation * holdPos, td.rotation * holdRot);
+        }
+
+        private VRCPlayerApi.TrackingData HandData(VRCPlayerApi lp)
+        {
+            return lp.GetTrackingData(holdHand == 1 ? VRCPlayerApi.TrackingDataType.LeftHand : VRCPlayerApi.TrackingDataType.RightHand);
+        }
 
         private void SetHome()
         {
@@ -41,6 +81,7 @@ namespace MonakaLabo.SquareMahjong
 
         public override void OnDrop()
         {
+            holding = false;
             SetHome();
             if (Vector3.Distance(transform.position, homePos) <= SNAP) transform.SetPositionAndRotation(homePos, homeRot);
         }
