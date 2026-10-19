@@ -13,6 +13,8 @@ namespace UdonSharp
         public virtual void OnOwnershipTransferred(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnPlayerLeft(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnDrop() { }
+        public virtual void OnPickup() { }
+        public virtual void PostLateUpdate() { }
         public bool DisableInteractive { get; set; }
     }
     public enum BehaviourSyncMode { Any, None, Continuous, Manual, NoVariableSync }
