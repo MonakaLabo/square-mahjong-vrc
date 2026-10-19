@@ -32,6 +32,8 @@ namespace MonakaLabo.SquareMahjong
         public SqmArchive archive;
         public SqmPad pad;                   // 手元のパッドの中身(1組)
         public SqmPadBody[] padBodies;       // 席ごとのパッドの本体 8
+        [Tooltip("デバッグ用の機能(切るべき牌の表示・次の局の仕込み)をパッドの設定タブに出す。公開するワールドでは OFF に")]
+        public bool debugEnabled;
         public Material[] faceMats;          // 牌の表面 47種
         public Transform[] wallStacks;       // 壁の幢 525
         public Transform[] handTiles;        // 手牌 8席 × 28(SLOT_HAND)
@@ -109,6 +111,9 @@ namespace MonakaLabo.SquareMahjong
         [UdonSynced] private int sSeed;
         [UdonSynced] private int sHost;                      // ホストの playerId(0 = いない)
         [UdonSynced] private int sStartMs, sKyokuMs, sKyokuEndMs, sEndMs;   // 試合・局の開始/終了の時刻(サーバー時刻 ms、0 = まだ)
+        [UdonSynced] private int sRigN;                      // デバッグの仕込み(局の番号・席・ひな形)。途中参加の再生でも同じ並べ替えになるよう同期する
+        [UdonSynced] private int[] sRigK = new int[SqmEngine.RIG_MAX], sRigS = new int[SqmEngine.RIG_MAX], sRigT = new int[SqmEngine.RIG_MAX];
+        [UdonSynced] private int sRigPendT = -1, sRigPendS = -1;   // 試合の前に頼まれた仕込み(次の試合の最初の局)
         [UdonSynced] private int sPageN, sPage, sAckMask;    // 結果の画面: ページ数(0 = 出ていない)・いまのページ・確認待ちの席のビット
         [UdonSynced] private int sEvtWinFrom, sEvtWinTo;     // その出来事で見せる和了(engine.win* の番号の範囲)
         [UdonSynced] private bool sEvtTail;                  // 最後に流局のページがある
@@ -320,6 +325,9 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 9; i > 0; i--) { int j = UnityEngine.Random.Range(0, i + 1); int x = order[i]; order[i] = order[j]; order[j] = x; }
             for (int s = 0; s < NP; s++) sStyle[s] = order[s];
             for (int i = 0; i < N_RULE; i++) sRuleUsed[i] = sRule[i];   // この試合のルール
+            sRigN = 0;
+            if (sRigPendT >= 0 && sRigPendS >= 0) { sRigK[0] = 0; sRigS[0] = sRigPendS; sRigT[0] = sRigPendT; sRigN = 1; }
+            sRigPendT = -1; sRigPendS = -1;
             sCount = 0;
             sStartMs = Networking.GetServerTimeInMilliseconds();
             if (sStartMs == 0) sStartMs = 1;
@@ -547,6 +555,7 @@ namespace MonakaLabo.SquareMahjong
             }
             ApplyRules(sRuleUsed);
             engine.NewMatch((uint)sSeed);
+            CopyRig();
             for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
             lMatch = sMatch;
             lCount = 0;
@@ -559,6 +568,7 @@ namespace MonakaLabo.SquareMahjong
         {
             Init();
             UpdateMySeat();
+            CopyRig();   // デバッグの仕込みは、追いつく(配牌する)前にエンジンへ写す
             if (sMatch != lMatch && sMatch > 0 && !(sSeed == 0 && lIdleMatch == sMatch)) ResetLocal();
             else if (lMatch == sMatch && lCount > sCount && replayTo == 0)
             {
@@ -1945,6 +1955,84 @@ namespace MonakaLabo.SquareMahjong
             engine.rAgariYame = RuleIdx(arr, 9) == 0;
             engine.rTobiEnd = RuleIdx(arr, 10) == 0;
             engine.rUseUma = RuleIdx(arr, 11) == 0;
+        }
+
+        // ================================================================ デバッグ
+        [System.NonSerialized] public int hintTileA = -1, hintTileB = -1;
+        private int hintStep = -1;
+        private string hintText = "";
+
+        /// <summary>同期された仕込みを、エンジンに写す(配牌の前に効く)</summary>
+        private void CopyRig()
+        {
+            engine.InitRig();
+            int n = sRigN < 0 ? 0 : sRigN > SqmEngine.RIG_MAX ? SqmEngine.RIG_MAX : sRigN;
+            for (int i = 0; i < n; i++) { engine.rigKey[i] = sRigK[i]; engine.rigSeat[i] = sRigS[i]; engine.rigTpl[i] = sRigT[i]; }
+            engine.rigCount = n;
+        }
+
+        /// <summary>仕込めるのはホストだけ(だれも座っていなければ、だれでも)</summary>
+        public bool CanRig() { return debugEnabled && humanSeat >= 0 && (sHost == 0 || sHost == MyId()); }
+
+        /// <summary>デバッグ: 次の局で、自分の席に役のひな形を仕込む(試合の前なら、次の試合の最初の局)</summary>
+        public void RequestRig(int tpl)
+        {
+            if (!CanRig() || tpl < 0 || tpl >= SqmEngine.RIG_N) return;
+            if (IsHost()) HostRig(humanSeat, tpl);
+            else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetRig), humanSeat, tpl);
+            message = "次の局に「" + engine.RigName(tpl) + "」を仕込みました";
+            dirty = true;
+        }
+
+        [NetworkCallable]
+        public void NetRig(int seat, int tpl)
+        {
+            if (!IsHost() || !debugEnabled) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p) || seat < 0 || seat >= NP || sPlayer[seat] != p.playerId) return;
+            if (sHost != 0 && p.playerId != sHost) return;
+            HostRig(seat, tpl);
+        }
+
+        private void HostRig(int seat, int tpl)
+        {
+            if (tpl < 0 || tpl >= SqmEngine.RIG_N) return;
+            if (!Running()) { sRigPendT = tpl; sRigPendS = seat; }
+            else
+            {
+                if (sRigN >= SqmEngine.RIG_MAX) return;
+                // 次の配牌のときのエンジンの局番号(配り終えると 1 増える)
+                sRigK[sRigN] = engine.kyokuSeq; sRigS[sRigN] = seat; sRigT[sRigN] = tpl; sRigN++;
+                CopyRig();
+            }
+            RequestSerialization();
+            dirty = true;
+        }
+
+        /// <summary>デバッグ: いま切るべき牌(強い NPC が自分の席ならどうするか)。自分の番だけ、手番ごとに1回考える</summary>
+        public string PadHint()
+        {
+            if (!MyTurn()) { hintTileA = -1; hintTileB = -1; return ""; }
+            if (hintStep == engine.step) return hintText;
+            hintStep = engine.step;
+            hintTileA = -1; hintTileB = -1;
+            npc.SetSeat(humanSeat, SqmNpc.LV_STRONG, sStyle[humanSeat]);
+            npc.Decide(humanSeat, engine.HashSeed("hint:" + engine.step));
+            npc.SetSeat(humanSeat, SqmNpc.LV_NORMAL, sStyle[humanSeat]);   // 人が抜けたときに NPC が打つ設定へ戻す
+            int ty = npc.action[SqmEngine.O_TYPE];
+            if (ty == SqmEngine.A_DISCARD)
+            {
+                int cnt = npc.action[SqmEngine.O_TAKEN];
+                hintTileA = cnt > 0 ? npc.action[SqmEngine.O_TAKE] : -1;
+                hintTileB = cnt > 1 ? npc.action[SqmEngine.O_TAKE + 1] : -1;
+                hintText = "切るべき牌: " + (hintTileA >= 0 ? TileCode(hintTileA) : "") + (hintTileB >= 0 ? " " + TileCode(hintTileB) : "");
+                if (npc.action[SqmEngine.O_MODE] == 1) hintText += "(リーチ)";
+            }
+            else if (ty == SqmEngine.A_TSUMO) hintText = "ツモ和了できます";
+            else if (ty == SqmEngine.A_KAN) hintText = "カン(" + TileCode(npc.action[SqmEngine.O_TILE]) + ")";
+            else if (ty == SqmEngine.A_ABORT) hintText = "十四種十四牌";
+            else hintText = "";
+            return hintText;
         }
 
         // ================================================================ 上空のホロ

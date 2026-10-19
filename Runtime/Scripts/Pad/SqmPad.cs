@@ -30,6 +30,7 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] handTiles;     // 30(門前 28 + ツモ 2)
         public GameObject[] handLift;        // 選んだ牌の印 30
         public GameObject[] handDim;         // リーチで切れない牌を暗くする 30
+        public GameObject[] handHint;        // デバッグ: 切るべき牌の印 30
         public MeshRenderer[] meldTiles;     // 副露 24(小さめ)
         public Material[] faceMats;          // 牌の絵 47(光の影響を受けない)
         public GameObject[] btnRoots;        // 操作ボタン 6
@@ -72,6 +73,8 @@ namespace MonakaLabo.SquareMahjong
 
         // 設定(手元だけ)
         [System.NonSerialized] public bool grabbable;
+        [System.NonSerialized] public bool debugHint;   // デバッグ: 切るべき牌を表示
+        private int rigSel;                             // デバッグ: 次の局で出す役(ひな形の番号)
         private int sfxStep = 8, voiceStep = 10;
 
         private void Init()
@@ -160,6 +163,21 @@ namespace MonakaLabo.SquareMahjong
             bool live = table.IsLive();
             gameMessage.text = table.PadGuide();
             if (waitText != null) waitText.text = live ? table.PadWaitText() : "";
+            // デバッグ: 切るべき牌(強い NPC の判断)。手牌の枠のうち、その牌のものに印をつける
+            bool hintOn = debugHint && table.debugEnabled && live;
+            int hintSlotA = -1, hintSlotB = -1;
+            string hint = hintOn ? table.PadHint() : "";
+            if (hintOn && table.hintTileA >= 0)
+            {
+                for (int i = handTiles.Length - 1; i >= 0; i--)
+                {
+                    int t = i < SqmTable.SLOT_HAND ? table.PadSlotTile(i) : -1;
+                    if (t < 0) continue;
+                    if (hintSlotA < 0 && t == table.hintTileA) hintSlotA = i;
+                    else if (hintSlotB < 0 && t == table.hintTileB) hintSlotB = i;
+                }
+            }
+            if (hint.Length > 0) gameMessage.text = "<color=#a05000>[DEBUG] " + hint + "</color>";
             // 手牌: 門前は 14 枚ずつ2段、ツモ牌は上の段の右
             int n = 0, mainN = live ? table.PadMainN() : 0;
             for (int i = 0; i < handTiles.Length; i++)
@@ -169,6 +187,7 @@ namespace MonakaLabo.SquareMahjong
                 bool sel = t >= 0 && table.PadSelected(i);
                 SetActive(handLift[i], sel);
                 if (handDim != null) SetActive(handDim[i], t >= 0 && table.PadTileDim(i));
+                if (handHint != null) SetActive(handHint[i], t >= 0 && hintOn && (i == hintSlotA || i == hintSlotB));
                 if (t >= 0) n = i + 1;
             }
             PlaceHand(mainN, n);
@@ -267,6 +286,7 @@ namespace MonakaLabo.SquareMahjong
                 handTiles[i].transform.localPosition = p;
                 handLift[i].transform.localPosition = p + new Vector3(0, 0, 0.0015f);
                 if (handDim != null) handDim[i].transform.localPosition = p + new Vector3(0, 0, -0.0015f);
+                if (handHint != null) handHint[i].transform.localPosition = p + new Vector3(0, 0.019f, -0.001f);
             }
         }
 
@@ -389,13 +409,20 @@ namespace MonakaLabo.SquareMahjong
             return -1;
         }
 
-        // いちばん下は作者とバージョン(押せない)
-        private int SettingCount() { return (table.IsHostMe() ? 7 + KickCount() : 5) + 1; }
+        // 設定の並び: ふつうの項目(BaseCount 個) → デバッグ(debugEnabled のときだけ 3 個) → いちばん下は作者とバージョン(押せない)
+        private int BaseCount() { return table.IsHostMe() ? 7 + KickCount() : 5; }
+        private int DebugCount() { return table.debugEnabled ? 3 : 0; }
+        private int SettingCount() { return BaseCount() + DebugCount() + 1; }
         private bool IsCreditRow(int i) { return i == SettingCount() - 1; }
+        private int DebugRow(int i) { int d = i - BaseCount(); return d >= 0 && d < DebugCount() ? d : -1; }
 
         private string SettingName(int i)
         {
             if (IsCreditRow(i)) return "<size=80%>" + CREDIT + "</size>";
+            int d = DebugRow(i);
+            if (d == 0) return "<color=#a05000>[DEBUG]</color> 切るべき牌を表示";
+            if (d == 1) return "<color=#a05000>[DEBUG]</color> 次の局で出す役";
+            if (d == 2) return "<color=#a05000>[DEBUG]</color> 自分の席に仕込む";
             if (i == 0) return "効果音の音量";
             if (i == 1) return "声の音量";
             if (i == 2) return "パッドを掴めるようにする";
@@ -407,11 +434,20 @@ namespace MonakaLabo.SquareMahjong
             return s >= 0 ? "立たせる: " + table.SeatDisplayName(s) : "";
         }
 
-        private bool SettingHasArrows(int i) { return i <= 2; }
+        private bool SettingHasArrows(int i)
+        {
+            int d = DebugRow(i);
+            if (d >= 0) return d <= 1;
+            return i <= 2;
+        }
 
         private string SettingValue(int i)
         {
             if (IsCreditRow(i)) return "v" + VERSION;
+            int d = DebugRow(i);
+            if (d == 0) return debugHint ? "ON" : "OFF";
+            if (d == 1) return engine.RigName(rigSel);
+            if (d == 2) return table.CanRig() ? "実行 ▶" : "(ホストだけ)";
             if (i == 0) return Bar(sfxStep);
             if (i == 1) return Bar(voiceStep);
             if (i == 2) return grabbable ? "ON" : "OFF";
@@ -422,6 +458,10 @@ namespace MonakaLabo.SquareMahjong
 
         private void DoSetting(int i, int dir)
         {
+            int d = DebugRow(i);
+            if (d == 0) { debugHint = !debugHint; return; }
+            if (d == 1) { rigSel = (rigSel + dir + SqmEngine.RIG_N) % SqmEngine.RIG_N; return; }
+            if (d == 2) { table.RequestRig(rigSel); return; }
             if (i == 0) { sfxStep = Mathf.Clamp(sfxStep + dir, 0, 10); table.sfxVolume = sfxStep / 10f; }
             else if (i == 1) { voiceStep = Mathf.Clamp(voiceStep + dir, 0, 10); table.voiceVolume = voiceStep / 10f; }
             else if (i == 2) { grabbable = !grabbable; table.RefreshPads(); }

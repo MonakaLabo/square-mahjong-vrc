@@ -19,6 +19,7 @@ static class Program
 
     static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] == "--rig") return RigTest();
         string dir = Path.Combine(AppContext.BaseDirectory, "../../../../golden/out");
         var files = args.Length > 0 ? args : Directory.GetFiles(dir, "*.jsonl").OrderBy(f => f).ToArray();
         int okFiles = 0, totalOps = 0;
@@ -118,6 +119,71 @@ static class Program
         }
         Console.WriteLine($"{okFiles}/{files.Length} 試合・{totalOps} 操作が一致、NPC の判断 {npcChecks} 回が一致、番号からの再生 {codecOps} 手が一致、リーチ判定で状態が変わらない {riichiChecks} 回 ({sw.ElapsedMilliseconds} ms)");
         return okFiles == files.Length ? 0 : 1;
+    }
+
+    /// <summary>デバッグの仕込み: ひな形ごとに、仕込んだ席が2巡目のツモでその役で和了れるか(親と子の両方)</summary>
+    static int RigTest()
+    {
+        int okN = 0, ngN = 0;
+        var e0 = new SqmEngine(); e0.SetDefaultRules(); e0.InitRig();
+        for (int ti = 0; ti < SqmEngine.RIG_N; ti++)
+        {
+            foreach (int off in new[] { 0, 3 })
+            {
+                var e = new SqmEngine();
+                e.SetDefaultRules();
+                e.NewMatchFromString("rig-" + ti + "-" + off);
+                e.InitRig();
+                int S = (e.dealer + off) % 8;
+                e.rigCount = 1; e.rigKey[0] = 0; e.rigSeat[0] = S; e.rigTpl[0] = ti;
+                string result = "和了らなかった";
+                var act = new int[SqmEngine.OPT];
+                for (int step = 0; step < 600; step++)
+                {
+                    int pk = e.pendKind;
+                    if (pk == SqmEngine.PEND_NONE) { e.Advance(); continue; }
+                    if (pk == SqmEngine.PEND_TURN)
+                    {
+                        int t = e.turn, n = e.BuildLegal(t);
+                        int tsumo = -1;
+                        for (int i = 0; i < n; i++) if (e.legal[i * SqmEngine.OPT + SqmEngine.O_TYPE] == SqmEngine.A_TSUMO) tsumo = i;
+                        if (t == S && tsumo >= 0)
+                        {
+                            Array.Copy(e.legal, tsumo * SqmEngine.OPT, act, 0, SqmEngine.OPT);
+                            e.ApplyAction(act);
+                            var ys = new System.Collections.Generic.List<int>();
+                            for (int k = 0; k < e.winYakuN[0]; k++) ys.Add(e.winYakuId[k]);
+                            result = ys.Contains(e.RigYaku(ti)) ? "OK" : "役が違う: " + string.Join(",", ys.Select(y => e.yakuIds != null && y < e.yakuIds.Length ? e.yakuIds[y] : y.ToString()));
+                            break;
+                        }
+                        // ツモ切り(引いた牌をそのまま切る)
+                        Array.Clear(act, 0, act.Length);
+                        act[SqmEngine.O_SEAT] = t; act[SqmEngine.O_TYPE] = SqmEngine.A_DISCARD; act[SqmEngine.O_MODE] = 0;
+                        act[SqmEngine.O_TILE] = -1; act[SqmEngine.O_RONIDX] = -1; act[SqmEngine.O_RONTILE] = -1; act[SqmEngine.O_MELDTYPE] = SqmEngine.MT_NONE; act[SqmEngine.O_START] = -1;
+                        int need = e.mustDiscard, dl = e.drawnLen[t];
+                        act[SqmEngine.O_TAKEN] = need;
+                        for (int k = 0; k < need; k++) act[SqmEngine.O_TAKE + k] = e.drawn[t * SqmEngine.MAXDRAWN + dl - need + k];
+                        if (!e.ApplyAction(act)) { result = "切れない: " + e.lastError; break; }
+                        continue;
+                    }
+                    if (pk == SqmEngine.PEND_CALLS)
+                    {
+                        int seat = e.pendSeats[0];
+                        Array.Clear(act, 0, act.Length);
+                        act[SqmEngine.O_SEAT] = seat; act[SqmEngine.O_TYPE] = SqmEngine.A_PASS;
+                        act[SqmEngine.O_MODE] = -1; act[SqmEngine.O_TILE] = -1; act[SqmEngine.O_RONIDX] = -1; act[SqmEngine.O_RONTILE] = -1; act[SqmEngine.O_MELDTYPE] = SqmEngine.MT_NONE; act[SqmEngine.O_START] = -1;
+                        if (!e.ApplyAction(act)) { result = "パスできない: " + e.lastError; break; }
+                        continue;
+                    }
+                    break;
+                }
+                bool ok = result == "OK";
+                if (ok) okN++; else ngN++;
+                Console.WriteLine($"{(ok ? "✔" : "✖")} {e0.RigName(ti)} ({(off == 0 ? "親" : "子")}): {result}");
+            }
+        }
+        Console.WriteLine($"仕込み: {okN} 件 OK、{ngN} 件 NG");
+        return ngN == 0 ? 0 : 1;
     }
 
     static int npcChecks, codecOps, riichiChecks;

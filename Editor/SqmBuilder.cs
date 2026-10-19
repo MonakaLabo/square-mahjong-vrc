@@ -228,6 +228,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.handTiles = new MeshRenderer[30];
             pad.handLift = new GameObject[30];
             pad.handDim = new GameObject[30];
+            pad.handHint = new GameObject[30];
+            var hintMat = HoloMat("PadHint", new Color(0.95f, 0.45f, 0.05f, 1f), Q_FILL);
             var dimMat = HoloMat("PadDim", new Color(0.1f, 0.15f, 0.2f, 0.55f), 2999);
             for (int i = 0; i < 30; i++)
             {
@@ -248,6 +250,11 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 dim.transform.localScale = new Vector3(0.022f, 0.03f, 1);
                 dim.SetActive(false);
                 pad.handDim[i] = dim;
+                // デバッグ: 切るべき牌の印(牌の上に細い橙の線)
+                var hint = Prim(PrimitiveType.Quad, game, "hint_" + i.ToString("00"), hintMat);
+                hint.transform.localScale = new Vector3(0.02f, 0.004f, 1);
+                hint.SetActive(false);
+                pad.handHint[i] = hint;
                 pad.handTiles[i] = t.GetComponent<MeshRenderer>();
             }
             pad.meldTiles = new MeshRenderer[24];

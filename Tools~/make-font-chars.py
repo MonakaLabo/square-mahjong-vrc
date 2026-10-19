@@ -10,7 +10,7 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, '..')
-SOURCES = ['Runtime/Scripts/Table/SqmTable.cs', 'Runtime/Scripts/Pad/SqmPad.cs', 'Editor/SqmBuilder.cs']
+SOURCES = ['Runtime/Scripts/Table/SqmTable.cs', 'Runtime/Scripts/Pad/SqmPad.cs', 'Runtime/Scripts/Engine/SqmEngine.cs', 'Editor/SqmBuilder.cs']
 STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 chars = set(chr(c) for c in range(0x20, 0x7f))

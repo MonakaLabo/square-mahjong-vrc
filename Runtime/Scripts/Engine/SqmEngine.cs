@@ -331,6 +331,7 @@ namespace MonakaLabo.SquareMahjong
             }
             int deadSize = rDwRinshan + rDwDora + rDwUra + rDwRon + rDwSpare;
             int deadStart = total - deadSize;
+            if (rigCount > 0) ApplyRig(all, total, deadStart);   // デバッグの仕込み(ふだんは無い)
             int p = deadStart;
             wallRinshanLen = rDwRinshan; for (int i = 0; i < rDwRinshan; i++) wallRinshan[i] = all[p++];
             wallRinshanPos = 0;
@@ -368,6 +369,79 @@ namespace MonakaLabo.SquareMahjong
             first = -1; winsN = 0; resType = RES_NONE; resTenpaiN = 0; resHadWin = false;
             firstRoundN = 0; lastDiscardSeat = -1; lastDiscardIdx = -1; furitenBlocked = 0; discardSeq = 0;
             kyokuSeq++;
+        }
+
+        // ================================================================ デバッグ: 配牌の仕込み
+        // 「次の局で、指定した役が必ず出る」ようにする。席 rigSeat の配牌を、役のひな形(28枚)から最後の2枚を抜いた 26 枚にし、
+        // 2巡目のツモで残りの2枚を引くように山を並べ替える(1巡目にすると天和・地和になって、狙った役が見えなくなる)。
+        // 仕込みは rigKey(局の番号 kyokuSeq)ごとに持ち、同期して全員のエンジンで同じように並べ替える(途中参加の再生でも同じ)。
+        public const int RIG_N = 16, RIG_MAX = 16;
+        [System.NonSerialized] public int rigCount;
+        [System.NonSerialized] public int[] rigKey, rigSeat, rigTpl;
+        private int[] rigTiles, rigYakuId;
+
+        public void InitRig()
+        {
+            if (rigTiles != null) return;
+            rigKey = new int[RIG_MAX]; rigSeat = new int[RIG_MAX]; rigTpl = new int[RIG_MAX];
+            rigYakuId = new int[] { 4, 5, 24, 28, 27, 30, 19, 16, 40, 41, 44, 46, 45, 48, 47, 49 };
+            rigTiles = new int[] {
+                4, 4, 1, 1, 2, 2, 3, 3, 11, 12, 13, 14, 15, 16, 23, 23, 23, 23, 23, 23, 30, 30, 31, 31, 32, 32, 4, 4,
+                1, 1, 11, 11, 12, 12, 13, 13, 18, 19, 20, 21, 22, 23, 32, 32, 33, 33, 34, 34, 41, 41, 41, 41, 41, 41, 1, 1,
+                36, 36, 0, 0, 1, 1, 2, 2, 2, 3, 4, 5, 6, 7, 8, 8, 8, 8, 8, 8, 40, 40, 40, 40, 40, 40, 36, 36,
+                4, 4, 0, 0, 1, 1, 2, 2, 2, 3, 4, 5, 6, 7, 8, 8, 8, 8, 8, 8, 5, 5, 6, 6, 7, 7, 4, 4,
+                0, 0, 2, 2, 4, 4, 6, 6, 8, 8, 10, 10, 12, 12, 14, 14, 16, 16, 18, 18, 20, 20, 36, 36, 40, 40, 43, 43,
+                0, 1, 2, 3, 4, 5, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 24, 29, 30, 31, 32, 33, 34, 36, 36, 36, 36,
+                40, 40, 40, 40, 40, 40, 41, 41, 41, 41, 41, 41, 42, 42, 0, 0, 1, 1, 2, 2, 10, 11, 12, 13, 14, 15, 42, 42,
+                1, 1, 1, 1, 1, 1, 13, 13, 13, 13, 13, 13, 25, 25, 25, 25, 25, 25, 29, 29, 30, 30, 31, 31, 40, 40, 40, 40,
+                0, 8, 9, 17, 18, 26, 27, 35, 36, 37, 38, 39, 40, 41, 43, 44, 45, 46, 0, 8, 9, 17, 18, 26, 27, 42, 42, 42,
+                0, 0, 0, 8, 8, 8, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 1, 2, 3, 4, 5, 6, 0, 8,
+                36, 36, 37, 37, 37, 37, 37, 37, 38, 38, 38, 38, 38, 38, 40, 40, 40, 40, 40, 40, 42, 42, 42, 42, 42, 42, 36, 36,
+                40, 40, 40, 40, 40, 40, 41, 41, 41, 41, 41, 41, 42, 42, 42, 42, 42, 42, 0, 0, 10, 10, 11, 11, 12, 12, 0, 0,
+                43, 43, 43, 43, 43, 43, 44, 44, 44, 44, 44, 44, 45, 45, 45, 45, 45, 45, 46, 46, 46, 46, 46, 46, 0, 0, 0, 0,
+                1, 1, 1, 1, 1, 1, 13, 13, 13, 13, 13, 13, 25, 25, 25, 25, 25, 25, 29, 29, 29, 29, 29, 29, 40, 40, 40, 40,
+                36, 36, 36, 36, 36, 36, 37, 37, 37, 37, 37, 37, 38, 38, 38, 38, 38, 38, 39, 39, 39, 39, 39, 39, 4, 4, 4, 4,
+                0, 0, 0, 0, 0, 0, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 17, 17, 17, 17, 17, 17, 18, 18, 18, 18 };
+        }
+
+        /// <summary>ひな形の名前(パッドの設定で選ぶ)</summary>
+        public string RigName(int i)
+        {
+            string[] n = new string[] { "断幺九", "役牌(發)", "混一色", "清一色", "十四対子", "完全完順", "小三元", "三暗刻", "国士無双", "九蓮宝燈", "字一色", "大三元", "風林火山", "四暗刻", "大四喜", "清老頭" };
+            return i >= 0 && i < n.Length ? n[i] : "";
+        }
+
+        /// <summary>ひな形 i で出るはずの役の ID</summary>
+        public int RigYaku(int i) { InitRig(); return rigYakuId[i]; }
+
+        /// <summary>配牌の前に、この局の仕込みがあれば山(all)を並べ替える</summary>
+        private void ApplyRig(int[] all, int total, int deadStart)
+        {
+            InitRig();
+            for (int r = 0; r < rigCount; r++)
+            {
+                if (rigKey[r] != kyokuSeq) continue;
+                int s = rigSeat[r], ti = rigTpl[r];
+                if (s < 0 || s >= NP || ti < 0 || ti >= RIG_N) continue;
+                int k = (s - dealer + NP) % NP;
+                int dealEnd = rHandSize / 2 * NP * 2;
+                bool[] fixedPos = new bool[total];
+                for (int j = 0; j < 28; j++)
+                {
+                    // 配牌の 26 枚(親から2枚ずつ)と、2巡目のツモの2枚の場所
+                    int p = j < 26 ? ((j / 2) * NP + k) * 2 + (j % 2) : dealEnd + NP * 2 + k * 2 + (j - 26);
+                    if (p >= deadStart) continue;
+                    int want = rigTiles[ti * 28 + j];
+                    if (all[p] != want)
+                    {
+                        int from = -1;
+                        for (int q = 0; q < total && from < 0; q++) if (!fixedPos[q] && q != p && all[q] == want) from = q;
+                        if (from < 0) continue;
+                        int x = all[p]; all[p] = all[from]; all[from] = x;
+                    }
+                    fixedPos[p] = true;
+                }
+            }
         }
 
         // ================================================================ 小さな道具
