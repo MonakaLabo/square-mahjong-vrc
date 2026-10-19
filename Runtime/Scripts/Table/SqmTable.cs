@@ -32,9 +32,15 @@ namespace MonakaLabo.SquareMahjong
         public SqmArchive archive;
         public SqmPad pad;                   // 手元のパッドの中身(1組)
         public SqmPadBody[] padBodies;       // 席ごとのパッドの本体 8
-        [Tooltip("デバッグ用の機能(切るべき牌の表示・次の局の仕込み)をパッドの設定タブに出す。公開するワールドでは OFF に")]
+        // デバッグモード(切るべき牌の表示・次の局の仕込み)は、Scripting Define Symbols に SQM_DEBUG があるプロジェクトでだけ使える。
+        // 無いプロジェクトでは、いつも OFF で、Inspector にも出ない
+#if SQM_DEBUG
+        [Tooltip("デバッグ用の機能(切るべき牌の表示・次の局の仕込み)をパッドの設定タブに出す")]
         public bool debugEnabled;
         public GameObject debugToggle;       // これが表示中(Active)の間だけデバッグモードにする(LuraSwitch などのスイッチで切り替える用。空なら debugEnabled のまま)
+#else
+        [System.NonSerialized] public bool debugEnabled;
+#endif
         public Material[] faceMats;          // 牌の表面 47種
         public Transform[] wallStacks;       // 壁の幢 525
         public Transform[] handTiles;        // 手牌 8席 × 28(SLOT_HAND)
@@ -435,7 +441,9 @@ namespace MonakaLabo.SquareMahjong
 
         private void Update()
         {
+#if SQM_DEBUG
             if (debugToggle != null && debugToggle.activeInHierarchy != debugEnabled) SetDebug(debugToggle.activeInHierarchy);
+#endif
             BillboardHolo();
             AnimateBanner();
             if (replayTo > 0) ReplayChunk();
@@ -2013,9 +2021,11 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>デバッグモードを入れる/切る(スイッチの Udon イベントからも呼べる: DebugOn / DebugOff / DebugToggle)</summary>
         public void SetDebug(bool on)
         {
+#if SQM_DEBUG
             if (debugEnabled == on) return;
             debugEnabled = on;
             RefreshPads();
+#endif
         }
 
         public void DebugOn() { SetDebug(true); }
