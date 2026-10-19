@@ -21,7 +21,7 @@ namespace MonakaLabo.SquareMahjong
         public GameObject joinButton, newButton;
         public TextMeshPro nameText;        // ほかの人の席のパッドに出す名前
         public GameObject[] visuals;        // 板の見た目(隠すときに消す)
-        public Collider body;               // 掴む所
+        public Collider[] grips;            // 掴む所(板の左右の端だけ。真ん中はボタンを押すじゃまになるので付けない)
 
         public const float SNAP = 0.3f;     // 元の場所からこの距離(m)以内で離すと、くっつく
         private bool visible = true, grab;
@@ -85,7 +85,8 @@ namespace MonakaLabo.SquareMahjong
         private void UpdateCollider()
         {
             bool on = visible && grab;
-            if (body != null && body.enabled != on) body.enabled = on;
+            if (grips == null) return;
+            for (int i = 0; i < grips.Length; i++) if (grips[i] != null && grips[i].enabled != on) grips[i].enabled = on;
         }
 
         /// <summary>中身の無いときの表示(待機中・ほかの人の席)</summary>

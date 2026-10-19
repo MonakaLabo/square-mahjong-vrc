@@ -195,6 +195,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // 本体(板)は席ごとに8枚。卓の右寄りに少し傾けて付ける。中身(SqmPad)は1組で、座った人の手元で自分の席の板に付ける。
         // 板の中の座標(m): 原点が板の中央、x が右、y が上。読む人は -Z 側から見る。板の内側は 0.40 × 0.25
         const float PW = 0.42f, PH = 0.27f;
+        const float GRIP_IN = 0.198f, GRIP_OUT = 0.235f;   // パッドの掴む所: 中心から左右へこの範囲(m)
         static readonly Color PAD_TEXT = new Color(0.1f, 0.16f, 0.2f);
         static Material matPadPanel, matPadBg, matPadFrame, matPadLine, matPadTabOn, matPadLift;
         static Material[] matPadBtn;
@@ -405,11 +406,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Vector3 edge = u * (SqmTable.RIM_AP + 0.01f) + Vector3.up * (TOP + SqmTable.RIM_H);
             g.transform.localPosition = edge - padUp * (PH / 2) + r * 0.3f;
             g.transform.localRotation = Quaternion.LookRotation((-u + Vector3.down).normalized, padUp);
-            // 掴む判定は板の裏側に薄く置く(ボタンの判定より奥にして、ボタンを押すじゃまをしない)
-            var col = g.AddComponent<BoxCollider>();
-            col.center = new Vector3(0, 0, 0.01f);
-            col.size = new Vector3(PW, PH, 0.004f);
-            col.isTrigger = true;
+            // 掴む判定は板の左右の端だけ(板全体に付けると、ボタンを押そうとしても掴む方に取られる)。
+            // 枠から少し外へはみ出させて、内側はスクロールの ▲▼ にかからない所まで
+            var grips = new Collider[2];
+            for (int side = 0; side < 2; side++)
+            {
+                var col = g.AddComponent<BoxCollider>();
+                col.center = new Vector3((side == 0 ? -1 : 1) * (GRIP_IN + GRIP_OUT) / 2, 0, 0.004f);
+                col.size = new Vector3(GRIP_OUT - GRIP_IN, PH + 0.02f, 0.03f);
+                col.isTrigger = true;
+                grips[side] = col;
+            }
             var rb = g.AddComponent<Rigidbody>();
             rb.isKinematic = true;
             rb.useGravity = false;
@@ -447,7 +454,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             credit.color = new Color(0.85f, 0.88f, 0.9f);
             credit.text = "平方麻雀 v" + SqmPad.VERSION + "\n<size=70%>" + SqmPad.CREDIT + "</size>";
             body.visuals = new[] { frame, panel, anchor, idle, body.nameText.gameObject, credit.gameObject };
-            body.body = col;
+            body.grips = grips;
             return body;
         }
 
