@@ -39,13 +39,6 @@ namespace MonakaLabo.SquareMahjong
 
         private void Start() { SetHome(); }
 
-        private void Update()
-        {
-            if (holding || !grab) return;
-            lastPos = transform.position;
-            lastRot = transform.rotation;
-        }
-
         public override void OnPickup()
         {
             VRCPlayerApi lp = Networking.LocalPlayer;
@@ -60,7 +53,17 @@ namespace MonakaLabo.SquareMahjong
 
         public override void PostLateUpdate()
         {
-            if (!holding) return;
+            if (!holding)
+            {
+                // 掴む前の位置は、フレームの最後(VRChat が動かし終えた後)に覚える。Update で覚えると、
+                // 同じフレームで VRChat が先に板を手へ寄せていたとき、寄せた後の位置を覚えてしまう
+                if (grab && (pickup == null || !pickup.IsHeld))
+                {
+                    lastPos = transform.position;
+                    lastRot = transform.rotation;
+                }
+                return;
+            }
             VRCPlayerApi lp = Networking.LocalPlayer;
             if (pickup == null || !pickup.IsHeld || !Utilities.IsValid(lp)) { holding = false; return; }
             VRCPlayerApi.TrackingData td = HandData(lp);
