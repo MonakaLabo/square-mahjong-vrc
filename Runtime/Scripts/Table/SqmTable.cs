@@ -1673,6 +1673,38 @@ namespace MonakaLabo.SquareMahjong
         private bool[] riichiTile;                           // リーチの打牌に使える牌(自分の番ごとに調べる)
         private int riichiTileStep = -1, riichiTileN;
 
+        private string padWaitText = "";
+        private int padWaitStep = -1;
+
+        /// <summary>
+        /// パッドの「待ち」の行: 聴牌していれば、和了れる2枚の組み合わせを出す(役が無い組は「役なし」)。フリテンならそう書く。
+        /// 手牌が変わったときだけ数え直す
+        /// </summary>
+        public string PadWaitText()
+        {
+            if (humanSeat < 0 || lMatch == 0 || !Running() || engine.outRole[humanSeat] != SqmEngine.ROLE_NONE) return "";
+            if (padWaitStep == engine.step) return padWaitText;
+            padWaitStep = engine.step;
+            int n = engine.PadWaits(humanSeat);
+            if (n == 0) { padWaitText = ""; return padWaitText; }
+            // 数えている途中で待ちの配列が上書きされないよう、先に写しておく
+            int show = n < 8 ? n : 8;
+            int[] wa = new int[show], wb = new int[show];
+            for (int k = 0; k < show; k++) { wa[k] = engine.waitA[k]; wb[k] = engine.waitB[k]; }
+            string t = "待ち ";
+
+            for (int k = 0; k < show; k++)
+            {
+                int h = engine.WaitHint(humanSeat, wa[k], wb[k]);
+
+                t += (k > 0 ? "  " : "") + TileCode(wa[k]) + "+" + TileCode(wb[k]) + (h == 1 ? "<color=#c03030>(役なし)</color>" : "");
+            }
+            if (n > show) t += "  ほか" + (n - show) + "通り";
+            if (engine.IsFuriten(humanSeat, engine.rFuriten)) t += "  <color=#c03030>フリテン</color>";
+            padWaitText = t;
+            return padWaitText;
+        }
+
         /// <summary>パッドの牌を暗くするか(リーチ ON のとき、聴牌にならない牌)</summary>
         public bool PadTileDim(int i)
         {

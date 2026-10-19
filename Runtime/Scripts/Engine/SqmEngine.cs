@@ -1027,6 +1027,34 @@ namespace MonakaLabo.SquareMahjong
 
         private bool ValidWin() { return evOk && (evYakuman || evYakuHan > 0); }
 
+        /// <summary>
+        /// パッドの表示用: 席 q が a と b(片ロンなら捨て牌とロン牌)で和了ると、どうなるか(状態は変えない)。
+        /// 0 = 形にならない、1 = 形はそろうが役が無い(ドラだけでは和了れない)、2 = 和了れる
+        /// </summary>
+        public int WaitHint(int q, int a, int b)
+        {
+            CopyHand(q, tmpC);
+            tmpC[a]++;
+            if (b >= 0) tmpC[b]++;
+            if (!IsAgari(tmpC, NeedMelds(q))) return 0;
+            wcRonTakenN = 0;
+            wcRonTaken[wcRonTakenN++] = a;
+            if (b >= 0) wcRonTaken[wcRonTakenN++] = b;
+            SetWinCtx(q, WT_RON1, false);
+            CopyHand(q, tmpC);
+            tmpC[a]++;
+            if (b >= 0) tmpC[b]++;
+            EvaluateWin(tmpC);
+            return ValidWin() ? 2 : 1;
+        }
+
+        /// <summary>席 q の手牌(26 枚のとき)の待ち。waitN 組(waitA[k], waitB[k])を返す(状態は変えない)</summary>
+        public int PadWaits(int q)
+        {
+            if (EffCount(q) != 26) { waitN = 0; return 0; }
+            return WaitsOf(q);
+        }
+
         // ================================================================ 点数
         private int CeilDiv(int a, int b) { return (a + b - 1) / b; }
 

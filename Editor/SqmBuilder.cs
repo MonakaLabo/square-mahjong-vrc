@@ -222,6 +222,9 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var game = Group(content, "Game");
             pad.gameRoot = game;
             pad.gameMessage = PText(game, "Message", new Vector2(0, 0.07f), 0.075f, new Vector2(0.38f, 0.026f), TextAlignmentOptions.Center);
+            pad.waitText = PText(game, "Waits", new Vector2(0, -0.048f), 0.048f, new Vector2(0.38f, 0.014f), TextAlignmentOptions.Center);
+            pad.waitText.enableWordWrapping = false;
+            pad.waitText.overflowMode = TextOverflowModes.Ellipsis;
             pad.handTiles = new MeshRenderer[30];
             pad.handLift = new GameObject[30];
             pad.handDim = new GameObject[30];

@@ -99,6 +99,12 @@ static class Program
                     {
                         string before = Canon(b);
                         b.RiichiTiles(b.turn, riichiBuf);
+                        // パッドの待ちの表示(全席)も、状態を変えないこと
+                        for (int q = 0; q < 8; q++)
+                        {
+                            int wn = b.PadWaits(q);
+                            if (wn > 0) b.WaitHint(q, b.waitA[0], b.waitB[0]);
+                        }
                         if (Canon(b) != before) { Console.WriteLine($"✖ {Path.GetFileName(f)}: RiichiTiles が状態を変えた ({i} 手目)"); ok = false; break; }
                         riichiChecks++;
                     }

@@ -26,6 +26,7 @@ namespace MonakaLabo.SquareMahjong
         // 対局
         public GameObject gameRoot;
         public TextMeshPro gameMessage;
+        public TextMeshPro waitText;         // 待ち(和了れる2枚の組み合わせ・役なし・フリテン)
         public MeshRenderer[] handTiles;     // 30(門前 28 + ツモ 2)
         public GameObject[] handLift;        // 選んだ牌の印 30
         public GameObject[] handDim;         // リーチで切れない牌を暗くする 30
@@ -158,6 +159,7 @@ namespace MonakaLabo.SquareMahjong
             int me = table.humanSeat;
             bool live = table.IsLive();
             gameMessage.text = table.PadGuide();
+            if (waitText != null) waitText.text = live ? table.PadWaitText() : "";
             // 手牌: 門前は 14 枚ずつ2段、ツモ牌は上の段の右
             int n = 0, mainN = live ? table.PadMainN() : 0;
             for (int i = 0; i < handTiles.Length; i++)
