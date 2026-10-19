@@ -2,7 +2,9 @@ using System.IO;
 using TMPro;
 using UdonSharpEditor;
 using UnityEditor;
+using UnityEditor.Events;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace MonakaLabo.SquareMahjong.EditorTools
 {
@@ -194,7 +196,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // ================================================================ 手元のパッド
         // 本体(板)は席ごとに8枚。卓の右寄りに少し傾けて付ける。中身(SqmPad)は1組で、座った人の手元で自分の席の板に付ける。
         // 板の中の座標(m): 原点が板の中央、x が右、y が上。読む人は -Z 側から見る。板の内側は 0.40 × 0.25
-        const float PW = 0.42f, PH = 0.27f;
+        const float PW = SqmPadBody.W, PH = SqmPadBody.H;
         const float GRIP_IN = 0.198f, GRIP_OUT = 0.235f;   // パッドの掴む所: 中心から左右へこの範囲(m)
         static readonly Color PAD_TEXT = new Color(0.1f, 0.16f, 0.2f);
         static Material matPadPanel, matPadBg, matPadFrame, matPadLine, matPadTabOn, matPadLift;
@@ -390,9 +392,53 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             }
             PadKey(PadBtn(list, "up", "▲", matPadBtn[0], new Vector2(0.183f, 0.048f), new Vector2(0.022f, 0.02f), 0.06f, out _, out _), pad, 320);
             PadKey(PadBtn(list, "down", "▼", matPadBtn[0], new Vector2(0.183f, -0.072f), new Vector2(0.022f, 0.02f), 0.06f, out _, out _), pad, 321);
+            // ---- VRChat 標準のビームで押せるように: 押せる所ごとに、透明な UI のボタンを重ねる ----
+            // VR では UI を指すと VRChat のレーザーが出て、トリガーで押せる(デスクトップでもクリックで押せる)。
+            // 押せる所の当たり判定(BoxCollider)は外す。残すと、手で触って押すのと UI とで二重に押される
+            foreach (var k in content.GetComponentsInChildren<SqmPadKey>(true)) UiButton(k.gameObject, k);
+            foreach (var b in table.padBodies) foreach (var bt in b.GetComponentsInChildren<SqmButton>(true)) UiButton(bt.gameObject, bt);
+
             list.SetActive(false);
             score.SetActive(false);
             content.SetActive(false);
+        }
+
+        const float UI_SCALE = 0.001f;   // UI の 1 単位 = 1mm
+
+        /// <summary>
+        /// g の当たり判定(BoxCollider)と同じ所に、透明な UI のボタン(World Space の Canvas + VRCUiShape)を重ね、
+        /// 押されたら target の Press を呼ぶ。g の当たり判定は外す
+        /// </summary>
+        static void UiButton(GameObject g, UdonSharp.UdonSharpBehaviour target)
+        {
+            var col = g.GetComponent<BoxCollider>();
+            if (col == null) return;
+            Vector3 c = col.center, size = col.size, sc = g.transform.localScale;
+            Object.DestroyImmediate(col);
+            var ui = new GameObject("UI", typeof(RectTransform));
+            ui.transform.SetParent(g.transform, false);
+            var rt = (RectTransform)ui.transform;
+            rt.localPosition = new Vector3(c.x, c.y, c.z - size.z / 2);   // 当たり判定の表の面
+            rt.localRotation = Quaternion.identity;
+            // g が伸び縮みしていても(牌の絵など)、UI は mm 単位でそろえる
+            rt.localScale = new Vector3(UI_SCALE / sc.x, UI_SCALE / sc.y, UI_SCALE / sc.z);
+            rt.sizeDelta = new Vector2(size.x * sc.x / UI_SCALE, size.y * sc.y / UI_SCALE);
+            var canvas = ui.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            ui.AddComponent<GraphicRaycaster>();
+            var box = ui.AddComponent<BoxCollider>();
+            box.size = new Vector3(rt.sizeDelta.x, rt.sizeDelta.y, 1f);
+            box.isTrigger = true;
+            ui.AddComponent<VRC.SDK3.Components.VRCUiShape>();
+            var img = ui.AddComponent<Image>();
+            img.color = new Color(1, 1, 1, 0);   // 見えない(当たり判定だけ)
+            ui.GetComponent<CanvasRenderer>().cullTransparentMesh = true;
+            var btn = ui.AddComponent<Button>();
+            btn.transition = Selectable.Transition.None;
+            var nav = btn.navigation;
+            nav.mode = Navigation.Mode.None;
+            btn.navigation = nav;
+            UnityEventTools.AddStringPersistentListener(btn.onClick, UdonSharpEditorUtility.GetBackingUdonBehaviour(target).SendCustomEvent, "Press");
         }
 
         /// <summary>席 s のパッドの本体(板・掴む・位置の同期・待機中の JOIN / NEW GAME)</summary>

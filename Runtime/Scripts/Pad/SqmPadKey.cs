@@ -10,7 +10,10 @@ namespace MonakaLabo.SquareMahjong
         public SqmPad pad;
         public int code;
 
-        public override void Interact()
+        public override void Interact() { Press(); }
+
+        /// <summary>押す(手で触ったときと、ビームで押したとき)</summary>
+        public void Press()
         {
             if (pad != null) pad.OnKey(code);
         }

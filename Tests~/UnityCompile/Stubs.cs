@@ -27,7 +27,12 @@ namespace UdonSharpEditor
     {
         public static void CopyProxyToUdon(UdonSharp.UdonSharpBehaviour b) { }
         public static UnityEngine.ScriptableObject GetUdonSharpProgramAsset(System.Type t) => null;
+        public static VRC.Udon.UdonBehaviour GetBackingUdonBehaviour(UdonSharp.UdonSharpBehaviour b) => null;
     }
+}
+namespace VRC.Udon
+{
+    public class UdonBehaviour : UnityEngine.MonoBehaviour { public void SendCustomEvent(string eventName) { } }
 }
 namespace TMPro
 {

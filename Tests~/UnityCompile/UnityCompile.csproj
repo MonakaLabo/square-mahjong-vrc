@@ -18,6 +18,7 @@
   <ItemGroup>
     <Reference Include="$(UnityManaged)\UnityEngine\*.dll" Private="false" />
     <Reference Include="$(VrcPlugins)\VRCSDKBase.dll" Private="false" />
+    <Reference Include="..\..\..\..\Library\ScriptAssemblies\UnityEngine.UI.dll" Private="false" />
     <Reference Include="$(VrcPlugins)\VRCCore-Standalone.dll" Private="false" />
     <Reference Include="..\..\..\com.vrchat.worlds\Runtime\VRCSDK\Plugins\VRCSDK3.dll" Private="false" />
   </ItemGroup>

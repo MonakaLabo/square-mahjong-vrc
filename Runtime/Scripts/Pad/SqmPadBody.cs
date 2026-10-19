@@ -23,6 +23,7 @@ namespace MonakaLabo.SquareMahjong
         public GameObject[] visuals;        // 板の見た目(隠すときに消す)
         public Collider[] grips;            // 掴む所(板の左右の端だけ。真ん中はボタンを押すじゃまになるので付けない)
 
+        public const float W = 0.42f, H = 0.27f;   // 板の大きさ(m)
         public const float SNAP = 0.3f;     // 元の場所からこの距離(m)以内で離すと、くっつく
         private bool visible = true, grab;
         private Vector3 homePos;
