@@ -1137,6 +1137,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
         static Material ShaderMat(string name, string shader, Color color, Texture2D tex, int queue = -1)
         {
+            // Unity 組み込みの Sprites/Default は、VRChat SDK に VRChat/Sprites/Default へ差し替えられることがあり、
+            // そのとき描く順番(renderQueue)が初期値(3000)に戻る。するとパッドの下地が文字やボタンと距離で前後を争い、
+            // 見る向きによって文字やボタンが下地に隠れる。なので初めから VRChat 版を使う(中身は同じ)
+            if (shader == "Sprites/Default" && Shader.Find("VRChat/Sprites/Default") != null) shader = "VRChat/Sprites/Default";
             string path = GEN + "/" + name + ".mat";
             var m = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (m == null)
