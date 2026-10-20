@@ -756,7 +756,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             // 流局の説明・終局の順位
             table.resBody = HText(g, "Body", new Vector2(0, -0.04f), 0.44f, new Vector2(HW - 0.18f, 0.5f), TextAlignmentOptions.Left);
             table.resRankL = HText(g, "RankL", new Vector2(-0.56f, -0.04f), 0.56f, new Vector2(1.08f, 0.56f), TextAlignmentOptions.Left);
-            table.resRankR = HText(g, "RankR", new Vector2(0.58f, -0.04f), 0.4f, new Vector2(1.06f, 0.56f), TextAlignmentOptions.Left);
+            table.resRankR = HText(g, "RankR", new Vector2(0.58f, -0.04f), 0.56f, new Vector2(1.06f, 0.56f), TextAlignmentOptions.Left);
             table.resFoot = HText(g, "Foot", new Vector2(0, -0.385f), 0.3f, new Vector2(HW - 0.14f, 0.06f), TextAlignmentOptions.Center);
             g.SetActive(false);
         }
