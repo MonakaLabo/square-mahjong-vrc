@@ -112,7 +112,8 @@ namespace MonakaLabo.SquareMahjong
         public const int NP = 8, NT = 47;
         public const int RING = 64;          // 毎回送る直近の記録の数
         public const int LOG_MAX = 32768;    // 1試合の記録の上限(1試合はふつう 1万手まで)
-        public const int REPLAY_PER_FRAME = 120;
+        // 途中参加の再生は、1フレームにこの秒数まで(Udon では1手の適用が重く、決まった手数ずつだと数秒止まることがある)
+        public const float REPLAY_BUDGET = 0.004f;
 
         // ---------------- 同期する状態(ホストが書く) ----------------
         [UdonSynced] private int sMatch;                     // 試合の番号(0 = まだ無い)
@@ -652,12 +653,13 @@ namespace MonakaLabo.SquareMahjong
 
         private void ReplayChunk()
         {
-            int end = lCount + REPLAY_PER_FRAME;
-            if (end > replayTo) end = replayTo;
-            for (int i = lCount; i < end; i++)
+            // 時間で区切る(少なくとも1手は進める)。重い手が続いても、画面が止まらないように
+            float t0 = Time.realtimeSinceStartup;
+            for (int i = lCount; i < replayTo; i++)
             {
                 if (!ApplyCode(lLog[i])) { message = "同期に失敗しました"; replayTo = 0; ResetLocal(); archiveAskWait = 5f; return; }
                 lCount = i + 1;
+                if (Time.realtimeSinceStartup - t0 > REPLAY_BUDGET) break;
             }
             if (lCount >= replayTo)
             {
