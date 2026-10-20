@@ -425,7 +425,7 @@ namespace MonakaLabo.SquareMahjong
             if (d == 2) return "<color=#a05000>[DEBUG]</color> 自分の席に仕込む";
             if (i == 0) return "効果音の音量";
             if (i == 1) return "声の音量";
-            if (i == 2) return "パッドを掴めるようにする";
+            if (i == 2) return "パッドを掴めるようにする(VR)";
             if (i == 3) return "パッドを元の位置に戻す";
             if (i == 4) return "席を立つ";
             if (i == 5) return "新しい試合";

@@ -14,6 +14,7 @@ namespace UdonSharp
         public virtual void OnPlayerLeft(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnDrop() { }
         public virtual void OnPickup() { }
+        public virtual void InputGrab(bool value, VRC.Udon.Common.UdonInputEventArgs args) { }
         public virtual void PostLateUpdate() { }
         public bool DisableInteractive { get; set; }
     }
@@ -60,6 +61,11 @@ namespace TMPro
         public bool enableWordWrapping; public TextOverflowModes overflowMode; public float fontSizeMin, fontSizeMax, lineSpacing;
         public UnityEngine.RectTransform rectTransform => null;
     }
+}
+namespace VRC.Udon.Common
+{
+    public enum HandType { RIGHT, LEFT }
+    public struct UdonInputEventArgs { public HandType handType; public bool boolValue; public float floatValue; }
 }
 namespace VRC.Udon.Common.Interfaces
 {
