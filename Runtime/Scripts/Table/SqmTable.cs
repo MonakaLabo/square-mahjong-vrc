@@ -1071,7 +1071,8 @@ namespace MonakaLabo.SquareMahjong
         private void RefreshHand(int s)
         {
             int baseSlot = s * SLOT_HAND;
-            bool reveal = s == humanSeat || (humanSeat < 0 && !AnyHuman()) || engine.outRole[s] != SqmEngine.ROLE_NONE || engine.phase == SqmEngine.PH_KYOKU_OVER;
+            // 表が見えるのは: 自分の手牌 / 観戦者(席に着いていない人)にはいつも全員の手牌 / 和了った人の手牌 / 局が終わったあと
+            bool reveal = s == humanSeat || humanSeat < 0 || engine.outRole[s] != SqmEngine.ROLE_NONE || engine.phase == SqmEngine.PH_KYOKU_OVER;
             // ツモった牌は右端に離して置く
             int dn = engine.drawnLen[s];
             int[] c = tmpC;
