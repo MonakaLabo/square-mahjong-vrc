@@ -138,6 +138,9 @@ namespace MonakaLabo.SquareMahjong
         private int lIdleMatch;                              // Reset で「試合なし」になったときの番号
         private int lCount;                                  // 手元で再生した記録の数
         private int[] lLog;                                  // 手元の記録(ホストになったときに配れるよう、全員が持つ)
+        private int lLogFrom;                                // lLog が正しいのはこの手目から(局の始めから復元したときは、それより前は -1)
+        private int[] lSnap;                                 // 今の局の始めの状態(engine.ksBuf の写し)。途中参加の人へ送る
+        private int lSnapAt, lSnapSeq = -1;                  // その局が始まった時点で適用済みだった手数 / 局の番号
         private int replayTo;                                // 記録すべてから再生しているときの行き先(0 = していない)
         private float archiveAskWait;                        // 記録すべてを頼み直すまでの待ち
         private bool archiveDirty;                           // ホスト: 記録すべてを送る
@@ -177,6 +180,7 @@ namespace MonakaLabo.SquareMahjong
             optBuf = new int[N_OPT * SqmEngine.OPT];
             act = new int[SqmEngine.OPT];
             lLog = new int[LOG_MAX];
+            lSnap = new int[SqmEngine.KS_LEN];
             tmpC = new int[NT]; tmpDr = new int[8];
             handMainN = new int[NP];
             InitRules();
@@ -288,7 +292,40 @@ namespace MonakaLabo.SquareMahjong
             }
             bool ok = engine.ApplyAction(act);
             AdvanceAll();
+            if (ok) NoteKyokuStart(lCount + 1);   // 呼ぶ側は lCount 手目を適用している
             return ok;
+        }
+
+        /// <summary>新しい局が始まっていたら、その局の始めの状態と、それまでに適用した手数(at)を覚える</summary>
+        private void NoteKyokuStart(int at)
+        {
+            if (engine.kyokuSeq == lSnapSeq) return;
+            lSnapSeq = engine.kyokuSeq;
+            lSnapAt = at;
+            for (int i = 0; i < SqmEngine.KS_LEN; i++) lSnap[i] = engine.ksBuf[i];
+        }
+
+        /// <summary>
+        /// 局の始めの状態 snap から復元する(at = その時点で適用済みの手数)。その局の手だけを再生すれば追いつける。
+        /// それより前の記録は持たないので -1 にしておく(ホストになっても、持っていない手は配らない)
+        /// </summary>
+        private bool RestoreLocal(int at, int[] snap)
+        {
+            if (sSeed == 0 || at < 0 || at > LOG_MAX) return false;
+            ApplyRules(sRuleUsed);
+            if (!engine.RestoreKyokuStart((uint)sSeed, snap)) return false;
+            CopyRig();
+            for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
+            lMatch = sMatch;
+            lCount = at;
+            lLogFrom = at;
+            for (int i = 0; i < at; i++) lLog[i] = -1;
+            replayTo = 0;
+            lSnapSeq = -1;
+            AdvanceAll();
+            NoteKyokuStart(at);
+            ClearSelection();
+            return true;
         }
 
         /// <summary>入力待ちが無いあいだ、自動で進める(配牌・ツモなど)。ホストも他の人も同じ所で止まる</summary>
@@ -571,8 +608,11 @@ namespace MonakaLabo.SquareMahjong
             for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
             lMatch = sMatch;
             lCount = 0;
+            lLogFrom = 0;
             replayTo = 0;
+            lSnapSeq = -1;
             AdvanceAll();
+            NoteKyokuStart(0);
             ClearSelection();
         }
 
@@ -586,8 +626,17 @@ namespace MonakaLabo.SquareMahjong
             {
                 // 持ち主が代わって、自分が足した手の一部が取り消された: 手元の記録の頭から sCount 手目までを再生し直す
                 int keep = sCount;
-                ResetLocal();
-                replayTo = keep;
+                if (keep >= lSnapAt && lSnapAt >= lLogFrom)
+                {
+                    // 今の局の始めから再生し直せば足りる
+                    int at = lSnapAt;
+                    int[] snap = new int[SqmEngine.KS_LEN];
+                    for (int i = 0; i < SqmEngine.KS_LEN; i++) snap[i] = lSnap[i];
+                    if (RestoreLocal(at, snap)) replayTo = keep;
+                    else { ResetLocal(); AskArchive(); }
+                }
+                else if (lLogFrom == 0) { ResetLocal(); replayTo = keep; }
+                else { ResetLocal(); AskArchive(); }   // 手元に古い記録が無い
             }
             CatchUp();
             dirty = true;
@@ -601,6 +650,7 @@ namespace MonakaLabo.SquareMahjong
             for (int i = lCount; i < sCount; i++)
             {
                 int code = sRing[i % RING];
+                if (code < 0) { AskArchive(); return; }   // ホストが持っていない古い手
                 if (!ApplyCode(code)) { message = "同期をやり直しています"; ResetLocal(); AskArchive(); return; }
                 lLog[i] = code;
                 lCount = i + 1;
@@ -628,10 +678,16 @@ namespace MonakaLabo.SquareMahjong
             archiveDirty = false;
             if (archive == null || !CaughtUp()) return;
             if (!Networking.IsOwner(archive.gameObject)) Networking.SetOwner(Networking.LocalPlayer, archive.gameObject);
-            int[] log = new int[lCount];
-            for (int i = 0; i < lCount; i++) log[i] = lLog[i];
+            // 送るのは、今の局の始めの状態と、そこからの手だけ(試合の最初から送ると、受け取った人の再生がとても重い)
+            int from = lSnapAt;
+            int[] log = new int[lCount - from];
+            for (int i = from; i < lCount; i++) log[i - from] = lLog[i];
+            int[] snap = new int[SqmEngine.KS_LEN];
+            for (int i = 0; i < SqmEngine.KS_LEN; i++) snap[i] = lSnap[i];
             archive.aMatch = lMatch;
             archive.aCount = lCount;
+            archive.aBase = from;
+            archive.aSnap = snap;
             archive.aLog = log;
             archive.RequestSerialization();
         }
@@ -642,13 +698,15 @@ namespace MonakaLabo.SquareMahjong
             Init();
             if (IsHost() || archive.aMatch != sMatch || sMatch == 0) return;
             if (lMatch == sMatch && replayTo == 0 && lCount >= archive.aCount) return;
-            int n = archive.aCount;
-            if (n > LOG_MAX || archive.aLog == null || archive.aLog.Length < n) return;
-            ResetLocal();
-            for (int i = 0; i < n; i++) lLog[i] = archive.aLog[i];
+            int n = archive.aCount, from = archive.aBase;
+            if (n > LOG_MAX || from < 0 || from > n || archive.aLog == null || archive.aLog.Length < n - from) return;
+            if (archive.aSnap == null || archive.aSnap.Length < SqmEngine.KS_LEN) return;
+            // 局の始めから復元して、その局の手だけを再生する
+            if (!RestoreLocal(from, archive.aSnap)) return;
+            for (int i = from; i < n; i++) lLog[i] = archive.aLog[i - from];
             replayTo = n;
             archiveAskWait = 0;
-            if (n == 0) { replayTo = 0; CatchUp(); dirty = true; }
+            if (n == from) { replayTo = 0; CatchUp(); dirty = true; }
         }
 
         private void ReplayChunk()

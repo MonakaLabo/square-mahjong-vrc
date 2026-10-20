@@ -183,6 +183,7 @@ namespace MonakaLabo.SquareMahjong
             winYakuman = new bool[MAXWINS]; winRiichi = new bool[MAXWINS];
             mrSeat = new int[NP]; mrScore = new int[NP]; mrUma = new int[NP]; mrFinal10 = new int[NP];
             pendSeats = new int[NP];
+            ksBuf = new int[KS_LEN];
             legal = new int[MAXOPT * OPT];
             // 形の計算の作業領域
             sw = new int[NT]; sw2 = new int[NT]; ankTmp = new int[NT]; tmpC = new int[NT]; tmpC2 = new int[NT]; allC = new int[NT];
@@ -308,6 +309,37 @@ namespace MonakaLabo.SquareMahjong
             afterCall = false; kuikaeN = 0; isRinshan = false; dcActive = false; ClearCalls();
             first = -1; winsN = 0; resType = RES_NONE; matchOver = false; kyokuSeq = 0; step = 0;
             UpdatePending();
+        }
+
+        // ================================================================ 局の始めの状態(途中参加の追いつき用)
+        // 局をまたいで残るのは、局の番号・本場・供託・親・点数などだけ(山は種と kyokuSeq から作り直せる)。
+        // 局を始める直前(配牌の前)にこれを ksBuf に写しておき、途中参加の人はここから復元して、その局の手だけを再生する。
+        public const int KS_LEN = 8 + NP;
+        public const int KS_KYOKU = 0, KS_HONBA = 1, KS_KYOTAKU = 2, KS_DEALER = 3, KS_SEQ = 4, KS_STEP = 5, KS_INIT_DEALER = 6, KS_SCORE = 8;
+        [System.NonSerialized] public int[] ksBuf;
+
+        private void SaveKyokuStart()
+        {
+            ksBuf[KS_KYOKU] = kyoku; ksBuf[KS_HONBA] = honba; ksBuf[KS_KYOTAKU] = kyotaku; ksBuf[KS_DEALER] = dealer;
+            ksBuf[KS_SEQ] = kyokuSeq; ksBuf[KS_STEP] = step; ksBuf[KS_INIT_DEALER] = initialDealer; ksBuf[7] = 0;
+            for (int s = 0; s < NP; s++) ksBuf[KS_SCORE + s] = score[s];
+        }
+
+        /// <summary>
+        /// 局の始めの状態(ksBuf と同じ並び)から復元する。ルールと仕込みは先に設定しておく。
+        /// このあと Advance で、同じ山・同じ配牌の局が始まる
+        /// </summary>
+        public bool RestoreKyokuStart(uint matchSeed, int[] ks)
+        {
+            if (ks == null || ks.Length < KS_LEN) return false;
+            NewMatch(matchSeed);
+            kyoku = ks[KS_KYOKU]; honba = ks[KS_HONBA]; kyotaku = ks[KS_KYOTAKU]; dealer = ks[KS_DEALER];
+            kyokuSeq = ks[KS_SEQ]; step = ks[KS_STEP]; initialDealer = ks[KS_INIT_DEALER];
+            for (int s = 0; s < NP; s++) score[s] = ks[KS_SCORE + s];
+            turn = dealer;
+            phase = PH_DEAL;
+            UpdatePending();
+            return true;
         }
 
         private void ClearCalls()
@@ -2174,6 +2206,7 @@ namespace MonakaLabo.SquareMahjong
             {
                 if (phase == PH_DEAL)
                 {
+                    SaveKyokuStart();
                     StartKyoku();
                     for (int s = 0; s < NP; s++) kyokuStartScore[s] = score[s];
                     phase = PH_DRAW;
