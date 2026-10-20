@@ -532,7 +532,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             b.transform.localPosition = new Vector3(0, 0, -0.0025f);
             b.transform.localScale = new Vector3(size.x, size.y, 1);
             back = b.GetComponent<MeshRenderer>();
+            // 縁取りは色の板と同じ面に置く(離すと斜めから見たとき縁取りがずれてはみ出し、箱が浮いたように見える)。
+            // どちらも半透明で、重なりは描く順番(縁取り Q_PART → 色の板 Q_FILL)で決まるので、同じ面でもちらつかない
             var edge = Prim(PrimitiveType.Quad, g, "Edge", matPadLine);
+            edge.transform.localPosition = new Vector3(0, 0, -0.0025f);
             edge.transform.localScale = new Vector3(size.x + 0.0015f, size.y + 0.0015f, 1);
             text = PText(g, "Label", Vector2.zero, fontSize, size, TextAlignmentOptions.Center);
             text.transform.localPosition = new Vector3(0, 0, -0.006f);
