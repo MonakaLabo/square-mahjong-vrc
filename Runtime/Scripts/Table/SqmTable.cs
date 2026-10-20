@@ -1594,6 +1594,19 @@ namespace MonakaLabo.SquareMahjong
             resRankR.text = r;
         }
 
+        /// <summary>
+        /// ホロの各席の点数(7セグ): 6 文字にそろえ、足りない桁は頭に薄い 0 を足す(中央揃えでも桁が変わって位置がずれないように)。
+        /// 負の値は「-」も1文字に数える(-4000 → -04000)。7 桁以上はそのまま
+        /// </summary>
+        private string SegScore(int v)
+        {
+            string body = (v < 0 ? -v : v).ToString();
+            int width = v < 0 ? 5 : 6;
+            string pad = "";
+            for (int i = body.Length; i < width; i++) pad += "0";
+            return (v < 0 ? "-" : "") + (pad.Length > 0 ? "<alpha=#38>" + pad + "<alpha=#FF>" : "") + body;
+        }
+
         /// <summary>点数を 10^6 の位まで(頭の 0 は灰色)。負の値は赤で「-」をつける</summary>
         private string ScoreText(int v)
         {
@@ -2177,7 +2190,7 @@ namespace MonakaLabo.SquareMahjong
                     string nm = me ? "あなた" : NameOf(s);
                     holoCellName[p].text = me ? "<color=#ffd070>" + nm + "</color>" : nm;
                 }
-                if (holoCellScore != null && holoCellScore[p] != null) holoCellScore[p].text = engine.score[s].ToString();
+                if (holoCellScore != null && holoCellScore[p] != null) holoCellScore[p].text = SegScore(engine.score[s]);
             }
 
             // ---- 結果の画面(出ているあいだは、ふだんの表示を隠す) ----
