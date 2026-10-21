@@ -1044,11 +1044,9 @@ namespace MonakaLabo.SquareMahjong
             if (visible > 525) visible = 525;
             if (engine.phase == SqmEngine.PH_DEAL && !Running()) visible = 525;
             int drawnStacks = 525 - visible;
-            // 引く順: 局ごとに決まるランダムな席の前の壁から始めて、その壁が切れたら上家(左隣)の壁へ。
-            // 壁の中は、その席から見て右端の列から左へ、列の中は奥(卓の中心側)から手前へ。
-            // 始める壁は局の種から決める(全員で同じになる。山の中身を引く乱数には触らない)
-            int startSide = (int)((engine.kyokuSeed >> 8) % 7u);
-            if (startSide >= WALLLESS_SIDE) startSide++;
+            // 引く順: 壁の無い席の上家(左隣)の壁から始めて、その壁が切れたら、さらに上家の壁へ。
+            // 壁の中は、その席から見て右端の列から左へ、列の中は奥(卓の中心側)から手前へ
+            int startSide = (WALLLESS_SIDE + 7) % 8;
             int k = 0;
             for (int sidx = 0; sidx < 8; sidx++)
             {
