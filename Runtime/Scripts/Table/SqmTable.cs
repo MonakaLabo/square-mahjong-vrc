@@ -150,7 +150,8 @@ namespace MonakaLabo.SquareMahjong
         private float wait;                                  // ホスト: 次の手までの待ち(秒)
         private float claimWait;
         private float pageWait;                              // ホスト: だれも座っていないとき、次のページまでの待ち
-        private int ackSentPage = -1;                        // 自分が確認を送ったページ                             // ホストに選ばれたとき、持ち主を頼み直すまでの待ち
+        private int ackSentPage = -1;                        // 自分が確認を送ったページ(二重に送らないため)
+        private int ackSentStart;                            // そのときの試合の開始時刻(sStartMs)。試合が変われば同じページでも送り直せる
         private bool dirty;
         private int[] handSlotTile;                          // 手牌の枠に入っている牌(-1 = 空)
         private int sel0 = -1, sel1 = -1;                    // 選んだ手牌の枠
@@ -1438,8 +1439,11 @@ namespace MonakaLabo.SquareMahjong
 
         public void Confirm()
         {
-            if (humanSeat < 0 || sPageN == 0 || (sAckMask & (1 << humanSeat)) == 0 || ackSentPage == sPage + sEvtWinFrom * 100 + sWinsKyoku * 10000) return;
-            ackSentPage = sPage + sEvtWinFrom * 100 + sWinsKyoku * 10000;
+            if (humanSeat < 0 || sPageN == 0 || (sAckMask & (1 << humanSeat)) == 0) return;
+            int key = sPage + sEvtWinFrom * 100 + sWinsKyoku * 10000;
+            if (ackSentPage == key && ackSentStart == sStartMs) return;   // 局の番号は試合ごとに 0 から数え直すので、試合の開始時刻も比べる
+            ackSentPage = key;
+            ackSentStart = sStartMs;
             PlaySfx(SFX_CLICK);
             if (IsHost()) HostAck(humanSeat, sPage);
             else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetAck), sPage);
