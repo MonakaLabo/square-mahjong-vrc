@@ -7,3 +7,5 @@ Runtime/Generated/
 Runtime/Generated.meta
 Runtime/Prefabs/
 Runtime/Prefabs.meta
+Tests~/StdHarness/bin/
+Tests~/StdHarness/obj/
