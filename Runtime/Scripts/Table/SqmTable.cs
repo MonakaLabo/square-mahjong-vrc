@@ -2248,7 +2248,9 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>自分の番・鳴けるときの notice。局の始まりの演出中(これから始まる場合も)は、局を言い終わってから鳴らす</summary>
         private void Notice()
         {
-            bool bannerSoon = bannerT > 0 || (lMatch > 0 && replayTo == 0 && lMatch * 1000 + engine.kyokuSeq != bannerSeq);
+            // 帯の覚え方(bannerSeq)は CheckKyokuBanner / CheckKyokuBannerStd と同じにする(違うと、帯が出終わったあとも「これから出る」と思って鳴らさない)
+            int bannerKey = Std() ? lMatch * 1000 + stdEngine.kyokuSeq + 1 : lMatch * 1000 + engine.kyokuSeq;
+            bool bannerSoon = bannerT > 0 || (lMatch > 0 && replayTo == 0 && bannerKey != bannerSeq);
             if (bannerSoon) noticeLater = true;
             else PlaySfx(SFX_TURN);
         }

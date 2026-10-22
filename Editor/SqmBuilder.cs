@@ -867,14 +867,14 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.stdView.kyokuVoicesSouth = new AudioClip[4];
                 for (int i = 0; i < 4; i++)
                     table.stdView.kyokuVoicesSouth[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_kyoku_s" + (i + 1) + ".wav");
-                string[] sv = { "pei", "suufuu", "suucha", "suukan", "sancha", "mangan", "haneman", "baiman", "sanbai", "yakuman", "kazoe", "kyushu9" };
+                string[] sv = { "pei", "suufuu", "suucha", "suukan", "sancha", "mangan", "haneman", "baiman", "sanbai", "yakuman", "kazoe", "kyuusyu9" };
                 table.stdView.stdVoices = new AudioClip[sv.Length];
                 for (int i = 0; i < sv.Length; i++)
                     table.stdView.stdVoices[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_" + sv[i] + ".wav");
             }
 
             // 宣言の声: 席ごとに、その席の上から鳴らす(SqmTable.VOICE_* の順)
-            string[] voices = { "riichi", "pon", "chi", "kan", "ron", "tsumo", "kyushu", "ron_kata", "ron_nimai", "double_riichi" };
+            string[] voices = { "riichi", "pon", "chi", "kan", "ron", "tsumo", "kyuusyu14", "ron_kata", "ron_nimai", "double_riichi" };
             table.voiceClips = new AudioClip[voices.Length];
             for (int i = 0; i < voices.Length; i++)
                 table.voiceClips[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_" + voices[i] + ".wav");
