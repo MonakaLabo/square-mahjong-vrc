@@ -97,7 +97,7 @@ namespace MonakaLabo.SquareMahjong
         private int StacksPerWall() { return engine.NP == 3 ? 18 : 17; }
 
         /// <summary>割れ目のサイコロ(局の種から。表示だけに使う)</summary>
-        private int Dice() { uint s = engine.kyokuSeed; return (int)(s % 6u) + 1 + (int)((s / 6u) % 6u) + 1; }
+        private int Dice() { int v = (int)(engine.kyokuSeed >> 1); return v % 6 + 1 + (v / 6) % 6 + 1; }   // U# は uint の % を使えない
 
         /// <summary>山の牌の番号 t(engine.wall の並び)が、もう取られたか</summary>
         private bool Taken(int t)
