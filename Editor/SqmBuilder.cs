@@ -401,6 +401,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 pad.boxFills[p] = fill.GetComponent<MeshRenderer>();
                 pad.boxTexts[p] = PText(boxes, "text_" + p, at, 0.055f, new Vector2(0.11f, 0.044f), TextAlignmentOptions.TopLeft);
             }
+            // 普通の麻雀: 真ん中を台形 4つで囲む(文字は上の箱の上下左右のものを使う)
+            var trapBoxes = Group(boxes, "Trap");
+            pad.trapRoot = trapBoxes;
+            pad.trapFrames = new GameObject[4];
+            pad.trapFills = new MeshRenderer[4];
+            for (int q = 0; q < 4; q++)
+            {
+                pad.trapFrames[q] = Trapezoid(trapBoxes, "frame_" + q, q, new Vector2(0, 0.002f), 0.065f, 0.03f, 0.19f, 0.082f, matPadLine, "PadTrap_" + q, -0.0015f);
+                pad.trapFills[q] = Trapezoid(trapBoxes, "fill_" + q, q, new Vector2(0, 0.002f), 0.067f, 0.032f, 0.188f, 0.08f, matPadBg, "PadTrapFill_" + q, -0.003f).GetComponent<MeshRenderer>();
+            }
+            trapBoxes.SetActive(false);
             pad.scoreCenter = PText(boxes, "Center", new Vector2(0, 0.002f), 0.065f, new Vector2(0.12f, 0.05f), TextAlignmentOptions.Center);
             pad.resultTable = PText(score, "Result", new Vector2(0, 0.002f), 0.07f, new Vector2(0.37f, 0.165f), TextAlignmentOptions.TopLeft);
             pad.resultTable.gameObject.SetActive(false);
@@ -688,6 +699,22 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.holoCellName[p].overflowMode = TextOverflowModes.Ellipsis;
                 table.holoCellScore[p] = SegText(cell, "Score", sPos, 0.36f, new Vector2(0.2f, 0.055f), true);
             }
+
+            // ---- 右: 普通の麻雀の見取り図(真ん中の四角を、上下左右の台形 4つで囲む。名前と点数は上の 8マスのものを使う) ----
+            var trap = Group(map, "Trap");
+            table.holoTrapRoot = trap;
+            table.holoTrapFrame = new MeshRenderer[4];
+            table.holoTrapFill = new MeshRenderer[4];
+            table.holoTrapWind = new TextMeshPro[4];
+            for (int q = 0; q < 4; q++)
+            {
+                var frame = Trapezoid(trap, "frame_" + q, q, g, 0.075f, 0.075f, 0.2f, 0.2f, matHoloLine, "HoloTrap_" + q, 0.005f);
+                var fill = Trapezoid(trap, "fill_" + q, q, g, 0.081f, 0.081f, 0.194f, 0.194f, matHoloFill, "HoloTrapFill_" + q, 0.0025f);
+                table.holoTrapFrame[q] = frame.GetComponent<MeshRenderer>();
+                table.holoTrapFill[q] = fill.GetComponent<MeshRenderer>();
+                table.holoTrapWind[q] = HText(trap, "wind_" + q, g + TrapMid(q, 0.1375f, 0.1375f), 0.8f, new Vector2(0.12f, 0.12f), TextAlignmentOptions.Center);
+            }
+            trap.SetActive(false);
 
             BuildResult(holo, table);
 
@@ -1038,6 +1065,47 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             topQ.transform.localRotation = Quaternion.Euler(90, 0, 0);
             topQ.transform.localScale = new Vector3(TW, TH, 1);
             return root;
+        }
+
+        /// <summary>
+        /// 真ん中の四角(半幅 a・半高 b)を囲む枠(半幅 A・半高 B)を、角で斜めに切った台形の1つ。q: 0 下 / 1 右 / 2 上 / 3 左。
+        /// 板の形(Mesh)はアセットとして書き出す(シーンに置くので)
+        /// </summary>
+        static GameObject Trapezoid(GameObject parent, string name, int q, Vector2 at, float a, float b, float A, float B, Material mat, string meshName, float z)
+        {
+            Vector2[] p;
+            if (q == 0) p = new[] { new Vector2(-A, -B), new Vector2(A, -B), new Vector2(a, -b), new Vector2(-a, -b) };
+            else if (q == 1) p = new[] { new Vector2(A, -B), new Vector2(A, B), new Vector2(a, b), new Vector2(a, -b) };
+            else if (q == 2) p = new[] { new Vector2(A, B), new Vector2(-A, B), new Vector2(-a, b), new Vector2(a, b) };
+            else p = new[] { new Vector2(-A, B), new Vector2(-A, -B), new Vector2(-a, -b), new Vector2(-a, b) };
+            string path = GEN + "/" + meshName + ".asset";
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            bool isNew = mesh == null;
+            if (isNew) mesh = new Mesh();
+            mesh.Clear();
+            mesh.vertices = new Vector3[] { p[0], p[1], p[2], p[3] };
+            // 表は -z 向き(ほかの板と同じ)。並びが反時計回り(-z から見て)なので、時計回りになるよう三角形を組む
+            mesh.triangles = new[] { 0, 3, 2, 0, 2, 1 };
+            mesh.uv = new[] { Vector2.zero, Vector2.right, Vector2.one, Vector2.up };
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            if (isNew) AssetDatabase.CreateAsset(mesh, path);
+            else EditorUtility.SetDirty(mesh);
+            var g = new GameObject(name);
+            g.transform.SetParent(parent.transform, false);
+            g.transform.localPosition = new Vector3(at.x, at.y, z);
+            g.AddComponent<MeshFilter>().sharedMesh = mesh;
+            g.AddComponent<MeshRenderer>().sharedMaterial = mat;
+            return g;
+        }
+
+        /// <summary>台形 q の真ん中あたり(中心からの位置)</summary>
+        static Vector2 TrapMid(int q, float dx, float dy)
+        {
+            if (q == 0) return new Vector2(0, -dy);
+            if (q == 1) return new Vector2(dx, 0);
+            if (q == 2) return new Vector2(0, dy);
+            return new Vector2(-dx, 0);
         }
 
         static TextMeshPro Text(GameObject parent, string name, Vector3 pos, Quaternion rot, float size, Vector2 rect)

@@ -50,7 +50,10 @@ namespace MonakaLabo.SquareMahjong
         public GameObject scoreRoot;
         public GameObject scoreBoxes;        // 8席の箱(試合中)
         public MeshRenderer[] boxFills;      // 8(マス p: 0 = 下中 … ホロと同じ並び)
-        public GameObject[] boxFrames;       // 8(箱の枠。普通の麻雀で使わない席は隠す)
+        public GameObject[] boxFrames;       // 8(箱の枠。普通の麻雀では隠して、台形を出す)
+        public GameObject trapRoot;          // 普通の麻雀の台形 4つ(0 下 / 1 右 / 2 上 / 3 左)
+        public GameObject[] trapFrames;
+        public MeshRenderer[] trapFills;
         public TextMeshPro[] boxTexts;
         public TextMeshPro scoreCenter;
         public Material matBox, matBoxMe;
@@ -410,16 +413,23 @@ namespace MonakaLabo.SquareMahjong
             bool live = table.IsLive();
             scoreCenter.text = live ? table.PadCenterText() : "";
             bool std = table.StdLive();
+            SetActive(trapRoot, std);
             for (int p = 0; p < 8; p++)
             {
                 int s = (me + p) % 8;
-                // 普通の麻雀は、使っている席の箱だけ
+                // 普通の麻雀は、四角の箱を隠して、上下左右(p = 0・2・4・6)の台形に使っている席だけ出す
                 bool used = !std || table.StdEngineSeat(s) >= 0;
-                if (boxFrames != null && p < boxFrames.Length) SetActive(boxFrames[p], used);
-                SetActive(boxFills[p].gameObject, used);
+                if (boxFrames != null && p < boxFrames.Length) SetActive(boxFrames[p], !std);
+                SetActive(boxFills[p].gameObject, !std);
                 SetActive(boxTexts[p].gameObject, used);
-                if (!used) continue;
                 Material f = p == 0 ? matBoxMe : matBox;
+                if (std && p % 2 == 0 && trapFrames != null && p / 2 < trapFrames.Length)
+                {
+                    SetActive(trapFrames[p / 2], used);
+                    SetActive(trapFills[p / 2].gameObject, used);
+                    if (trapFills[p / 2].sharedMaterial != f) trapFills[p / 2].sharedMaterial = f;
+                }
+                if (!used) continue;
                 if (boxFills[p].sharedMaterial != f) boxFills[p].sharedMaterial = f;
                 boxTexts[p].text = live ? table.PadSeatBox(s) : table.SeatDisplayName(s);
             }

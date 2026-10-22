@@ -74,6 +74,9 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] holoRon;       // ロン牌 12
         public Material[] holoFaceMats;      // ホロ用の牌の絵(光の影響を受けない) 47
         public MeshRenderer[] holoCellFrame, holoCellFill;   // 見取り図のマス 8(枠・中)
+        public GameObject holoTrapRoot;                       // 普通の麻雀の見取り図(台形 4つ: 0 下 / 1 右 / 2 上 / 3 左)
+        public MeshRenderer[] holoTrapFrame, holoTrapFill;
+        public TextMeshPro[] holoTrapWind;
         public TextMeshPro[] holoCellWind, holoCellName, holoCellScore;
         public Material holoMatLine, holoMatRed, holoMatYellow, holoMatFill, holoMatTurn;
         // 結果の画面(和了・流局・終局)。出ているあいだは holoPlay を隠す
@@ -2692,6 +2695,7 @@ namespace MonakaLabo.SquareMahjong
             bool anyFirst = false;
             for (int s = 0; s < NP; s++) if (engine.outRole[s] == SqmEngine.ROLE_FIRST) anyFirst = true;
             if (holoCenter != null) holoCenter.text = anyFirst ? "後発" : "先発";
+            if (holoTrapRoot != null && holoTrapRoot.activeSelf) holoTrapRoot.SetActive(false);
             for (int p = 0; p < NP; p++)
             {
                 int s = (view + p) % NP;
@@ -2751,16 +2755,25 @@ namespace MonakaLabo.SquareMahjong
                 }
             }
             RefreshHoloTime();
+            if (holoTrapRoot != null && !holoTrapRoot.activeSelf) holoTrapRoot.SetActive(true);
             for (int p = 0; p < NP; p++)
             {
                 int s = (view + p) % NP;
                 int es = StdEngineSeat(s);
                 bool used = es >= 0;
-                if (holoCellFrame != null && holoCellFrame[p] != null && holoCellFrame[p].gameObject.activeSelf != used) holoCellFrame[p].gameObject.SetActive(used);
-                if (holoCellFill != null && holoCellFill[p] != null && holoCellFill[p].gameObject.activeSelf != used) holoCellFill[p].gameObject.SetActive(used);
+                // 8マスの四角は使わない(名前と点数の文字だけ使う)。台形は上下左右(p = 0・2・4・6)
+                if (holoCellFrame != null && holoCellFrame[p] != null && holoCellFrame[p].gameObject.activeSelf) holoCellFrame[p].gameObject.SetActive(false);
+                if (holoCellFill != null && holoCellFill[p] != null && holoCellFill[p].gameObject.activeSelf) holoCellFill[p].gameObject.SetActive(false);
                 if (holoCellWind != null && holoCellWind[p] != null) holoCellWind[p].text = "";
                 if (holoCellName != null && holoCellName[p] != null) holoCellName[p].text = "";
                 if (holoCellScore != null && holoCellScore[p] != null) holoCellScore[p].text = "";
+                int q = p / 2;
+                if (p % 2 == 0 && holoTrapFrame != null && q < holoTrapFrame.Length)
+                {
+                    if (holoTrapFrame[q] != null && holoTrapFrame[q].gameObject.activeSelf != used) holoTrapFrame[q].gameObject.SetActive(used);
+                    if (holoTrapFill[q] != null && holoTrapFill[q].gameObject.activeSelf != used) holoTrapFill[q].gameObject.SetActive(used);
+                    if (holoTrapWind[q] != null) holoTrapWind[q].text = "";
+                }
                 if (!used) continue;
                 bool turn = Running() && e.pendKind == SqmStdEngine.PEND_TURN && e.turn == es;
                 bool riichi = e.riichiOn[es];
@@ -2769,16 +2782,13 @@ namespace MonakaLabo.SquareMahjong
                 if (turn) w = "<color=#06202c>" + w + "</color>";
                 else if (riichi) w = "<color=#ff6a5a>" + w + "</color>";
                 else if (me) w = "<color=#ffd070>" + w + "</color>";
-                if (holoCellWind != null && holoCellWind[p] != null) holoCellWind[p].text = w;
-                if (holoCellFrame != null && holoCellFrame[p] != null)
+                if (p % 2 == 0 && holoTrapFrame != null && q < holoTrapFrame.Length)
                 {
+                    if (holoTrapWind[q] != null) holoTrapWind[q].text = w;
                     Material fm = riichi ? holoMatRed : me ? holoMatYellow : holoMatLine;
-                    if (holoCellFrame[p].sharedMaterial != fm) holoCellFrame[p].sharedMaterial = fm;
-                }
-                if (holoCellFill != null && holoCellFill[p] != null)
-                {
+                    if (holoTrapFrame[q] != null && holoTrapFrame[q].sharedMaterial != fm) holoTrapFrame[q].sharedMaterial = fm;
                     Material fl = turn ? holoMatTurn : holoMatFill;
-                    if (holoCellFill[p].sharedMaterial != fl) holoCellFill[p].sharedMaterial = fl;
+                    if (holoTrapFill[q] != null && holoTrapFill[q].sharedMaterial != fl) holoTrapFill[q].sharedMaterial = fl;
                 }
                 if (holoCellName != null && holoCellName[p] != null) holoCellName[p].text = me ? "<color=#ffd070>あなた</color>" : NameOf(s);
                 if (holoCellScore != null && holoCellScore[p] != null) holoCellScore[p].text = SegScore(e.score[es]);
