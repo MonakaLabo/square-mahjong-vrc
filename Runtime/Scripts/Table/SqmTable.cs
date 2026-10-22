@@ -688,6 +688,8 @@ namespace MonakaLabo.SquareMahjong
             }
         }
 
+        private int npcThinkSeat = -1, npcThinkAt = -1, npcThinkMatch = -1;   // ホスト: いま考えている NPC(何手目のときに考え始めたか)
+
         /// <summary>普通の麻雀: ホストが1回分だけ進める(NPC の手・人のリーチ中のツモ切り・局の終わり)</summary>
         private void HostStepStd()
         {
@@ -712,8 +714,16 @@ namespace MonakaLabo.SquareMahjong
             {
                 int es = e.pendSeats[i];
                 if (IsHuman(StdTableSeat(es))) continue;
-                uint nseed = e.HashSeed(e.seed.ToString() + ":" + lCount + ":" + es);
-                int idx = stdNpc.Decide(es, nseed);
+                // 考えるのは何フレームかに分ける(打牌の受け入れを1フレームに1種類ずつ)。考えている間に記録が進んだら考え直す
+                int idx;
+                if (npcThinkSeat == es && npcThinkAt == lCount && npcThinkMatch == lMatch) idx = stdNpc.Continue();
+                else
+                {
+                    npcThinkSeat = es; npcThinkAt = lCount; npcThinkMatch = lMatch;
+                    idx = stdNpc.Begin(es, e.HashSeed(e.seed.ToString() + ":" + lCount + ":" + es));
+                }
+                if (idx == SqmStdNpc.THINKING) return;
+                npcThinkSeat = -1;
                 if (idx < 0) { message = "NPC エラー"; wait = 2f; return; }
                 int ty = e.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_TYPE];
                 if (!Commit(es | (idx << 3))) { message = "NPC エラー: " + e.lastError; wait = 2f; return; }

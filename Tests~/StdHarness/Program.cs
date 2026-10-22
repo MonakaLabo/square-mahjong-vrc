@@ -394,11 +394,18 @@ static class Program
                 int idx;
                 if (seatStyle[seat] < SqmStdNpc.N_STYLES && e.pendKind != E.PEND_NEXT)
                 {
+                    // 卓と同じく、Begin → Continue を1回ずつ(1フレーム分)測る
                     long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-                    idx = npc.Decide(seat, e.HashSeed(seed + ":" + log.Count));
-                    long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
-                    npcTicks += dt; npcCalls++;
-                    npcMax = Math.Max(npcMax, dt * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+                    idx = npc.Begin(seat, e.HashSeed(seed + ":" + log.Count));
+                    while (true)
+                    {
+                        long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+                        npcTicks += dt; npcCalls++;
+                        npcMax = Math.Max(npcMax, dt * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+                        if (idx != SqmStdNpc.THINKING) break;
+                        t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                        idx = npc.Continue();
+                    }
                     if (idx < 0 || idx >= n) { Check("NPC の選択", false, idx.ToString()); idx = 0; }
                 }
                 else idx = Choose(e, seat, n, rng);
@@ -446,7 +453,7 @@ static class Program
             for (int st = 0; st <= SqmStdNpc.N_STYLES; st++)
                 if (styleN[st] > 0) parts.Add($"{sn[st]}: 平均順位 {(double)styleRank[st] / styleN[st]:F2}・平均 {styleFinal[st] / 10.0 / styleN[st]:+0.0;-0.0}・和了 {styleWin[st] * 100.0 / (kyoku * styleN[st] / (double)matches):F1}%・放銃 {styleDeal[st] * 100.0 / (kyoku * styleN[st] / (double)matches):F1}%");
             foreach (var line in parts) Console.WriteLine("  " + line);
-            Console.WriteLine($"  NPC の判断 {npcCalls} 回: 平均 {npcTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, npcCalls):F3} ms・最大 {npcMax:F1} ms");
+            Console.WriteLine($"  NPC の1フレーム分 {npcCalls} 回: 平均 {npcTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, npcCalls):F3} ms・最大 {npcMax:F1} ms");
         }
         Console.WriteLine($"  局の終わりの残り枚数: 平均 {(double)leftSum / Math.Max(1, kyoku):F1} 分布(10枚ごと) {string.Join(",", leftHist)}");
         var top = Enumerable.Range(0, E.N_YAKU).Where(i => yakuCount[i] > 0).OrderByDescending(i => yakuCount[i]).Select(i => $"{new E().YakuNameStatic(i)}{yakuCount[i]}");

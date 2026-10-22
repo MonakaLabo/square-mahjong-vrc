@@ -67,36 +67,54 @@ namespace MonakaLabo.SquareMahjong
         private const int HASH = 8192;
         private int[] hKey, hVal;
         private int[] st, gt, cur, nxt;          // st: 1色の作業用 / gt: 1つの組の表 / cur・nxt: 組み合わせの途中
-        private int best;
+        private int[] grp, ex;                   // 受け入れ: 4つの組の表 / その組を除いた3つを組み合わせたもの
+
+        private void EnsureTables()
+        {
+            if (hKey != null) return;
+            hKey = new int[HASH]; hVal = new int[HASH];
+            for (int i = 0; i < HASH; i++) hKey[i] = -1;
+            st = new int[9]; gt = new int[10]; cur = new int[10]; nxt = new int[10];
+            grp = new int[40]; ex = new int[40];
+        }
 
         /// <summary>向聴数(普通の形・七対子・国士の小さい方)。melds = 副露の数。-1 = 和了</summary>
         public int Shanten(int[] h, int melds)
         {
-            if (hKey == null)
-            {
-                hKey = new int[HASH]; hVal = new int[HASH];
-                for (int i = 0; i < HASH; i++) hKey[i] = -1;
-                st = new int[9]; gt = new int[10]; cur = new int[10]; nxt = new int[10];
-            }
+            EnsureTables();
             // cur[p*5 + m] = 塔子の最大(-1 = できない)
             for (int i = 0; i < 10; i++) cur[i] = -1;
             cur[0] = 0;
-            for (int su = 0; su < 3; su++)
+            for (int g = 0; g < 4; g++) { LoadGroup(h, g); Combine(); }
+            int sh = FinishShanten(melds);
+            if (melds == 0) { int sp = Special(h); if (sp < sh) sh = sp; }
+            return sh;
+        }
+
+        /// <summary>組 g(0〜2 = 萬・筒・索、3 = 字牌)の表を gt に入れる</summary>
+        private void LoadGroup(int[] h, int g)
+        {
+            if (g < 3)
             {
-                int packed = SuitTable(h, su * 9);
+                int packed = SuitTable(h, g * 9);
                 for (int i = 0; i < 10; i++) { int v = (packed >> (i * 3)) & 7; gt[i] = v == 7 ? -1 : v; }
-                Combine();
+                return;
             }
             // 字牌: 3枚以上 = 面子、ちょうど2枚 = 塔子か雀頭
             int hm = 0, h2 = 0;
             for (int k = 27; k < NK; k++) { if (h[k] >= 3) hm++; else if (h[k] == 2) h2++; }
+            if (hm > 4) hm = 4;
             for (int i = 0; i < 10; i++) gt[i] = -1;
             gt[hm] = h2;
             if (h2 > 0) gt[5 + hm] = h2 - 1;
             if (hm > 0 && gt[5 + hm - 1] < h2) gt[5 + hm - 1] = h2;   // 刻子を雀頭にする
-            Combine();
+        }
+
+        /// <summary>組み合わせ終わった cur から、普通の形の向聴数</summary>
+        private int FinishShanten(int melds)
+        {
             int need = 4 - melds;
-            best = 8;
+            int b = 8;
             for (int p = 0; p < 2; p++)
                 for (int m = 0; m <= 4; m++)
                 {
@@ -105,25 +123,26 @@ namespace MonakaLabo.SquareMahjong
                     int mm = m > need ? need : m;
                     int tt = t < need - mm ? t : need - mm;
                     int sh = 8 - 2 * (mm + melds) - tt - p;
-                    if (sh < best) best = sh;
+                    if (sh < b) b = sh;
                 }
-            if (melds == 0)
+            return b;
+        }
+
+        /// <summary>七対子・国士の向聴数の小さい方(副露が無いときだけ使う)</summary>
+        private int Special(int[] h)
+        {
+            int pairs = 0, kinds = 0, yao = 0, yaoPair = 0;
+            for (int k = 0; k < NK; k++)
             {
-                int pairs = 0, kinds = 0, yao = 0, yaoPair = 0;
-                for (int k = 0; k < NK; k++)
-                {
-                    if (h[k] >= 2) pairs++;
-                    if (h[k] >= 1) kinds++;
-                    bool y = engine.IsYaochuK(k);
-                    if (y && h[k] >= 1) yao++;
-                    if (y && h[k] >= 2) yaoPair = 1;
-                }
-                int ct = 6 - pairs + (kinds < 7 ? 7 - kinds : 0);
-                if (ct < best) best = ct;
-                int ks = 13 - yao - yaoPair;
-                if (ks < best) best = ks;
+                if (h[k] >= 2) pairs++;
+                if (h[k] >= 1) kinds++;
+                bool y = engine.IsYaochuK(k);
+                if (y && h[k] >= 1) yao++;
+                if (y && h[k] >= 2) yaoPair = 1;
             }
-            return best;
+            int ct = 6 - pairs + (kinds < 7 ? 7 - kinds : 0);
+            int ks = 13 - yao - yaoPair;
+            return ct < ks ? ct : ks;
         }
 
         /// <summary>cur と gt を組み合わせる(雀頭は合わせて1つまで、面子は4まで)</summary>
@@ -247,13 +266,33 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>受け入れ枚数: c(3m+1 枚)に1枚足して向聴数が下がる牌の残り枚数</summary>
         private int Ukeire(int melds, int sh)
         {
+            EnsureTables();
+            // 1枚足して変わるのは、その牌の組(色か字牌)の表だけ。ほかの3組を組み合わせたもの(ex)を先に作っておく
+            for (int g = 0; g < 4; g++) { LoadGroup(c, g); for (int i = 0; i < 10; i++) grp[g * 10 + i] = gt[i]; }
+            for (int g = 0; g < 4; g++)
+            {
+                for (int i = 0; i < 10; i++) cur[i] = -1;
+                cur[0] = 0;
+                for (int g2 = 0; g2 < 4; g2++)
+                {
+                    if (g2 == g) continue;
+                    for (int i = 0; i < 10; i++) gt[i] = grp[g2 * 10 + i];
+                    Combine();
+                }
+                for (int i = 0; i < 10; i++) ex[g * 10 + i] = cur[i];
+            }
             int u = 0;
             for (int k = 0; k < NK; k++)
             {
                 if (!engine.KindUsed(k) || c[k] >= 4) continue;
                 if (!Near(k)) continue;
+                int g = k < 27 ? k / 9 : 3;
                 c[k]++;
-                int s2 = Shanten(c, melds);
+                LoadGroup(c, g);
+                for (int i = 0; i < 10; i++) cur[i] = ex[g * 10 + i];
+                Combine();
+                int s2 = FinishShanten(melds);
+                if (melds == 0) { int sp = Special(c); if (sp < s2) s2 = sp; }
                 c[k]--;
                 if (s2 < sh) u += Remaining(k);
             }
@@ -342,10 +381,30 @@ namespace MonakaLabo.SquareMahjong
         }
 
         // ================================================================ 決める
-        /// <summary>席 seat の選択肢から1つ選び、その番号を返す(選択肢がなければ -1)</summary>
+        /// <summary>Begin / Continue が「まだ考えている」ときに返す値</summary>
+        public const int THINKING = -2;
+
+        /// <summary>席 seat の選択肢から1つ選び、その番号を返す(選択肢がなければ -1)。全部をいっぺんに考える</summary>
         public int Decide(int seat, uint seed)
         {
+            int r = Begin(seat, seed);
+            while (r == THINKING) r = Continue();
+            return r;
+        }
+
+        // 打牌を考えている途中の状態(Begin で作り、Continue で受け入れを1種類ずつ数える)
+        private int dSeat = -1, dStyle, dMelds, dMinSh, dKN, dKPos;
+        private bool dFold, dThreat;
+        private int[] dKinds;
+
+        /// <summary>
+        /// 考え始める。すぐ決まれば選択肢の番号(なければ -1)、打牌の受け入れを数える必要があれば THINKING を返す。
+        /// THINKING のときは、盤面を変えずに Continue を呼び続ける(Udon で1フレームに収まるよう、受け入れは1回に1種類ずつ数える)
+        /// </summary>
+        public int Begin(int seat, uint seed)
+        {
             Init();
+            dSeat = -1;
             rngS = seed;
             SqmStdEngine e = engine;
             int n = e.BuildLegal(seat);
@@ -390,19 +449,17 @@ namespace MonakaLabo.SquareMahjong
                 c[k] += take;
                 if (s2 <= sh && (ty == SqmStdEngine.A_ANKAN || !AnyRiichi(seat))) return i;
             }
-            return ChooseDiscard(seat, n, sh, style);
+            return BeginDiscard(seat, n, style);
         }
 
-        private int ChooseDiscard(int seat, int n, int shNow, int style)
+        /// <summary>打牌: 候補ごとの向聴数を数え、受け入れを数える種類を並べる</summary>
+        private int BeginDiscard(int seat, int n, int style)
         {
             SqmStdEngine e = engine;
             int[] L = e.legal;
             int melds = e.meldN[seat];
-            bool threat = AnyRiichi(seat);
+            dThreat = AnyRiichi(seat);
             int foldAt = style == ST_ATTACK ? 3 : (style == ST_DEFENSE ? 1 : 2);
-            // 打牌の候補ごとに、向聴数・受け入れ・危険度・価値
-            int bestI = -1, bestScore = int.MinValue, bestSh = 99;
-            int riichiI = -1;
             int minSh = 99;
             // 向聴数と受け入れは種類ごとに1回だけ数える(赤5 と普通の 5 は同じ)
             for (int k = 0; k < NK; k++) { kSh[k] = -9; kUk[k] = -1; }
@@ -416,7 +473,45 @@ namespace MonakaLabo.SquareMahjong
                 c[k]++;
                 if (kSh[k] < minSh) minSh = kSh[k];
             }
-            bool fold = threat && minSh >= foldAt;
+            // 受け入れは、いちばん小さい向聴数になる種類だけ数える(重いので)
+            if (dKinds == null) dKinds = new int[NK];
+            dKN = 0;
+            for (int k = 0; k < NK; k++)
+            {
+                if (kSh[k] == -9) continue;
+                if (kSh[k] == minSh) dKinds[dKN++] = k;
+                else kUk[k] = 0;
+            }
+            dSeat = seat; dStyle = style; dMelds = melds; dMinSh = minSh; dKPos = 0;
+            dFold = dThreat && minSh >= foldAt;
+            return dKN > 0 ? THINKING : FinishDiscard();
+        }
+
+        /// <summary>考えの続き: 受け入れを1種類数える。全部数え終わったら打牌を決めて、その番号を返す</summary>
+        public int Continue()
+        {
+            if (dSeat < 0) return -1;
+            if (dKPos < dKN)
+            {
+                int k = dKinds[dKPos++];
+                c[k]--;
+                kUk[k] = Ukeire(dMelds, kSh[k]);
+                c[k]++;
+                if (dKPos < dKN) return THINKING;
+            }
+            return FinishDiscard();
+        }
+
+        private int FinishDiscard()
+        {
+            SqmStdEngine e = engine;
+            int seat = dSeat, style = dStyle, minSh = dMinSh;
+            bool threat = dThreat, fold = dFold;
+            dSeat = -1;
+            int n = e.BuildLegal(seat);   // 考えている間にほかの所で使われたかもしれないので、作り直す(盤面は同じ)
+            int[] L = e.legal;
+            int bestI = -1, bestScore = int.MinValue, bestSh = 99;
+            int riichiI = -1;
             for (int i = 0; i < n; i++)
             {
                 int o = i * OPT;
@@ -424,14 +519,7 @@ namespace MonakaLabo.SquareMahjong
                 int code = L[o + SqmStdEngine.O_TILE];
                 int k = e.KindOf(code);
                 int s2 = kSh[k];
-                if (kUk[k] < 0)
-                {
-                    // 受け入れは、いちばん小さい向聴数になる候補だけ数える(重いので)
-                    c[k]--;
-                    kUk[k] = s2 == minSh ? Ukeire(melds, s2) : 0;
-                    c[k]++;
-                }
-                int uk = kUk[k];
+                int uk = kUk[k] > 0 ? kUk[k] : 0;
                 int score;
                 if (fold) score = -Danger(seat, k) * 10000 - s2 * 100 + uk;
                 else
