@@ -393,11 +393,57 @@ namespace MonakaLabo.SquareMahjong
             return pairs == 1;
         }
 
-        /// <summary>m = 手の中で作る面子の数(4 - 副露の数)</summary>
+        /// <summary>
+        /// 和了の形か(c は 3m+2 枚。m = 手の中で作る面子の数 = 4 - 副露の数)。
+        /// 速い方法: 色ごとに、刻子(3枚ずつ)を除いた残りは小さい牌から順子で取るしかない(同じ順子3つ = 刻子3つなので、これで漏れない)。
+        /// 雀頭はその色の中の候補をためす。分け方を全部数える Decompose は、役を数えるとき(EvaluateWin)だけ使う
+        /// </summary>
         public bool IsAgari(int[] c, int m)
         {
             if (m == 4 && (IsChiitoi(c) || IsKokushi(c))) return true;
-            return Decompose(c, m, true) > 0;
+            int pairs = 0;
+            for (int k = 27; k < NK; k++)
+            {
+                int n = c[k];
+                if (n == 2) pairs++;
+                else if (n != 0 && n != 3) return false;
+            }
+            int pairSuit = -1;
+            for (int su = 0; su < 3; su++)
+            {
+                int tot = 0;
+                for (int i = 0; i < 9; i++) tot += c[su * 9 + i];
+                int r = tot % 3;
+                if (r == 1) return false;
+                if (r == 2) { if (pairSuit >= 0) return false; pairSuit = su; }
+            }
+            if (pairs + (pairSuit >= 0 ? 1 : 0) != 1) return false;
+            for (int su = 0; su < 3; su++)
+            {
+                int b = su * 9;
+                if (su != pairSuit) { if (!SuitMelds(c, b, -1)) return false; continue; }
+                bool ok = false;
+                for (int i = 0; i < 9 && !ok; i++) if (c[b + i] >= 2 && SuitMelds(c, b, i)) ok = true;
+                if (!ok) return false;
+            }
+            return true;
+        }
+
+        /// <summary>1色(c[b..b+8])が面子だけに分けられるか(pairAt の牌から雀頭の2枚を除いて)</summary>
+        private bool SuitMelds(int[] c, int b, int pairAt)
+        {
+            for (int i = 0; i < 9; i++) dWk[i] = c[b + i];
+            if (pairAt >= 0) dWk[pairAt] -= 2;
+            for (int i = 0; i < 9; i++)
+            {
+                int n = dWk[i];
+                if (n < 0) return false;
+                n %= 3;
+                if (n == 0) continue;
+                if (i > 6) return false;
+                dWk[i + 1] -= n; dWk[i + 2] -= n;
+            }
+            return true;
         }
 
         /// <summary>待ちを waitK に書き出す(c は 3m+1 枚)。待ちの数を返す</summary>

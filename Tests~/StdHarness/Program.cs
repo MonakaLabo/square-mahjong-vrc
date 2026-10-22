@@ -179,6 +179,45 @@ static class Program
         bool noMan = true;
         for (int i = 0; i < e.wallN; i++) { int k = e.KindOf(e.wall[i]); if (k >= 1 && k <= 7) noMan = false; }
         Check("三麻に 2萬〜8萬 が無い", noMan);
+        // 速い和了判定・NPC の向聴数を、遅いが確かなやり方と比べる(ランダムな手牌。和了に近い手を多めに)
+        {
+            var rr = new Random(7);
+            var ee = new E(); ee.SetRules(4, 2); ee.NewMatch(1);
+            var nn = new SqmStdNpc(); nn.engine = ee;
+            int agree = 0, total = 0, shAgree = 0;
+            for (int it = 0; it < 30000; it++)
+            {
+                int melds = rr.Next(4);
+                int size = 14 - 3 * melds - (rr.Next(2) == 0 ? 1 : 0);
+                var h = new int[E.NK];
+                // 和了形を作ってから少し崩す / まったくランダム
+                if (rr.Next(2) == 0)
+                {
+                    int left = size;
+                    while (left >= 3)
+                    {
+                        if (rr.Next(2) == 0) { int k = rr.Next(34); if (h[k] <= 1) { h[k] += 3; left -= 3; } }
+                        else { int su = rr.Next(3), n = rr.Next(7), k = su * 9 + n; if (h[k] < 4 && h[k + 1] < 4 && h[k + 2] < 4) { h[k]++; h[k + 1]++; h[k + 2]++; left -= 3; } }
+                    }
+                    while (left > 0) { int k = rr.Next(34); if (h[k] < 4) { h[k]++; left--; } }
+                    int swaps = rr.Next(3);
+                    for (int q = 0; q < swaps; q++) { int a1 = rr.Next(34); if (h[a1] == 0) continue; int b1 = rr.Next(34); if (h[b1] >= 4) continue; h[a1]--; h[b1]++; }
+                }
+                else { int left = size; while (left > 0) { int k = rr.Next(34); if (h[k] < 4) { h[k]++; left--; } } }
+                int m = 4 - melds;
+                if (size == 3 * m + 2)
+                {
+                    bool fast = ee.IsAgari(h, m);
+                    bool slow = (m == 4 && (ee.IsChiitoi(h) || ee.IsKokushi(h))) || ee.Decompose(h, m, true) > 0;
+                    total++;
+                    if (fast == slow) agree++; else if (total - agree < 4) Console.WriteLine($"  和了判定が違う: {string.Join(",", h)} m={m} 速い={fast} 確か={slow}");
+                }
+                int s1 = nn.Shanten(h, melds), s2 = Shanten(h, melds);
+                if (s1 == s2) shAgree++; else if (it - shAgree < 4) Console.WriteLine($"  向聴数が違う: {string.Join(",", h)} 副露{melds} NPC={s1} 確か={s2}");
+            }
+            Check("速い和了判定が、分け方を数えるやり方と同じ", agree == total, $"{agree}/{total}");
+            Check("NPC の向聴数が、全部ためすやり方と同じ", shAgree == 30000, $"{shAgree}/30000");
+        }
         e = new E(); e.SetRules(4, 2); e.NewMatch(1); AdvanceAll(e);
         Check("四麻は136枚・赤2枚(5筒・5索)", e.wallN == 136 && e.wall.Take(136).Count(t => t >= E.RED0) == 2 && !e.wall.Take(136).Contains(E.RED0));
     }

@@ -22,7 +22,7 @@ namespace MonakaLabo.SquareMahjong
 
         private const int NK = SqmStdEngine.NK, NC = SqmStdEngine.NC, OPT = SqmStdEngine.OPT;
         private bool ready;
-        private int[] c, visible, sc, kSh, kUk;
+        private int[] c, visible, kSh, kUk;
         private bool[] doraK;
 
         private void Init()
@@ -30,7 +30,7 @@ namespace MonakaLabo.SquareMahjong
             if (ready) return;
             ready = true;
             seatStyle = new int[SqmStdEngine.MAXP];
-            c = new int[NK]; visible = new int[NK]; sc = new int[NK]; kSh = new int[NK]; kUk = new int[NK];
+            c = new int[NK]; visible = new int[NK]; kSh = new int[NK]; kUk = new int[NK];
             doraK = new bool[NK];
         }
 
@@ -61,22 +61,52 @@ namespace MonakaLabo.SquareMahjong
         }
 
         // ================================================================ 向聴数
-        private int best, shM;
+        // 色ごと(萬・筒・索、9枚の並び)に「面子 m 個・雀頭 p 個(0/1)のとき、塔子は最大いくつ作れるか」を求めて覚えておき(同じ形はもう探さない)、
+        // 4つ(3色 + 字牌)を組み合わせて 向聴数 = 8 - 2×面子 - 塔子(面子と合わせて4まで) - 雀頭 の最小を出す。
+        // 色の表は 2×5 マスを 3 ビットずつ(7 = 作れない)にまとめた int。覚えておく所は自前の小さなハッシュ表
+        private const int HASH = 8192;
+        private int[] hKey, hVal;
+        private int[] st, gt, cur, nxt;          // st: 1色の作業用 / gt: 1つの組の表 / cur・nxt: 組み合わせの途中
+        private int best;
 
         /// <summary>向聴数(普通の形・七対子・国士の小さい方)。melds = 副露の数。-1 = 和了</summary>
         public int Shanten(int[] h, int melds)
         {
-            for (int k = 0; k < NK; k++) sc[k] = h[k];
-            shM = melds;
-            best = 8;
-            ShRec(0, melds, 0, 0);
-            for (int p = 0; p < NK; p++)
+            if (hKey == null)
             {
-                if (sc[p] < 2) continue;
-                sc[p] -= 2;
-                ShRec(0, melds, 0, 1);
-                sc[p] += 2;
+                hKey = new int[HASH]; hVal = new int[HASH];
+                for (int i = 0; i < HASH; i++) hKey[i] = -1;
+                st = new int[9]; gt = new int[10]; cur = new int[10]; nxt = new int[10];
             }
+            // cur[p*5 + m] = 塔子の最大(-1 = できない)
+            for (int i = 0; i < 10; i++) cur[i] = -1;
+            cur[0] = 0;
+            for (int su = 0; su < 3; su++)
+            {
+                int packed = SuitTable(h, su * 9);
+                for (int i = 0; i < 10; i++) { int v = (packed >> (i * 3)) & 7; gt[i] = v == 7 ? -1 : v; }
+                Combine();
+            }
+            // 字牌: 3枚以上 = 面子、ちょうど2枚 = 塔子か雀頭
+            int hm = 0, h2 = 0;
+            for (int k = 27; k < NK; k++) { if (h[k] >= 3) hm++; else if (h[k] == 2) h2++; }
+            for (int i = 0; i < 10; i++) gt[i] = -1;
+            gt[hm] = h2;
+            if (h2 > 0) gt[5 + hm] = h2 - 1;
+            if (hm > 0 && gt[5 + hm - 1] < h2) gt[5 + hm - 1] = h2;   // 刻子を雀頭にする
+            Combine();
+            int need = 4 - melds;
+            best = 8;
+            for (int p = 0; p < 2; p++)
+                for (int m = 0; m <= 4; m++)
+                {
+                    int t = cur[p * 5 + m];
+                    if (t < 0) continue;
+                    int mm = m > need ? need : m;
+                    int tt = t < need - mm ? t : need - mm;
+                    int sh = 8 - 2 * (mm + melds) - tt - p;
+                    if (sh < best) best = sh;
+                }
             if (melds == 0)
             {
                 int pairs = 0, kinds = 0, yao = 0, yaoPair = 0;
@@ -96,34 +126,86 @@ namespace MonakaLabo.SquareMahjong
             return best;
         }
 
-        [RecursiveMethod]
-        private void ShRec(int i, int m, int t, int pair)
+        /// <summary>cur と gt を組み合わせる(雀頭は合わせて1つまで、面子は4まで)</summary>
+        private void Combine()
         {
-            while (i < NK && sc[i] == 0) i++;
-            if (i >= NK)
+            for (int i = 0; i < 10; i++) nxt[i] = -1;
+            for (int p1 = 0; p1 < 2; p1++)
+                for (int m1 = 0; m1 <= 4; m1++)
+                {
+                    int t1 = cur[p1 * 5 + m1];
+                    if (t1 < 0) continue;
+                    for (int p2 = 0; p1 + p2 < 2; p2++)
+                        for (int m2 = 0; m2 <= 4; m2++)
+                        {
+                            int t2 = gt[p2 * 5 + m2];
+                            if (t2 < 0) continue;
+                            int m = m1 + m2; if (m > 4) m = 4;
+                            int t = t1 + t2; if (t > 4) t = 4;
+                            int at = (p1 + p2) * 5 + m;
+                            if (t > nxt[at]) nxt[at] = t;
+                        }
+                }
+            for (int i = 0; i < 10; i++) cur[i] = nxt[i];
+        }
+
+        /// <summary>1色の表(覚えていれば、それを返す)</summary>
+        private int SuitTable(int[] h, int b)
+        {
+            int key = 0;
+            for (int i = 0; i < 9; i++) key = key * 5 + h[b + i];
+            int slot = (key * 31 + (key >> 9)) & (HASH - 1);
+            for (int probe = 0; probe < 16; probe++)
             {
-                int tt = t < 4 - m ? t : 4 - m;
-                int s = 8 - 2 * m - tt - pair;
-                if (s < best) best = s;
+                int at = (slot + probe) & (HASH - 1);
+                if (hKey[at] == key) return hVal[at];
+                if (hKey[at] == -1)
+                {
+                    int v = ComputeSuit(h, b);
+                    hKey[at] = key; hVal[at] = v;
+                    return v;
+                }
+            }
+            return ComputeSuit(h, b);   // 表がいっぱい(覚えずに数える)
+        }
+
+        private int ComputeSuit(int[] h, int b)
+        {
+            for (int i = 0; i < 9; i++) st[i] = h[b + i];
+            for (int i = 0; i < 10; i++) gt[i] = -1;
+            SuitRec(0, 0, 0, 0);
+            int packed = 0;
+            for (int i = 0; i < 10; i++) packed |= (gt[i] < 0 ? 7 : gt[i]) << (i * 3);
+            return packed;
+        }
+
+        /// <summary>1色の中で、面子・塔子・雀頭の取り方を全部ためす</summary>
+        [RecursiveMethod]
+        private void SuitRec(int i, int m, int t, int p)
+        {
+            while (i < 9 && st[i] == 0) i++;
+            if (i >= 9)
+            {
+                int mm = m > 4 ? 4 : m, tt = t > 4 ? 4 : t;
+                int at = p * 5 + mm;
+                if (tt > gt[at]) gt[at] = tt;
                 return;
             }
-            if (sc[i] >= 3) { sc[i] -= 3; ShRec(i, m + 1, t, pair); sc[i] += 3; }
-            bool num = i < 27;
-            int n = i % 9;
-            if (num && n <= 6 && sc[i + 1] > 0 && sc[i + 2] > 0)
+            if (st[i] >= 3) { st[i] -= 3; SuitRec(i, m + 1, t, p); st[i] += 3; }
+            if (i <= 6 && st[i + 1] > 0 && st[i + 2] > 0) { st[i]--; st[i + 1]--; st[i + 2]--; SuitRec(i, m + 1, t, p); st[i]++; st[i + 1]++; st[i + 2]++; }
+            if (st[i] >= 2)
             {
-                sc[i]--; sc[i + 1]--; sc[i + 2]--; ShRec(i, m + 1, t, pair); sc[i]++; sc[i + 1]++; sc[i + 2]++;
+                st[i] -= 2;
+                if (p == 0) SuitRec(i, m, t, 1);
+                SuitRec(i, m, t + 1, p);
+                st[i] += 2;
             }
-            if (m + t < 4)
-            {
-                if (sc[i] >= 2) { sc[i] -= 2; ShRec(i, m, t + 1, pair); sc[i] += 2; }
-                if (num && n <= 7 && sc[i + 1] > 0) { sc[i]--; sc[i + 1]--; ShRec(i, m, t + 1, pair); sc[i]++; sc[i + 1]++; }
-                if (num && n <= 6 && sc[i + 2] > 0) { sc[i]--; sc[i + 2]--; ShRec(i, m, t + 1, pair); sc[i]++; sc[i + 2]++; }
-            }
-            int save = sc[i];
-            sc[i] = 0;
-            ShRec(i + 1, m, t, pair);
-            sc[i] = save;
+            if (i <= 7 && st[i + 1] > 0) { st[i]--; st[i + 1]--; SuitRec(i, m, t + 1, p); st[i]++; st[i + 1]++; }
+            if (i <= 6 && st[i + 2] > 0) { st[i]--; st[i + 2]--; SuitRec(i, m, t + 1, p); st[i]++; st[i + 2]++; }
+            int save = st[i];
+            st[i] = 0;
+            SuitRec(i + 1, m, t, p);
+            st[i] = save;
         }
 
         // ================================================================ 場の見えている牌
