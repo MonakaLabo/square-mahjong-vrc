@@ -27,7 +27,11 @@ static class Program
         UnitTests();
         Console.WriteLine($"役・点数: {checks - fails}/{checks}");
         foreach (var (p, r) in new[] { (4, 2), (4, 1), (3, 2), (3, 1) })
-            SelfPlay(p, r, matches);
+            SelfPlay(p, r, matches, 0);
+        // NPC どうし / 簡単な打ち手 1人と NPC
+        SelfPlay(4, 2, matches, 2);
+        SelfPlay(3, 2, matches, 2);
+        SelfPlay(4, 2, matches, 1);
         Console.WriteLine($"{(fails == 0 ? "OK" : "NG")} 確かめ {checks} 回、失敗 {fails} 回 ({sw.ElapsedMilliseconds} ms)");
         return fails == 0 ? 0 : 1;
     }
@@ -284,9 +288,13 @@ static class Program
             }
     }
 
-    static void SelfPlay(int players, int rounds, int matches)
+    static void SelfPlay(int players, int rounds, int matches, int npcMode)
     {
-        var rng = new Random(players * 100 + rounds);
+        // npcMode: 0 = 全員簡単な打ち手 / 1 = 0 番の席だけ簡単な打ち手、ほかは NPC / 2 = 全員 NPC
+        var rng = new Random(players * 100 + rounds + npcMode * 7);
+        var styleFinal = new long[SqmStdNpc.N_STYLES + 1]; var styleN = new int[SqmStdNpc.N_STYLES + 1];
+        var styleWin = new int[SqmStdNpc.N_STYLES + 1]; var styleDeal = new int[SqmStdNpc.N_STYLES + 1]; var styleRank = new long[SqmStdNpc.N_STYLES + 1];
+        long npcTicks = 0; int npcCalls = 0; double npcMax = 0;
         var yakuCount = new int[E.N_YAKU];
         int kyoku = 0, wins = 0, tsumo = 0, exhaust = 0, nagashi = 0, aborts = 0, tobi = 0, yakuman = 0, restores = 0, replays = 0;
         var abortKinds = new int[8];
@@ -298,6 +306,14 @@ static class Program
             var e = new E();
             e.SetRules(players, rounds);
             e.NewMatch(seed);
+            var npc = new SqmStdNpc(); npc.engine = e;
+            var seatStyle = new int[4];
+            for (int s = 0; s < 4; s++)
+            {
+                seatStyle[s] = rng.Next(SqmStdNpc.N_STYLES);
+                if (npcMode == 0 || (npcMode == 1 && s == 0)) seatStyle[s] = SqmStdNpc.N_STYLES;   // 簡単な打ち手
+                else npc.SetSeat(s, seatStyle[s]);
+            }
             var log = new List<(int seat, int idx)>();
             var starts = new List<(int at, int[] ks)>();
             int seenSeq = -1, countedSeq = -1, guard = 0;
@@ -317,6 +333,8 @@ static class Program
                         for (int w = 0; w < e.winsN; w++)
                         {
                             if (e.winFrom[w] < 0) tsumo++;
+                            styleWin[seatStyle[e.winSeat[w]]]++;
+                            if (e.winFrom[w] >= 0) styleDeal[seatStyle[e.winFrom[w]]]++;
                             if (e.winYakuman[w] > 0) yakuman++;
                             for (int i = 0; i < e.winYakuN[w]; i++) yakuCount[e.winYakuId[w * E.MAXYAKU + i]]++;
                             Check("和了に役がある", e.winYakuN[w] > 0 && e.winBase[w] > 0);
@@ -334,7 +352,17 @@ static class Program
                 int seat = e.pendKind == E.PEND_NEXT ? 0 : e.pendSeats[0];
                 int n = e.BuildLegal(seat);
                 if (n == 0) { Check("選択肢がある", false, Canon(e)); stuck = true; break; }
-                int idx = Choose(e, seat, n, rng);
+                int idx;
+                if (seatStyle[seat] < SqmStdNpc.N_STYLES && e.pendKind != E.PEND_NEXT)
+                {
+                    long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                    idx = npc.Decide(seat, e.HashSeed(seed + ":" + log.Count));
+                    long dt = System.Diagnostics.Stopwatch.GetTimestamp() - t0;
+                    npcTicks += dt; npcCalls++;
+                    npcMax = Math.Max(npcMax, dt * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+                    if (idx < 0 || idx >= n) { Check("NPC の選択", false, idx.ToString()); idx = 0; }
+                }
+                else idx = Choose(e, seat, n, rng);
                 log.Add((seat, idx));
                 if (!e.ApplyIndex(seat, idx)) { Check("操作できる", false, e.lastError); stuck = true; break; }
                 Invariants(e, $"試合{mt} 手{log.Count}");
@@ -342,6 +370,11 @@ static class Program
             Check("試合が終わる", !stuck, Canon(e));
             if (stuck) continue;
             for (int s = 0; s < players; s++) if (e.score[s] < 0) { tobi++; break; }
+            for (int rk = 0; rk < players; rk++)
+            {
+                int st = seatStyle[e.mrSeat[rk]];
+                styleFinal[st] += e.mrFinal10[rk]; styleN[st]++; styleRank[st] += rk + 1;
+            }
             int finSum = e.mrFinal10.Take(players).Sum();
             Check("最終の合計は 0", finSum == 0, string.Join(",", e.mrFinal10));
             string want = Canon(e);
@@ -364,9 +397,18 @@ static class Program
                 restores++;
             }
         }
-        string name = $"{(players == 4 ? "四麻" : "三麻")}{(rounds == 1 ? "東風" : "東南")}";
+        string name = $"{(players == 4 ? "四麻" : "三麻")}{(rounds == 1 ? "東風" : "東南")}{(npcMode == 0 ? "" : npcMode == 1 ? "(簡単な打ち手1人 vs NPC)" : "(NPC どうし)")}";
         Console.WriteLine($"{name}: {matches} 試合・{kyoku} 局 / 和了 {wins}(ツモ {tsumo}・役満 {yakuman}) 流局 {exhaust}(流し満貫 {nagashi}) 途中流局 {aborts}" +
                           $"(九種{abortKinds[E.AB_KYUSHU]} 四風{abortKinds[E.AB_SUUFUU]} 四家立直{abortKinds[E.AB_SUUCHA]} 四槓{abortKinds[E.AB_SUUKAN]} 三家和{abortKinds[E.AB_SANCHA]}) 飛び {tobi} / 再生 {replays}・復元 {restores}");
+        if (npcMode > 0)
+        {
+            string[] sn = { "攻め寄り", "守り寄り", "鳴き好き", "門前派", "簡単な打ち手" };
+            var parts = new List<string>();
+            for (int st = 0; st <= SqmStdNpc.N_STYLES; st++)
+                if (styleN[st] > 0) parts.Add($"{sn[st]}: 平均順位 {(double)styleRank[st] / styleN[st]:F2}・平均 {styleFinal[st] / 10.0 / styleN[st]:+0.0;-0.0}・和了 {styleWin[st] * 100.0 / (kyoku * styleN[st] / (double)matches):F1}%・放銃 {styleDeal[st] * 100.0 / (kyoku * styleN[st] / (double)matches):F1}%");
+            foreach (var line in parts) Console.WriteLine("  " + line);
+            Console.WriteLine($"  NPC の判断 {npcCalls} 回: 平均 {npcTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency / Math.Max(1, npcCalls):F3} ms・最大 {npcMax:F1} ms");
+        }
         Console.WriteLine($"  局の終わりの残り枚数: 平均 {(double)leftSum / Math.Max(1, kyoku):F1} 分布(10枚ごと) {string.Join(",", leftHist)}");
         var top = Enumerable.Range(0, E.N_YAKU).Where(i => yakuCount[i] > 0).OrderByDescending(i => yakuCount[i]).Select(i => $"{new E().YakuNameStatic(i)}{yakuCount[i]}");
         Console.WriteLine("  役: " + string.Join(" ", top));

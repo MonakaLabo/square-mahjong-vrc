@@ -1,0 +1,505 @@
+using UdonSharp;
+using UnityEngine;
+
+namespace MonakaLabo.SquareMahjong
+{
+    /// <summary>
+    /// 普通の麻雀(SqmStdEngine)の NPC。強さは「ふつう」1種類(ネット麻雀の初段〜中級者くらい)。
+    ///   打牌: 向聴数 → 受け入れ枚数 → 牌の価値(ドラ・役牌の対子は残す)の順で選ぶ。
+    ///   押し引き: だれかのリーチに、手が遠ければ安全な牌(現物・筋・字牌)でオリる。聴牌したらリーチ。
+    ///   鳴き: 役が残る(役牌・タンヤオ・染め手)うえで、向聴数が進むときだけ。
+    /// 性格(席ごと)は押し引きと鳴きの好みだけを変える: 攻め寄り / 守り寄り / 鳴き好き / 門前派。
+    /// Decide(seat, seed) で、engine.BuildLegal(seat) の何番目を選ぶかを返す(同じ局面・同じ seed なら同じ答え)。
+    /// </summary>
+    [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
+    public class SqmStdNpc : UdonSharpBehaviour
+    {
+        public SqmStdEngine engine;
+
+        public const int ST_ATTACK = 0, ST_DEFENSE = 1, ST_CALLER = 2, ST_MENZEN = 3;
+        public const int N_STYLES = 4;
+        [System.NonSerialized] public int[] seatStyle;
+
+        private const int NK = SqmStdEngine.NK, NC = SqmStdEngine.NC, OPT = SqmStdEngine.OPT;
+        private bool ready;
+        private int[] c, visible, sc, kSh, kUk;
+        private bool[] doraK;
+
+        private void Init()
+        {
+            if (ready) return;
+            ready = true;
+            seatStyle = new int[SqmStdEngine.MAXP];
+            c = new int[NK]; visible = new int[NK]; sc = new int[NK]; kSh = new int[NK]; kUk = new int[NK];
+            doraK = new bool[NK];
+        }
+
+        public void SetSeat(int seat, int style)
+        {
+            Init();
+            seatStyle[seat] = style;
+        }
+
+        public string StyleName(int style)
+        {
+            if (style == ST_ATTACK) return "攻め寄り";
+            if (style == ST_DEFENSE) return "守り寄り";
+            if (style == ST_CALLER) return "鳴き好き";
+            return "門前派";
+        }
+
+        // ================================================================ 乱数(引き分けを崩すだけ)
+        private uint rngS;
+        private int Rand(int n)
+        {
+            rngS = rngS + 0x6D2B79F5u;
+            uint t = rngS;
+            t = (t ^ (t >> 15)) * (t | 1u);
+            t ^= t + (t ^ (t >> 7)) * (t | 61u);
+            t ^= t >> 14;
+            return (int)(((ulong)t * (ulong)n) >> 32);
+        }
+
+        // ================================================================ 向聴数
+        private int best, shM;
+
+        /// <summary>向聴数(普通の形・七対子・国士の小さい方)。melds = 副露の数。-1 = 和了</summary>
+        public int Shanten(int[] h, int melds)
+        {
+            for (int k = 0; k < NK; k++) sc[k] = h[k];
+            shM = melds;
+            best = 8;
+            ShRec(0, melds, 0, 0);
+            for (int p = 0; p < NK; p++)
+            {
+                if (sc[p] < 2) continue;
+                sc[p] -= 2;
+                ShRec(0, melds, 0, 1);
+                sc[p] += 2;
+            }
+            if (melds == 0)
+            {
+                int pairs = 0, kinds = 0, yao = 0, yaoPair = 0;
+                for (int k = 0; k < NK; k++)
+                {
+                    if (h[k] >= 2) pairs++;
+                    if (h[k] >= 1) kinds++;
+                    bool y = engine.IsYaochuK(k);
+                    if (y && h[k] >= 1) yao++;
+                    if (y && h[k] >= 2) yaoPair = 1;
+                }
+                int ct = 6 - pairs + (kinds < 7 ? 7 - kinds : 0);
+                if (ct < best) best = ct;
+                int ks = 13 - yao - yaoPair;
+                if (ks < best) best = ks;
+            }
+            return best;
+        }
+
+        [RecursiveMethod]
+        private void ShRec(int i, int m, int t, int pair)
+        {
+            while (i < NK && sc[i] == 0) i++;
+            if (i >= NK)
+            {
+                int tt = t < 4 - m ? t : 4 - m;
+                int s = 8 - 2 * m - tt - pair;
+                if (s < best) best = s;
+                return;
+            }
+            if (sc[i] >= 3) { sc[i] -= 3; ShRec(i, m + 1, t, pair); sc[i] += 3; }
+            bool num = i < 27;
+            int n = i % 9;
+            if (num && n <= 6 && sc[i + 1] > 0 && sc[i + 2] > 0)
+            {
+                sc[i]--; sc[i + 1]--; sc[i + 2]--; ShRec(i, m + 1, t, pair); sc[i]++; sc[i + 1]++; sc[i + 2]++;
+            }
+            if (m + t < 4)
+            {
+                if (sc[i] >= 2) { sc[i] -= 2; ShRec(i, m, t + 1, pair); sc[i] += 2; }
+                if (num && n <= 7 && sc[i + 1] > 0) { sc[i]--; sc[i + 1]--; ShRec(i, m, t + 1, pair); sc[i]++; sc[i + 1]++; }
+                if (num && n <= 6 && sc[i + 2] > 0) { sc[i]--; sc[i + 2]--; ShRec(i, m, t + 1, pair); sc[i]++; sc[i + 2]++; }
+            }
+            int save = sc[i];
+            sc[i] = 0;
+            ShRec(i + 1, m, t, pair);
+            sc[i] = save;
+        }
+
+        // ================================================================ 場の見えている牌
+        private void CountVisible(int seat)
+        {
+            SqmStdEngine e = engine;
+            for (int k = 0; k < NK; k++) { visible[k] = 0; doraK[k] = false; }
+            for (int t = 0; t < NC; t++) visible[e.KindOf(t)] += e.handC[seat * NC + t];
+            for (int s = 0; s < e.NP; s++)
+            {
+                for (int i = 0; i < e.riverN[s]; i++)
+                {
+                    int o = s * SqmStdEngine.MAXRV + i;
+                    if ((e.rvF[o] & SqmStdEngine.RV_CALLED) == 0) visible[e.KindOf(e.rvC[o])]++;
+                }
+                for (int i = 0; i < e.meldN[s]; i++)
+                {
+                    int mi = s * 4 + i;
+                    AddVis(e.mT0[mi]); AddVis(e.mT1[mi]); AddVis(e.mT2[mi]); AddVis(e.mT3[mi]);
+                }
+                visible[SqmStdEngine.NORTH] += e.kitaN[s];
+            }
+            for (int i = 0; i < e.doraN; i++)
+            {
+                int ind = e.KindOf(e.DoraIndicator(i));
+                visible[ind]++;
+                doraK[e.DoraOf(ind)] = true;
+            }
+        }
+
+        private void AddVis(int code) { if (code >= 0) visible[engine.KindOf(code)]++; }
+
+        private int Remaining(int k)
+        {
+            int r = 4 - visible[k];
+            return r > 0 ? r : 0;
+        }
+
+        /// <summary>受け入れ枚数: c(3m+1 枚)に1枚足して向聴数が下がる牌の残り枚数</summary>
+        private int Ukeire(int melds, int sh)
+        {
+            int u = 0;
+            for (int k = 0; k < NK; k++)
+            {
+                if (!engine.KindUsed(k) || c[k] >= 4) continue;
+                if (!Near(k)) continue;
+                c[k]++;
+                int s2 = Shanten(c, melds);
+                c[k]--;
+                if (s2 < sh) u += Remaining(k);
+            }
+            return u;
+        }
+
+        private bool Near(int k)
+        {
+            if (c[k] > 0) return true;
+            if (k >= 27) return engine.IsYaochuK(k);   // 国士の受け入れ
+            int n = k % 9;
+            for (int d = -2; d <= 2; d++)
+            {
+                int q = n + d;
+                if (d != 0 && q >= 0 && q <= 8 && c[k + d] > 0) return true;
+            }
+            return engine.IsYaochuK(k);
+        }
+
+        // ================================================================ 危険度
+        private bool AnyRiichi(int seat)
+        {
+            for (int s = 0; s < engine.NP; s++) if (s != seat && engine.riichiOn[s]) return true;
+            return false;
+        }
+
+        /// <summary>その種類を切ったときの危険度(リーチしている人それぞれの最大)。0 = 現物</summary>
+        private int Danger(int seat, int k)
+        {
+            SqmStdEngine e = engine;
+            int worst = 0;
+            for (int s = 0; s < e.NP; s++)
+            {
+                if (s == seat || !e.riichiOn[s]) continue;
+                int d = DangerFor(s, k);
+                if (d > worst) worst = d;
+            }
+            if (doraK[k] && worst > 0) worst += 2;
+            return worst;
+        }
+
+        private bool InRiver(int s, int k)
+        {
+            SqmStdEngine e = engine;
+            for (int i = 0; i < e.riverN[s]; i++) if (e.KindOf(e.rvC[s * SqmStdEngine.MAXRV + i]) == k) return true;
+            return false;
+        }
+
+        /// <summary>立直のあとにほかの人が切って、その人が和了らなかった牌(見逃しの現物)</summary>
+        private bool PassedAfterRiichi(int s, int k)
+        {
+            SqmStdEngine e = engine;
+            int ri = -1;
+            for (int i = 0; i < e.riverN[s]; i++) if ((e.rvF[s * SqmStdEngine.MAXRV + i] & SqmStdEngine.RV_RIICHI) != 0) { ri = i; break; }
+            if (ri < 0) return false;
+            // 立直宣言のあと、自分より先に切られた牌は捨て牌の並びで数えられないので、立直後のその人の河の数で近い分だけ見る
+            for (int p = 0; p < e.NP; p++)
+            {
+                if (p == s) continue;
+                int from = ri - 1 < 0 ? 0 : ri - 1;
+                for (int i = from; i < e.riverN[p]; i++) if (e.KindOf(e.rvC[p * SqmStdEngine.MAXRV + i]) == k) return true;
+            }
+            return false;
+        }
+
+        private int DangerFor(int s, int k)
+        {
+            if (InRiver(s, k) || PassedAfterRiichi(s, k)) return 0;
+            if (k >= 27)
+            {
+                if (visible[k] >= 3) return 1;
+                if (visible[k] == 2) return 2;
+                return 4;
+            }
+            int n = k % 9;
+            bool sujiLo = n >= 3 && InRiver(s, k - 3);
+            bool sujiHi = n <= 5 && InRiver(s, k + 3);
+            bool suji;
+            if (n <= 2) suji = sujiHi;
+            else if (n >= 6) suji = sujiLo;
+            else suji = sujiLo && sujiHi;
+            if (suji) return (n == 0 || n == 8) ? 2 : 3;
+            if (n == 0 || n == 8) return 5;
+            if (n == 1 || n == 7) return 6;
+            return 8;
+        }
+
+        // ================================================================ 決める
+        /// <summary>席 seat の選択肢から1つ選び、その番号を返す(選択肢がなければ -1)</summary>
+        public int Decide(int seat, uint seed)
+        {
+            Init();
+            rngS = seed;
+            SqmStdEngine e = engine;
+            int n = e.BuildLegal(seat);
+            if (n == 0) return -1;
+            int[] L = e.legal;
+            int style = seatStyle[seat];
+            int next = -1, win = -1, kyushu = -1, kita = -1, pass = -1;
+            for (int i = 0; i < n; i++)
+            {
+                int ty = L[i * OPT + SqmStdEngine.O_TYPE];
+                if (ty == SqmStdEngine.A_NEXT) next = i;
+                else if (ty == SqmStdEngine.A_TSUMO || ty == SqmStdEngine.A_RON) win = i;
+                else if (ty == SqmStdEngine.A_KYUSHU) kyushu = i;
+                else if (ty == SqmStdEngine.A_KITA) kita = i;
+                else if (ty == SqmStdEngine.A_PASS) pass = i;
+            }
+            if (next >= 0) return next;
+            if (win >= 0) return win;
+            CountVisible(seat);
+            if (e.phase == SqmStdEngine.PH_CALLS) return DecideCall(seat, n, pass, style);
+            if (kita >= 0) return kita;
+            e.KindCounts(seat, c);
+            int melds = e.meldN[seat];
+            if (kyushu >= 0)
+            {
+                int yk = 0;
+                for (int k = 0; k < NK; k++) if (engine.IsYaochuK(k) && c[k] > 0) yk++;
+                if (yk < 11) return kyushu;   // 国士を狙えるほど揃っていなければ流す
+            }
+            int sh = Shanten(c, melds);
+            // 暗槓・加槓
+            for (int i = 0; i < n; i++)
+            {
+                int ty = L[i * OPT + SqmStdEngine.O_TYPE];
+                if (ty != SqmStdEngine.A_ANKAN && ty != SqmStdEngine.A_KAKAN) continue;
+                if (e.riichiOn[seat]) return i;   // 立直中の暗槓は待ちが変わらないときだけ出てくる
+                if (AnyRiichi(seat) && sh > 0) continue;
+                int k = ty == SqmStdEngine.A_ANKAN ? L[i * OPT + SqmStdEngine.O_TILE] : e.KindOf(L[i * OPT + SqmStdEngine.O_TILE]);
+                int take = ty == SqmStdEngine.A_ANKAN ? 4 : 1;
+                c[k] -= take;
+                int s2 = Shanten(c, melds + (ty == SqmStdEngine.A_ANKAN ? 1 : 0));
+                c[k] += take;
+                if (s2 <= sh && (ty == SqmStdEngine.A_ANKAN || !AnyRiichi(seat))) return i;
+            }
+            return ChooseDiscard(seat, n, sh, style);
+        }
+
+        private int ChooseDiscard(int seat, int n, int shNow, int style)
+        {
+            SqmStdEngine e = engine;
+            int[] L = e.legal;
+            int melds = e.meldN[seat];
+            bool threat = AnyRiichi(seat);
+            int foldAt = style == ST_ATTACK ? 3 : (style == ST_DEFENSE ? 1 : 2);
+            // 打牌の候補ごとに、向聴数・受け入れ・危険度・価値
+            int bestI = -1, bestScore = int.MinValue, bestSh = 99;
+            int riichiI = -1;
+            int minSh = 99;
+            // 向聴数と受け入れは種類ごとに1回だけ数える(赤5 と普通の 5 は同じ)
+            for (int k = 0; k < NK; k++) { kSh[k] = -9; kUk[k] = -1; }
+            for (int i = 0; i < n; i++)
+            {
+                if (L[i * OPT + SqmStdEngine.O_TYPE] != SqmStdEngine.A_DISCARD || L[i * OPT + SqmStdEngine.O_RIICHI] != 0) continue;
+                int k = e.KindOf(L[i * OPT + SqmStdEngine.O_TILE]);
+                if (kSh[k] != -9) continue;
+                c[k]--;
+                kSh[k] = Shanten(c, melds);
+                c[k]++;
+                if (kSh[k] < minSh) minSh = kSh[k];
+            }
+            bool fold = threat && minSh >= foldAt;
+            for (int i = 0; i < n; i++)
+            {
+                int o = i * OPT;
+                if (L[o + SqmStdEngine.O_TYPE] != SqmStdEngine.A_DISCARD || L[o + SqmStdEngine.O_RIICHI] != 0) continue;
+                int code = L[o + SqmStdEngine.O_TILE];
+                int k = e.KindOf(code);
+                int s2 = kSh[k];
+                if (kUk[k] < 0)
+                {
+                    // 受け入れは、いちばん小さい向聴数になる候補だけ数える(重いので)
+                    c[k]--;
+                    kUk[k] = s2 == minSh ? Ukeire(melds, s2) : 0;
+                    c[k]++;
+                }
+                int uk = kUk[k];
+                int score;
+                if (fold) score = -Danger(seat, k) * 10000 - s2 * 100 + uk;
+                else
+                {
+                    score = -s2 * 10000 + uk * 20 - TileValue(seat, k, code);
+                    if (threat) score -= Danger(seat, k) * (minSh == 0 ? 2 : 40);
+                }
+                score = score * 4 + Rand(4);
+                if (score > bestScore) { bestScore = score; bestI = i; bestSh = s2; }
+            }
+            if (bestI < 0) return 0;
+            // 聴牌して門前なら立直(同じ牌の立直の選択肢があれば)
+            if (bestSh == 0 && !fold)
+            {
+                int bestCode = L[bestI * OPT + SqmStdEngine.O_TILE];
+                for (int i = 0; i < n; i++)
+                {
+                    int o = i * OPT;
+                    if (L[o + SqmStdEngine.O_TYPE] == SqmStdEngine.A_DISCARD && L[o + SqmStdEngine.O_RIICHI] == 1 && L[o + SqmStdEngine.O_TILE] == bestCode) riichiI = i;
+                }
+                if (riichiI >= 0 && WaitsLeft(seat, bestCode) > 0 && !(style == ST_DEFENSE && threat)) return riichiI;
+            }
+            return bestI;
+        }
+
+        /// <summary>その牌を切ったあとの待ちの残り枚数</summary>
+        private int WaitsLeft(int seat, int code)
+        {
+            SqmStdEngine e = engine;
+            int k = e.KindOf(code);
+            c[k]--;
+            int w = e.FindWaits(c, 4 - e.meldN[seat]);
+            c[k]++;
+            int left = 0;
+            for (int i = 0; i < w; i++) left += Remaining(e.waitK[i]);
+            return left;
+        }
+
+        /// <summary>切るのが惜しい度合い(大きいほど残す)</summary>
+        private int TileValue(int seat, int k, int code)
+        {
+            SqmStdEngine e = engine;
+            int v = 0;
+            if (doraK[k]) v += 60;
+            if (e.IsRed(code)) v += 60;
+            if (k >= 27)
+            {
+                bool value = e.IsDragonK(k) || k == e.SeatWind(seat) || k == e.RoundWind();
+                if (value && c[k] >= 2) v += 80;
+                else if (value && Remaining(k) >= 2) v += 10;
+            }
+            else
+            {
+                int n = k % 9;
+                if (n >= 2 && n <= 6) v += 6;   // 真ん中の牌は少し残す
+            }
+            return v;
+        }
+
+        // ================================================================ 鳴き
+        private int DecideCall(int seat, int n, int pass, int style)
+        {
+            SqmStdEngine e = engine;
+            int[] L = e.legal;
+            e.KindCounts(seat, c);
+            int melds = e.meldN[seat];
+            int sh = Shanten(c, melds);
+            bool threat = AnyRiichi(seat);
+            if (threat && sh >= 2) return pass;
+            int bestI = pass, bestSh = sh;
+            for (int i = 0; i < n; i++)
+            {
+                int o = i * OPT;
+                int ty = L[o + SqmStdEngine.O_TYPE];
+                if (ty != SqmStdEngine.A_PON && ty != SqmStdEngine.A_CHI && ty != SqmStdEngine.A_MINKAN) continue;
+                int k = e.KindOf(L[o + SqmStdEngine.O_TILE]);
+                bool valuePon = ty != SqmStdEngine.A_CHI && IsValueKind(seat, k);
+                if (style == ST_MENZEN && e.IsMenzen(seat) && !valuePon) continue;
+                if (ty == SqmStdEngine.A_MINKAN)
+                {
+                    // 大明槓は、もう鳴いていて役がある手で、向聴数が下がらないときだけ
+                    if (e.IsMenzen(seat) || threat || !HasYakuPath(seat, k, k, k)) continue;
+                    c[k] -= 3;
+                    int sk = Shanten(c, melds + 1);
+                    c[k] += 3;
+                    if (sk <= sh && sk <= bestSh) { bestSh = sk; bestI = i; }
+                    continue;
+                }
+                int ka = e.KindOf(L[o + SqmStdEngine.O_A]), kb = e.KindOf(L[o + SqmStdEngine.O_B]);
+                if (!valuePon && !HasYakuPath(seat, k, ka, kb)) continue;
+                c[ka]--; c[kb]--;
+                // 鳴いたあと1枚切る: いちばん良い打牌の向聴数
+                int after = 99;
+                for (int d = 0; d < NK; d++)
+                {
+                    if (c[d] == 0 || d == k) continue;
+                    c[d]--;
+                    int s2 = Shanten(c, melds + 1);
+                    c[d]++;
+                    if (s2 < after) after = s2;
+                }
+                c[ka]++; c[kb]++;
+                bool good = after < sh || (style == ST_CALLER && after <= sh && sh <= 2) || (valuePon && after <= sh);
+                if (good && after < bestSh + (bestI == pass ? 1 : 0)) { bestSh = after; bestI = i; }
+            }
+            return bestI;
+        }
+
+        private bool IsValueKind(int seat, int k)
+        {
+            return engine.IsDragonK(k) || k == engine.SeatWind(seat) || k == engine.RoundWind();
+        }
+
+        /// <summary>鳴いても役が残りそうか(役牌の刻子がある / タンヤオ / 染め手)</summary>
+        private bool HasYakuPath(int seat, int called, int ka, int kb)
+        {
+            SqmStdEngine e = engine;
+            for (int i = 0; i < e.meldN[seat]; i++)
+            {
+                int mi = seat * 4 + i;
+                if (e.mType[mi] != SqmStdEngine.M_CHI && IsValueKind(seat, e.mKind[mi])) return true;
+            }
+            for (int k = 27; k < NK; k++) if (c[k] >= 2 && IsValueKind(seat, k)) return true;   // 役牌の対子がある
+            // タンヤオ: 鳴く牌と副露がすべて中張牌で、手の么九牌が2枚まで
+            bool simple = !e.IsYaochuK(called) && !e.IsYaochuK(ka) && !e.IsYaochuK(kb);
+            for (int i = 0; i < e.meldN[seat] && simple; i++)
+            {
+                int mi = seat * 4 + i;
+                int mk = e.mKind[mi];
+                if (e.IsYaochuK(mk) || (e.mType[mi] == SqmStdEngine.M_CHI && e.IsYaochuK(mk + 2))) simple = false;
+            }
+            if (simple)
+            {
+                int yao = 0;
+                for (int k = 0; k < NK; k++) if (e.IsYaochuK(k)) yao += c[k];
+                if (yao <= 2 && e.rKuitan) return true;
+            }
+            // 染め手: 1色と字牌で、ほかの色が2枚まで
+            int[] su = new int[3];
+            int total = 0;
+            for (int k = 0; k < 27; k++) { su[k / 9] += c[k]; total += c[k]; }
+            int main = called < 27 ? called / 9 : -1;
+            if (main < 0) { main = 0; if (su[1] > su[main]) main = 1; if (su[2] > su[main]) main = 2; }
+            if ((ka < 27 && ka / 9 != main) || (kb < 27 && kb / 9 != main)) return false;
+            for (int i = 0; i < e.meldN[seat]; i++)
+            {
+                int mk = e.mKind[seat * 4 + i];
+                if (mk < 27 && mk / 9 != main) return false;
+            }
+            return total - su[main] <= 2;
+        }
+    }
+}

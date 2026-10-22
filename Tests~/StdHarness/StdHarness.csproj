@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../Runtime/Scripts/Engine/SqmStdEngine.cs" />
+    <Compile Include="../../Runtime/Scripts/Engine/SqmStdNpc.cs" />
     <Compile Include="../EngineHarness/Stubs.cs" />
   </ItemGroup>
 </Project>
