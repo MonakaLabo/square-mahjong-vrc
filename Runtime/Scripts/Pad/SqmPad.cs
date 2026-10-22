@@ -38,6 +38,11 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro[] btnLabels;
         public Material[] btnMats;           // BTN_* の順
         public GameObject confirmRoot;       // 大きな「確認」
+        // ゲーム前設定(試合が無いとき): 0 平方 1 四人 2 三人 3 東風戦 4 半荘 / NEW GAME
+        public GameObject setupRoot, setupNew;
+        public MeshRenderer[] setupBacks;
+        public TextMeshPro[] setupLabels;
+        public Material matSetupOn, matSetupOff, matSetupDim, matSetupDimOn;
         public MeshRenderer[] callTiles;     // 鳴ける牌 2(捨てられた牌)
         public GameObject callLabel;
 
@@ -45,6 +50,7 @@ namespace MonakaLabo.SquareMahjong
         public GameObject scoreRoot;
         public GameObject scoreBoxes;        // 8席の箱(試合中)
         public MeshRenderer[] boxFills;      // 8(マス p: 0 = 下中 … ホロと同じ並び)
+        public GameObject[] boxFrames;       // 8(箱の枠。普通の麻雀で使わない席は隠す)
         public TextMeshPro[] boxTexts;
         public TextMeshPro scoreCenter;
         public Material matBox, matBoxMe;
@@ -97,6 +103,8 @@ namespace MonakaLabo.SquareMahjong
             if (code >= 300 && code < 300 + ROWS * 2) { PressRow((code - 300) / 2, (code - 300) % 2 == 0 ? -1 : 1); return; }
             if (code == 320) { listTop = Mathf.Max(0, listTop - 1); Refresh(); return; }
             if (code == 321) { listTop++; Refresh(); return; }
+            if (code >= 400 && code < 405) { PressSetup(code - 400); return; }
+            if (code == 405) { table.NewMatch(); return; }
         }
 
         private void PressSlot(int i)
@@ -118,6 +126,24 @@ namespace MonakaLabo.SquareMahjong
             else if (a == ACT_MORE) { candPage++; Refresh(); }
         }
 
+        /// <summary>ゲーム前設定のボタン: 人数(0〜2)・局数(3〜4)。変えられるのはホストだけ(平方のときは局数を選べない)</summary>
+        private void PressSetup(int i)
+        {
+            if (!table.CanSetup()) return;
+            int mode = table.SetupMode(), rounds = table.SetupRounds();
+            if (i < 3)
+            {
+                if (i != SqmTable.MODE_SQUARE && !table.HasStdMode()) return;
+                mode = i;
+            }
+            else
+            {
+                if (mode == SqmTable.MODE_SQUARE) return;
+                rounds = i == 3 ? 1 : 2;
+            }
+            table.RequestSetup(mode, rounds);
+        }
+
         // ================================================================ 表示
         public void Refresh()
         {
@@ -132,7 +158,7 @@ namespace MonakaLabo.SquareMahjong
                 Transform anchor = table.padBodies[me].contentAnchor;
                 if (anchor != null && content.transform.parent != anchor) content.transform.SetParent(anchor, false);
             }
-            bool over = table.IsLive() && engine.phase == SqmEngine.PH_MATCH_OVER;
+            bool over = table.MatchOver();
             if (over && !wasOver) tab = TAB_SCORE;   // 終局したら点数タブへ
             wasOver = over;
 
@@ -141,7 +167,8 @@ namespace MonakaLabo.SquareMahjong
                 Material m = i == tab ? matTabOn : matTabOff;
                 if (tabBacks[i].sharedMaterial != m) tabBacks[i].sharedMaterial = m;
             }
-            if (table.IsLive())
+            if (table.StdLive()) inGameText.text = table.stdView.PadInGameText();
+            else if (table.IsLive())
                 inGameText.text = "東" + engine.kyoku + "局 " + engine.honba + "本場\n残 " + engine.LiveLeft().ToString("0000");
             else inGameText.text = "—";
             infoText.text = table.PadInfo();
@@ -193,7 +220,16 @@ namespace MonakaLabo.SquareMahjong
             PlaceHand(mainN, n);
             // 副露(上の段の左)
             int m = 0;
-            if (live)
+            if (live && table.StdLive())
+            {
+                for (; m < meldTiles.Length; m++)
+                {
+                    int t = table.stdView.PadMeldTile(m);
+                    if (t == -1) break;
+                    Tile(meldTiles[m], t);
+                }
+            }
+            else if (live)
             {
                 for (int k = 0; k < engine.meldN[me] && m < meldTiles.Length; k++)
                 {
@@ -228,13 +264,11 @@ namespace MonakaLabo.SquareMahjong
             }
             bool confirm = table.padConfirm;
             SetActive(confirmRoot, confirm);
+            RefreshSetup(!live);
             int s = 0;
             if (!confirm)
             {
-                if (!live)
-                {
-                    if (table.IsHostMe() || table.NoHost()) Slot(s++, ACT_NEWGAME, 0, "NEW GAME", BTN_DISCARD);
-                }
+                if (!live) { }
                 else if (candGroup >= 0)
                 {
                     // 候補(1ページ 4 つ + 次へ + やめる)
@@ -253,7 +287,7 @@ namespace MonakaLabo.SquareMahjong
                 else
                 {
                     // 鳴き・和了などの種類ごとに1つ
-                    for (int g = 0; g < 9 && s < 4; g++)
+                    for (int g = 0; g < 10 && s < 4; g++)
                     {
                         bool has = false;
                         for (int k = 0; k < table.optN; k++) if (GroupOf(k) == g) has = true;
@@ -266,11 +300,29 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < 6; i++) SetActive(btnRoots[i], slotAct[i] != ACT_NONE);
         }
 
-        /// <summary>手牌の位置: 門前は半分ずつ2段(26 枚なら 13 + 13)、ツモ牌は上の段のさらに上の右</summary>
+        /// <summary>ゲーム前設定の表示: 選んでいるものは赤。平方のときは局数をグレーに。NEW GAME はホストだけ(ホストがいなければ、だれでも)</summary>
+        private void RefreshSetup(bool show)
+        {
+            SetActive(setupRoot, show);
+            if (!show || setupBacks == null) return;
+            gameMessage.text = "";
+            int mode = table.SetupMode(), rounds = table.SetupRounds();
+            for (int i = 0; i < setupBacks.Length; i++)
+            {
+                bool on = i < 3 ? i == mode : (i == 3 ? rounds == 1 : rounds == 2);
+                bool dim = i >= 3 && mode == SqmTable.MODE_SQUARE;
+                if (i > 0 && i < 3 && !table.HasStdMode()) dim = true;
+                Material m = dim ? (on ? matSetupDimOn : matSetupDim) : (on ? matSetupOn : matSetupOff);
+                if (m != null && setupBacks[i].sharedMaterial != m) setupBacks[i].sharedMaterial = m;
+            }
+            SetActive(setupNew, table.IsHostMe() || table.NoHost());
+        }
+
+        /// <summary>手牌の位置: 門前は半分ずつ2段(26 枚なら 13 + 13)、ツモ牌は上の段のさらに上の右。普通の麻雀は1段</summary>
         private void PlaceHand(int mainN, int n)
         {
             const float STEP = 0.024f, Y1 = 0.004f, Y2 = -0.031f, YD = 0.04f;
-            int row1 = (mainN + 1) / 2;
+            int row1 = table.StdLive() ? mainN : (mainN + 1) / 2;
             for (int i = 0; i < handTiles.Length; i++)
             {
                 Vector3 p;
@@ -280,6 +332,7 @@ namespace MonakaLabo.SquareMahjong
                     int rowN = r == 0 ? row1 : mainN - row1;
                     p = new Vector3(-(rowN - 1) * STEP / 2 + c * STEP, r == 0 ? Y1 : Y2, 0);
                 }
+                else if (table.StdLive()) p = new Vector3((mainN - 1) * STEP / 2 + STEP + 0.006f + (i - mainN) * STEP, Y1, 0);
                 else p = new Vector3(0.135f + (i - mainN) * STEP, YD, 0);
                 // 板から数 mm 離す(近すぎると VR で奥行きの判定が揺れて、ちらついたり消えたりする)
                 p.z = -0.003f;
@@ -310,6 +363,7 @@ namespace MonakaLabo.SquareMahjong
         // 鳴き・和了の種類: 0 ツモ 1 片ロン 2 二枚ロン 3 ポン 4 チー 5 カン 6 十四種十四牌 7 続ける/止める 8 パス
         private int GroupOf(int k)
         {
+            if (table.StdLive()) return table.stdView.OptGroup(k);
             int ty = table.OptType(k);
             if (ty == SqmEngine.A_TSUMO) return 0;
             if (ty == SqmEngine.A_RON) return table.OptMode(k) == SqmEngine.RON_TWO ? 2 : 1;
@@ -325,13 +379,14 @@ namespace MonakaLabo.SquareMahjong
         private string GroupName(int g)
         {
             if (g == 0) return "ツモ";
-            if (g == 1) return "片ロン";
+            if (g == 1) return table.StdLive() ? "ロン" : "片ロン";
             if (g == 2) return "二枚ロン";
             if (g == 3) return "ポン";
             if (g == 4) return "チー";
             if (g == 5) return "カン";
-            if (g == 6) return "十四種十四牌";
+            if (g == 6) return table.StdLive() ? "九種九牌" : "十四種十四牌";
             if (g == 7) return "続ける/止める";
+            if (g == 9) return "北抜き";
             return "パス";
         }
 
@@ -354,9 +409,16 @@ namespace MonakaLabo.SquareMahjong
             int me = table.humanSeat;
             bool live = table.IsLive();
             scoreCenter.text = live ? table.PadCenterText() : "";
+            bool std = table.StdLive();
             for (int p = 0; p < 8; p++)
             {
                 int s = (me + p) % 8;
+                // 普通の麻雀は、使っている席の箱だけ
+                bool used = !std || table.StdEngineSeat(s) >= 0;
+                if (boxFrames != null && p < boxFrames.Length) SetActive(boxFrames[p], used);
+                SetActive(boxFills[p].gameObject, used);
+                SetActive(boxTexts[p].gameObject, used);
+                if (!used) continue;
                 Material f = p == 0 ? matBoxMe : matBox;
                 if (boxFills[p].sharedMaterial != f) boxFills[p].sharedMaterial = f;
                 boxTexts[p].text = live ? table.PadSeatBox(s) : table.SeatDisplayName(s);

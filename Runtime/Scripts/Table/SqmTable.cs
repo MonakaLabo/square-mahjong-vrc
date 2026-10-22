@@ -31,6 +31,9 @@ namespace MonakaLabo.SquareMahjong
         public SqmNpc npc;
         public SqmArchive archive;
         public SqmPad pad;                   // 手元のパッドの中身(1組)
+        public SqmStdEngine stdEngine;       // 普通の麻雀のエンジン・NPC・見た目(モードが 四人・三人 のとき)
+        public SqmStdNpc stdNpc;
+        public SqmStdView stdView;
         public SqmPadBody[] padBodies;       // 席ごとのパッドの本体 8
         // デバッグモード(切るべき牌の表示・次の局の仕込み)は、Scripting Define Symbols に SQM_DEBUG があるプロジェクトでだけ使える。
         // 無いプロジェクトでは、いつも OFF で、Inspector にも出ない
@@ -129,12 +132,17 @@ namespace MonakaLabo.SquareMahjong
         [UdonSynced] private int sWinsSeen, sWinsKyoku, sKyokuOverSeen;   // ホスト: どこまで出来事にしたか
         [UdonSynced] private int[] sPlayer = new int[NP];    // 席の人の playerId(0 = NPC)
         [UdonSynced] private int[] sStyle = new int[NP];     // 席の NPC の性格(名前と組)
+        [UdonSynced] private int sMode, sRounds;             // ゲーム前設定(ホストが決める): MODE_* / 1 = 東風戦・2 = 半荘(0 は東風戦)
+        [UdonSynced] private int sModeUsed, sRoundsUsed;     // いまの試合のモード・局数
+        [UdonSynced] private int[] sSeatMap = new int[4];    // 普通の麻雀: エンジンの席 → 卓の席(ホストの席から1つおき)
         [UdonSynced] private int sCount;                     // 記録の数
         [UdonSynced] private int[] sRing = new int[RING];    // 記録 i は sRing[i % RING]
 
         // ---------------- 手元の状態 ----------------
         [System.NonSerialized] public int humanSeat = -1;   // 自分の席(-1 = 座っていない)
         private int lMatch;                                  // 手元のエンジンが表している試合(0 = 試合なし)
+        private int lMode;                                   // 手元の試合のモード(MODE_*)
+        public const int MODE_SQUARE = 0, MODE_FOUR = 1, MODE_THREE = 2;
         private int lIdleMatch;                              // Reset で「試合なし」になったときの番号
         private int lCount;                                  // 手元で再生した記録の数
         private int[] lLog;                                  // 手元の記録(ホストになったときに配れるよう、全員が持つ)
@@ -181,7 +189,8 @@ namespace MonakaLabo.SquareMahjong
             optBuf = new int[N_OPT * SqmEngine.OPT];
             act = new int[SqmEngine.OPT];
             lLog = new int[LOG_MAX];
-            lSnap = new int[SqmEngine.KS_LEN];
+            lSnap = new int[SqmEngine.KS_LEN > SqmStdEngine.KS_LEN ? SqmEngine.KS_LEN : SqmStdEngine.KS_LEN];
+            if (sSeatMap == null || sSeatMap.Length != 4) sSeatMap = new int[4];
             tmpC = new int[NT]; tmpDr = new int[8];
             handMainN = new int[NP];
             InitRules();
@@ -199,12 +208,16 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < ym.Length; i++) yakuJa[40 + i] = ym[i];
             tileNames = new string[] { "東", "南", "西", "北", "白", "發", "中", "風", "林", "火", "山" };
             engine.SetDefaultRules();
+            if (stdEngine != null) stdEngine.SetRules(4, 1);
         }
 
         /// <summary>同期の持ち主か(試合を進める役)。ゲームのホスト(sHost)は、ふつうこの持ち主も兼ねる</summary>
         private bool IsHost() { return Networking.IsOwner(gameObject); }
         private int MyId() { VRCPlayerApi lp = Networking.LocalPlayer; return Utilities.IsValid(lp) ? lp.playerId : -1; }
-        private bool Running() { return lMatch > 0 && engine.pendKind != SqmEngine.PEND_END; }
+        private bool Running() { return lMatch > 0 && (Std() ? stdEngine.pendKind != SqmStdEngine.PEND_END : engine.pendKind != SqmEngine.PEND_END); }
+        /// <summary>手元の試合が普通の麻雀か</summary>
+        private bool Std() { return lMatch > 0 && lMode != MODE_SQUARE && stdEngine != null; }
+        private int KsLen() { return Std() ? SqmStdEngine.KS_LEN : SqmEngine.KS_LEN; }
         private bool CaughtUp()
         {
             if (sSeed == 0) return replayTo == 0;   // 試合なし
@@ -221,6 +234,7 @@ namespace MonakaLabo.SquareMahjong
                 return "?";
             }
             if (lMatch == 0) return "";
+            if (Std()) { int es = StdEngineSeat(s); return es >= 0 ? stdView.StyleNameOf(sStyle[es]) : ""; }
             return cpuNames[sStyle[s]];
         }
 
@@ -266,6 +280,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>記録1つをエンジンに適用する(その前に、自動の進行を済ませる)</summary>
         private bool ApplyCode(int code)
         {
+            if (Std()) return ApplyStdCode(code);
             AdvanceAll();
             int seat = code & 7, kind = (code >> 3) & 3;
             ClearAct(seat);
@@ -297,13 +312,35 @@ namespace MonakaLabo.SquareMahjong
             return ok;
         }
 
+        // 普通の麻雀の記録: 下位3ビット = エンジンの席、その上 = BuildLegal の番号
+        private int stdLastType = -1, stdLastTile = -1, stdLastRiichi;
+        private bool stdLastDouble;
+
+        private bool ApplyStdCode(int code)
+        {
+            AdvanceAll();
+            int es = code & 7, idx = code >> 3;
+            int n = stdEngine.BuildLegal(es);
+            if (idx < 0 || idx >= n) { stdEngine.lastError = "記録の番号が合いません"; return false; }
+            stdLastType = stdEngine.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_TYPE];
+            stdLastTile = stdEngine.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_TILE];
+            stdLastRiichi = stdEngine.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_RIICHI];
+            stdLastDouble = stdEngine.firstTurn[es] && stdEngine.noCalls;
+            bool ok = stdEngine.ApplyIndex(es, idx);
+            AdvanceAll();
+            if (ok) NoteKyokuStart(lCount + 1);
+            return ok;
+        }
+
         /// <summary>新しい局が始まっていたら、その局の始めの状態と、それまでに適用した手数(at)を覚える</summary>
         private void NoteKyokuStart(int at)
         {
-            if (engine.kyokuSeq == lSnapSeq) return;
-            lSnapSeq = engine.kyokuSeq;
+            int seq = Std() ? stdEngine.kyokuSeq : engine.kyokuSeq;
+            if (seq == lSnapSeq) return;
+            lSnapSeq = seq;
             lSnapAt = at;
-            for (int i = 0; i < SqmEngine.KS_LEN; i++) lSnap[i] = engine.ksBuf[i];
+            int len = KsLen();
+            for (int i = 0; i < len; i++) lSnap[i] = Std() ? stdEngine.ksBuf[i] : engine.ksBuf[i];
         }
 
         /// <summary>
@@ -313,10 +350,21 @@ namespace MonakaLabo.SquareMahjong
         private bool RestoreLocal(int at, int[] snap)
         {
             if (sSeed == 0 || at < 0 || at > LOG_MAX) return false;
-            ApplyRules(sRuleUsed);
-            if (!engine.RestoreKyokuStart((uint)sSeed, snap)) return false;
-            CopyRig();
-            for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
+            lMode = sModeUsed;
+            if (lMode != MODE_SQUARE && stdEngine != null)
+            {
+                StdRules();
+                if (!stdEngine.RestoreKyokuStart((uint)sSeed, snap)) return false;
+                for (int s = 0; s < 4; s++) stdNpc.SetSeat(s, sStyle[s] % SqmStdNpc.N_STYLES);
+            }
+            else
+            {
+                lMode = MODE_SQUARE;
+                ApplyRules(sRuleUsed);
+                if (!engine.RestoreKyokuStart((uint)sSeed, snap)) return false;
+                CopyRig();
+                for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
+            }
             lMatch = sMatch;
             lCount = at;
             lLogFrom = at;
@@ -332,7 +380,14 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>入力待ちが無いあいだ、自動で進める(配牌・ツモなど)。ホストも他の人も同じ所で止まる</summary>
         private void AdvanceAll()
         {
+            if (Std()) { for (int guard = 0; guard < 64 && stdEngine.pendKind == SqmStdEngine.PEND_NONE; guard++) stdEngine.Advance(); return; }
             for (int guard = 0; guard < 64 && engine.pendKind == SqmEngine.PEND_NONE; guard++) engine.Advance();
+        }
+
+        /// <summary>普通の麻雀のルール(人数・局数)をエンジンに入れる</summary>
+        private void StdRules()
+        {
+            stdEngine.SetRules(sModeUsed == MODE_THREE ? 3 : 4, sRoundsUsed == 2 ? 2 : 1);
         }
 
         // ================================================================ ホスト: 試合を進める
@@ -345,7 +400,8 @@ namespace MonakaLabo.SquareMahjong
             lCount++;
             sRing[sCount % RING] = code;
             sCount = lCount;
-            if (((code >> 3) & 3) == K_NEXT && engine.pendKind != SqmEngine.PEND_END) StartKyokuClock();
+            if (Std()) { if (stdLastType == SqmStdEngine.A_NEXT && stdEngine.pendKind != SqmStdEngine.PEND_END) StartKyokuClock(); }
+            else if (((code >> 3) & 3) == K_NEXT && engine.pendKind != SqmEngine.PEND_END) StartKyokuClock();
             SfxFor(code);
             ClearSelection();
             dirty = true;
@@ -372,6 +428,20 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 9; i > 0; i--) { int j = UnityEngine.Random.Range(0, i + 1); int x = order[i]; order[i] = order[j]; order[j] = x; }
             for (int s = 0; s < NP; s++) sStyle[s] = order[s];
             for (int i = 0; i < N_RULE; i++) sRuleUsed[i] = sRule[i];   // この試合のルール
+            sModeUsed = stdEngine != null ? sMode : MODE_SQUARE;
+            sRoundsUsed = sRounds == 2 ? 2 : 1;
+            if (sModeUsed != MODE_SQUARE)
+            {
+                // ホストの席から1つおきの席を使う(三人ならホストの対面を空ける)。ほかの席の人は立ってもらう
+                int h = HostSeatIndex();
+                if (h < 0) h = 0;
+                int n = sModeUsed == MODE_THREE ? 3 : 4;
+                sSeatMap[0] = h; sSeatMap[1] = (h + 2) % NP;
+                if (n == 4) { sSeatMap[2] = (h + 4) % NP; sSeatMap[3] = (h + 6) % NP; }
+                else { sSeatMap[2] = (h + 6) % NP; sSeatMap[3] = -1; }
+                for (int s = 0; s < NP; s++) if (StdEngineSeat(s) < 0) sPlayer[s] = 0;
+                for (int es = 0; es < 4; es++) sStyle[es] = UnityEngine.Random.Range(0, SqmStdNpc.N_STYLES);
+            }
             sRigN = 0;
             if (sRigPendT >= 0 && sRigPendS >= 0) { sRigK[0] = 0; sRigS[0] = sRigPendS; sRigT[0] = sRigPendT; sRigN = 1; }
             sRigPendT = -1; sRigPendS = -1;
@@ -400,6 +470,7 @@ namespace MonakaLabo.SquareMahjong
         private void CheckKyokuBanner()
         {
             // 「どの試合の何局目か」で覚える(Reset して新しい試合を始めたときも、東1局から出すように)
+            if (Std()) { CheckKyokuBannerStd(); return; }
             int key = lMatch * 1000 + engine.kyokuSeq;
             if (lMatch == 0 || key == bannerSeq) return;
             bannerSeq = key;
@@ -420,6 +491,35 @@ namespace MonakaLabo.SquareMahjong
             if (engine.honba >= 1 && honbaVoices != null && engine.honba <= honbaVoices.Length && honbaVoices[engine.honba - 1] != null) bannerQ[bannerQN++] = honbaVoices[engine.honba - 1];
             if (engine.kyoku >= engine.rKyokuCount && voiceOorasu != null) bannerQ[bannerQN++] = voiceOorasu;
             // 声が長いときは、言い終わるまで帯を出しておく
+            float total = 0.4f;
+            for (int i = 0; i < bannerQN; i++) total += bannerQ[i].length + 0.08f;
+            if (total > bannerT) bannerT = total;
+            bannerFull = bannerT;
+            PlayBannerNext();
+        }
+
+        /// <summary>普通の麻雀の局の始まり: 「東1局」「南3局」と本場・オーラス</summary>
+        private void CheckKyokuBannerStd()
+        {
+            SqmStdEngine e = stdEngine;
+            int key = lMatch * 1000 + e.kyokuSeq + 1;
+            if (key == bannerSeq) return;
+            bannerSeq = key;
+            if (replayTo > 0 || e.phase == SqmStdEngine.PH_DEAL || e.phase == SqmStdEngine.PH_MATCH_OVER) return;
+            if (kyokuBannerText != null)
+            {
+                string t = stdView.RoundName();
+                if (e.honba > 0) t += "<size=45%>  " + e.honba + "本場</size>";
+                if (stdView.IsAllLast()) t += "\n<size=40%>オーラス</size>";
+                kyokuBannerText.text = t;
+            }
+            bannerT = BANNER_TIME;
+            bannerQN = 0; bannerQi = 0;
+            AudioClip v = stdView.KyokuVoice();
+            if (v == null) { PlaySfx(SFX_KYOKU); return; }
+            bannerQ[bannerQN++] = v;
+            if (e.honba >= 1 && honbaVoices != null && e.honba <= honbaVoices.Length && honbaVoices[e.honba - 1] != null) bannerQ[bannerQN++] = honbaVoices[e.honba - 1];
+            if (stdView.IsAllLast() && voiceOorasu != null) bannerQ[bannerQN++] = voiceOorasu;
             float total = 0.4f;
             for (int i = 0; i < bannerQN; i++) total += bannerQ[i].length + 0.08f;
             if (total > bannerT) bannerT = total;
@@ -450,11 +550,31 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>結果の画面が新しく出たとき、流局・終局を読み上げる(追いつき中は読まない)</summary>
         private void ResultVoice(int page)
         {
+            if (Std()) { ResultVoiceStd(page); return; }
             int key = page == 100 ? lMatch * 100000 : page == 99 ? lMatch * 100000 + engine.kyokuSeq * 10 + 1 : -1;
             if (key < 0 || key == resultVoiceKey) return;
             resultVoiceKey = key;
             if (replayTo > 0) return;
             PlayCenterVoice(page == 100 ? voiceShuukyoku : voiceRyuukyoku);
+        }
+
+        /// <summary>普通の麻雀: 和了のページで点数の区切り(満貫〜役満)、流局・途中流局・終局を読み上げる</summary>
+        private void ResultVoiceStd(int page)
+        {
+            if (page < 0) return;
+            int key = page == 100 ? lMatch * 100000 : lMatch * 100000 + stdEngine.kyokuSeq * 100 + page + 1;
+            if (key == resultVoiceKey) return;
+            resultVoiceKey = key;
+            if (replayTo > 0) return;
+            if (page == 100) { PlayCenterVoice(voiceShuukyoku); return; }
+            if (page == 99)
+            {
+                AudioClip ab = stdEngine.resType == SqmStdEngine.RES_ABORT ? stdView.AbortVoice() : null;
+                PlayCenterVoice(ab != null ? ab : voiceRyuukyoku);
+                return;
+            }
+            AudioClip lv = stdView.LimitVoice(StdPageWin(page));
+            if (lv != null) PlayCenterVoice(lv);
         }
 
         /// <summary>帯がすっと開いて、少し止まって、閉じる</summary>
@@ -519,6 +639,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>ホストが1回分だけ進める(自動進行・NPC の手・人の自動ツモ切り・局の終わり)</summary>
         private void HostStep()
         {
+            if (Std()) { HostStepStd(); return; }
             AdvanceAll();
             int pk = engine.pendKind;
             if (pk == SqmEngine.PEND_END)
@@ -564,6 +685,54 @@ namespace MonakaLabo.SquareMahjong
             }
         }
 
+        /// <summary>普通の麻雀: ホストが1回分だけ進める(NPC の手・人のリーチ中のツモ切り・局の終わり)</summary>
+        private void HostStepStd()
+        {
+            AdvanceAll();
+            SqmStdEngine e = stdEngine;
+            int pk = e.pendKind;
+            if (pk == SqmStdEngine.PEND_END)
+            {
+                if (sEndMs == 0) { sEndMs = Networking.GetServerTimeInMilliseconds(); if (sKyokuEndMs == 0) sKyokuEndMs = sEndMs; RequestSerialization(); }
+                dirty = true;
+                return;
+            }
+            if (pk == SqmStdEngine.PEND_NONE) { dirty = true; return; }
+            if (HostCheckEvent()) return;
+            if (pk == SqmStdEngine.PEND_NEXT)
+            {
+                if (sKyokuEndMs == 0) { sKyokuEndMs = Networking.GetServerTimeInMilliseconds(); RequestSerialization(); }
+                if (Commit(0)) wait = 0.3f;   // 席 0 の「次へ」(選択肢は1つだけ)
+                return;
+            }
+            for (int i = 0; i < e.pendN; i++)
+            {
+                int es = e.pendSeats[i];
+                if (IsHuman(StdTableSeat(es))) continue;
+                uint nseed = e.HashSeed(e.seed.ToString() + ":" + lCount + ":" + es);
+                int idx = stdNpc.Decide(es, nseed);
+                if (idx < 0) { message = "NPC エラー"; wait = 2f; return; }
+                int ty = e.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_TYPE];
+                if (!Commit(es | (idx << 3))) { message = "NPC エラー: " + e.lastError; wait = 2f; return; }
+                if (ty == SqmStdEngine.A_DISCARD) wait = NPC_DELAY;
+                return;
+            }
+            // 人の番: リーチ中で、ツモ和了・槓・北抜きができないときのツモ切りは自動
+            if (pk == SqmStdEngine.PEND_TURN && IsHuman(StdTableSeat(e.turn)) && e.riichiOn[e.turn])
+            {
+                int t = e.turn;
+                int n = e.BuildLegal(t);
+                int disc = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    int ty = e.legal[i * SqmStdEngine.OPT + SqmStdEngine.O_TYPE];
+                    if (ty != SqmStdEngine.A_DISCARD) return;
+                    disc = i;
+                }
+                if (disc >= 0 && Commit(t | (disc << 3))) wait = NPC_DELAY;
+            }
+        }
+
         /// <summary>act に、リーチ中のツモ切りを入れる</summary>
         private bool BuildTsumogiri(int seat)
         {
@@ -599,14 +768,25 @@ namespace MonakaLabo.SquareMahjong
             {
                 // 試合なし(Reset された)
                 engine.SetDefaultRules();
-                lMatch = 0; lIdleMatch = sMatch; lCount = 0; replayTo = 0;
+                lMatch = 0; lIdleMatch = sMatch; lCount = 0; replayTo = 0; lMode = MODE_SQUARE;
                 ClearSelection();
                 return;
             }
-            ApplyRules(sRuleUsed);
-            engine.NewMatch((uint)sSeed);
-            CopyRig();
-            for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
+            lMode = sModeUsed;
+            if (lMode != MODE_SQUARE && stdEngine != null)
+            {
+                StdRules();
+                stdEngine.NewMatch((uint)sSeed);
+                for (int s = 0; s < 4; s++) stdNpc.SetSeat(s, sStyle[s] % SqmStdNpc.N_STYLES);
+            }
+            else
+            {
+                lMode = MODE_SQUARE;
+                ApplyRules(sRuleUsed);
+                engine.NewMatch((uint)sSeed);
+                CopyRig();
+                for (int s = 0; s < NP; s++) npc.SetSeat(s, SqmNpc.LV_NORMAL, sStyle[s]);
+            }
             lMatch = sMatch;
             lCount = 0;
             lLogFrom = 0;
@@ -631,8 +811,9 @@ namespace MonakaLabo.SquareMahjong
                 {
                     // 今の局の始めから再生し直せば足りる
                     int at = lSnapAt;
-                    int[] snap = new int[SqmEngine.KS_LEN];
-                    for (int i = 0; i < SqmEngine.KS_LEN; i++) snap[i] = lSnap[i];
+                    int len = KsLen();
+                    int[] snap = new int[len];
+                    for (int i = 0; i < len; i++) snap[i] = lSnap[i];
                     if (RestoreLocal(at, snap)) replayTo = keep;
                     else { ResetLocal(); AskArchive(); }
                 }
@@ -683,8 +864,9 @@ namespace MonakaLabo.SquareMahjong
             int from = lSnapAt;
             int[] log = new int[lCount - from];
             for (int i = from; i < lCount; i++) log[i - from] = lLog[i];
-            int[] snap = new int[SqmEngine.KS_LEN];
-            for (int i = 0; i < SqmEngine.KS_LEN; i++) snap[i] = lSnap[i];
+            int len = KsLen();
+            int[] snap = new int[len];
+            for (int i = 0; i < len; i++) snap[i] = lSnap[i];
             archive.aMatch = lMatch;
             archive.aCount = lCount;
             archive.aBase = from;
@@ -701,7 +883,7 @@ namespace MonakaLabo.SquareMahjong
             if (lMatch == sMatch && replayTo == 0 && lCount >= archive.aCount) return;
             int n = archive.aCount, from = archive.aBase;
             if (n > LOG_MAX || from < 0 || from > n || archive.aLog == null || archive.aLog.Length < n - from) return;
-            if (archive.aSnap == null || archive.aSnap.Length < SqmEngine.KS_LEN) return;
+            if (archive.aSnap == null || archive.aSnap.Length < (sModeUsed != MODE_SQUARE ? SqmStdEngine.KS_LEN : SqmEngine.KS_LEN)) return;
             // 局の始めから復元して、その局の手だけを再生する
             if (!RestoreLocal(from, archive.aSnap)) return;
             for (int i = from; i < n; i++) lLog[i] = archive.aLog[i - from];
@@ -793,6 +975,76 @@ namespace MonakaLabo.SquareMahjong
             return true;
         }
 
+        // ================================================================ 普通の麻雀の席
+        /// <summary>エンジンの席 → 卓の席(-1 = 使わない)</summary>
+        public int StdTableSeat(int es) { return es >= 0 && es < 4 && (lMatch > 0 || sModeUsed != MODE_SQUARE) ? sSeatMap[es] : -1; }
+
+        /// <summary>卓の席 → エンジンの席(-1 = 使わない席)</summary>
+        public int StdEngineSeat(int ts)
+        {
+            int n = sModeUsed == MODE_THREE ? 3 : 4;
+            for (int es = 0; es < n; es++) if (sSeatMap[es] == ts) return es;
+            return -1;
+        }
+
+        private int HostSeatIndex()
+        {
+            if (sHost == 0) return -1;
+            for (int s = 0; s < NP; s++) if (sPlayer[s] == sHost) return s;
+            return -1;
+        }
+
+        /// <summary>
+        /// その席に座れるか。普通の麻雀の試合中は、使っている席だけ。試合の前に 四人・三人 を選んでいれば、
+        /// ホストの席から1つおき(三人はホストの対面を除く)。ホストがまだいなければどこでも
+        /// </summary>
+        public bool SeatOpen(int s)
+        {
+            if (Running()) return !Std() || StdEngineSeat(s) >= 0;
+            if (sMode == MODE_SQUARE || stdEngine == null) return true;
+            int h = HostSeatIndex();
+            if (h < 0) return true;
+            int d = (s - h + NP) % NP;
+            if (d % 2 != 0) return false;
+            return !(sMode == MODE_THREE && d == 4);
+        }
+
+        public string SeatNameOf(int s) { return NameOf(s); }
+        public bool SeatIsHost(int s) { return sPlayer[s] != 0 && sPlayer[s] == sHost; }
+
+        // ---- ゲーム前設定(人数・局数)。変えられるのはホストだけ(ホストがいなければ、だれでも) ----
+        public int SetupMode() { return sMode; }
+        public int SetupRounds() { return sRounds == 2 ? 2 : 1; }
+        public bool CanSetup() { return !Running() && (sHost == 0 || IsHostMe()); }
+        public bool HasStdMode() { return stdEngine != null; }
+
+        public void RequestSetup(int mode, int rounds)
+        {
+            Init();
+            if (!CanSetup()) return;
+            if (IsHost()) HostSetup(mode, rounds);
+            else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetSetup), mode, rounds);
+        }
+
+        [NetworkCallable]
+        public void NetSetup(int mode, int rounds)
+        {
+            if (!IsHost()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p) || Running()) return;
+            if (sHost != 0 && p.playerId != sHost) return;
+            HostSetup(mode, rounds);
+        }
+
+        private void HostSetup(int mode, int rounds)
+        {
+            if (mode < MODE_SQUARE || mode > MODE_THREE || (mode != MODE_SQUARE && stdEngine == null)) return;
+            sMode = mode;
+            sRounds = rounds == 2 ? 2 : 1;
+            RequestSerialization();
+            dirty = true;
+        }
+
         // ================================================================ 席・試合のボタン
         public void Join0() { RequestSeat(0); } public void Join1() { RequestSeat(1); } public void Join2() { RequestSeat(2); } public void Join3() { RequestSeat(3); }
         public void Join4() { RequestSeat(4); } public void Join5() { RequestSeat(5); } public void Join6() { RequestSeat(6); } public void Join7() { RequestSeat(7); }
@@ -818,6 +1070,7 @@ namespace MonakaLabo.SquareMahjong
         private void HostSeat(int seat, int pid)
         {
             if (seat >= NP) return;
+            if (seat >= 0 && !SeatOpen(seat)) return;
             if (seat >= 0 && sPlayer[seat] != 0 && sPlayer[seat] != pid) return;
             for (int s = 0; s < NP; s++) if (sPlayer[s] == pid) sPlayer[s] = 0;
             if (seat >= 0) sPlayer[seat] = pid;
@@ -850,6 +1103,9 @@ namespace MonakaLabo.SquareMahjong
             if (sHost != 0) return pid == sHost;
             return !Running();
         }
+
+        public bool StdLive() { return Std(); }
+        public bool MatchOver() { return lMatch > 0 && (Std() ? stdEngine.phase == SqmStdEngine.PH_MATCH_OVER : engine.phase == SqmEngine.PH_MATCH_OVER); }
 
         // ---- 卓の中央の Resync・Reset ----
         /// <summary>自分の手元だけ、記録すべてをホストからもらい直して作り直す</summary>
@@ -906,11 +1162,13 @@ namespace MonakaLabo.SquareMahjong
         // ================================================================ 自分の操作
         private bool MyTurn()
         {
+            if (Std()) return Running() && CaughtUp() && bannerT <= 0 && stdView.myTurn;
             return Running() && CaughtUp() && bannerT <= 0 && humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat;
         }
 
         public void ClickTile(int slot)
         {
+            if (Std()) { if (sentAt < 0 && CaughtUp() && bannerT <= 0) stdView.ClickTile(slot); return; }
             if (humanSeat < 0 || slot / SLOT_HAND != humanSeat) return;
             if (!MyTurn()) return;
             if (handSlotTile[slot] < 0) return;
@@ -925,6 +1183,7 @@ namespace MonakaLabo.SquareMahjong
 
         public void Discard()
         {
+            if (Std()) { if (MyTurn() && sentAt < 0) stdView.Discard(); return; }
             if (!MyTurn() || sentAt >= 0) return;
             if (engine.riichiOn[humanSeat])
             {
@@ -947,6 +1206,7 @@ namespace MonakaLabo.SquareMahjong
 
         public void ToggleRiichi()
         {
+            if (Std()) { stdView.ToggleRiichi(); return; }
             if (!riichiArmed && !padRiichiOk) return;
             riichiArmed = !riichiArmed;
             sel0 = -1; sel1 = -1;   // 選び直してもらう
@@ -960,6 +1220,7 @@ namespace MonakaLabo.SquareMahjong
 
         private void ClickOption(int i)
         {
+            if (Std()) { if (sentAt < 0 && CaughtUp()) stdView.ClickOption(i); return; }
             if (i >= optN || sentAt >= 0 || !CaughtUp()) return;
             for (int k = 0; k < SqmEngine.OPT; k++) act[k] = optBuf[i * SqmEngine.OPT + k];
             act[SqmEngine.O_SEAT] = humanSeat;
@@ -988,20 +1249,30 @@ namespace MonakaLabo.SquareMahjong
         {
             if (!IsHost() || match != sMatch || count != sCount || !CaughtUp()) return;
             VRCPlayerApi p = NetworkCalling.CallingPlayer;
-            if (!Utilities.IsValid(p) || sPlayer[code & 7] != p.playerId) return;
+            int ts = Std() ? StdTableSeat(code & 7) : code & 7;
+            if (!Utilities.IsValid(p) || ts < 0 || sPlayer[ts] != p.playerId) return;
             if (Commit(code)) wait = NPC_DELAY;
         }
 
-        private void ClearSelection() { sel0 = -1; sel1 = -1; riichiArmed = false; }
+        private void ClearSelection() { sel0 = -1; sel1 = -1; riichiArmed = false; if (stdView != null) stdView.ClearSelection(); }
+
+        /// <summary>普通の麻雀: 見た目(SqmStdView)から、自分の操作を送る</summary>
+        public void SendStdCode(int code) { SendCode(code); }
+        public void ShowMessage(string m) { message = m; Refresh(); }
 
         // ================================================================ 表示
-        private Vector3 U(int s) { float a = s * 45f * Mathf.Deg2Rad; return new Vector3(Mathf.Sin(a), 0, -Mathf.Cos(a)); }   // 卓の中心 → 席
-        private Vector3 R(int s) { float a = s * 45f * Mathf.Deg2Rad; return new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)); }    // 席から見て右
+        public Vector3 U(int s) { float a = s * 45f * Mathf.Deg2Rad; return new Vector3(Mathf.Sin(a), 0, -Mathf.Cos(a)); }   // 卓の中心 → 席
+        public Vector3 R(int s) { float a = s * 45f * Mathf.Deg2Rad; return new Vector3(Mathf.Cos(a), 0, Mathf.Sin(a)); }    // 席から見て右
 
         private string TileCode(int t)
         {
             if (t < 36) return (t % 9 + 1).ToString() + "mpsa".Substring(t / 9, 1);
             return tileNames[t - 36];
+        }
+
+        public void PlaceTile(Transform tr, MeshRenderer face, int tile, Vector3 pos, int seat, bool flat, bool visible, bool faceUp, bool sideways)
+        {
+            Place(tr, face, tile, pos, seat, flat, visible, faceUp, sideways);
         }
 
         /// <summary>牌を置く。faceUp=false なら伏せる(表面を消す)。flat=true なら寝かせる(表を上、牌の上端を卓の中心へ)</summary>
@@ -1022,9 +1293,18 @@ namespace MonakaLabo.SquareMahjong
         public void Refresh()
         {
             if (!ready) Init();
-            RefreshWall();
-            for (int s = 0; s < NP; s++) { RefreshHand(s); RefreshRiver(s); RefreshMelds(s); RefreshLabel(s); }
-            RefreshCenter();
+            if (Std())
+            {
+                stdView.RefreshTable();
+                for (int s = 0; s < NP; s++) RefreshLabel(s);
+                if (centerButtons != null) centerButtons.localRotation = Quaternion.Euler(0, -(humanSeat >= 0 ? humanSeat : 0) * 45f, 0);
+            }
+            else
+            {
+                RefreshWall();
+                for (int s = 0; s < NP; s++) { RefreshHand(s); RefreshRiver(s); RefreshMelds(s); RefreshLabel(s); }
+                RefreshCenter();
+            }
             RefreshControls();
             RefreshHolo();
             RefreshPads();
@@ -1206,6 +1486,7 @@ namespace MonakaLabo.SquareMahjong
 
         private void RefreshLabel(int s)
         {
+            if (Std()) { RefreshLabelStd(s); return; }
             bool live = lMatch > 0;
             bool riichi = live && engine.riichiOn[s] && engine.phase != SqmEngine.PH_DEAL;
             if (centerLights != null && s < centerLights.Length && centerLights[s] != null)
@@ -1239,6 +1520,30 @@ namespace MonakaLabo.SquareMahjong
             {
                 // 座っていない人に、空いている席だけ出す。NPC だけの試合中はどこにも座れない
                 bool showJoin = humanSeat < 0 && sPlayer[s] == 0 && !(Running() && HumanMask() == 0);
+                if (joinButtons[s].activeSelf != showJoin) joinButtons[s].SetActive(showJoin);
+            }
+        }
+
+        private void RefreshLabelStd(int s)
+        {
+            bool riichi = stdView.RiichiAt(s);
+            if (centerLights != null && s < centerLights.Length && centerLights[s] != null)
+            {
+                Material cm = riichi ? matLightRiichi : matLightIdle;
+                if (cm != null && centerLights[s].sharedMaterial != cm) centerLights[s].sharedMaterial = cm;
+            }
+            if (rimLights != null && s < rimLights.Length && rimLights[s] != null)
+            {
+                Material m = Running() && stdView.TurnAt(s) ? matLightTurn : riichi ? matLightRiichi : matLightIdle;
+                if (m != null && rimLights[s].sharedMaterial != m) rimLights[s].sharedMaterial = m;
+            }
+            if (seatLabels != null && s < seatLabels.Length && seatLabels[s] != null) seatLabels[s].text = stdView.LabelText(s, Running());
+            if (windLabels != null && s < windLabels.Length && windLabels[s] != null) windLabels[s].text = stdView.WindLabel(s);
+            if (scoreLabels != null && s < scoreLabels.Length && scoreLabels[s] != null) scoreLabels[s].text = stdView.ScoreLabel(s);
+            CheckLabelChanged(s);
+            if (joinButtons != null && s < joinButtons.Length && joinButtons[s] != null)
+            {
+                bool showJoin = humanSeat < 0 && sPlayer[s] == 0 && StdEngineSeat(s) >= 0 && HumanMask() != 0;
                 if (joinButtons[s].activeSelf != showJoin) joinButtons[s].SetActive(showJoin);
             }
         }
@@ -1279,6 +1584,7 @@ namespace MonakaLabo.SquareMahjong
         {
             optN = 0;
             bool ok = Running() && CaughtUp() && humanSeat >= 0 && sentAt < 0 && sPageN == 0 && bannerT <= 0;
+            if (Std()) { RefreshControlsStd(ok); return; }
             if (confirmButton != null)
             {
                 bool showOk = humanSeat >= 0 && sPageN > 0 && (sAckMask & (1 << humanSeat)) != 0;
@@ -1347,8 +1653,54 @@ namespace MonakaLabo.SquareMahjong
             }
         }
 
+        private void RefreshControlsStd(bool ok)
+        {
+            stdView.RefreshControls(ok);
+            if (confirmButton != null)
+            {
+                bool showOk = humanSeat >= 0 && sPageN > 0 && (sAckMask & (1 << humanSeat)) != 0;
+                if (confirmButton.activeSelf != showOk) confirmButton.SetActive(showOk);
+            }
+            if (controls != null && humanSeat >= 0)
+            {
+                Vector3 u = U(humanSeat);
+                controls.localPosition = u * 1.12f + Vector3.up * (TOP + 0.25f);
+                controls.localRotation = Quaternion.LookRotation(-u, Vector3.up);
+            }
+            padMyTurn = stdView.myTurn;
+            padRiichiOk = stdView.riichiOk;
+            padDiscardOk = stdView.discardOk;
+            padConfirm = humanSeat >= 0 && sPageN > 0 && (sAckMask & (1 << humanSeat)) != 0;
+            optN = stdView.optN;
+            if (discardButton != null) discardButton.SetActive(padDiscardOk);
+            if (riichiButton != null) riichiButton.SetActive(padMyTurn && padRiichiOk);
+            if (riichiLabel != null) riichiLabel.text = stdView.riichiArmed ? "リーチ ON" : "リーチ";
+            if (discardButtons != null)
+                for (int s = 0; s < discardButtons.Length; s++)
+                {
+                    bool on = s == humanSeat && padDiscardOk;
+                    if (discardButtons[s] != null && discardButtons[s].activeSelf != on) discardButtons[s].SetActive(on);
+                }
+            if (optionButtons != null)
+                for (int i = 0; i < N_OPT && i < optionButtons.Length; i++)
+                {
+                    bool show = i < optN;
+                    if (optionButtons[i].activeSelf != show) optionButtons[i].SetActive(show);
+                    if (show) optionLabels[i].text = stdView.OptionText(i);
+                }
+            bool idle = !Running();
+            bool showLeave = idle && humanSeat >= 0;
+            if (leaveButton != null && leaveButton.activeSelf != showLeave) leaveButton.SetActive(showLeave);
+            if (newMatchButton != null)
+            {
+                bool showNew = idle && (sHost == 0 || sHost == MyId());
+                if (newMatchButton.activeSelf != showNew) newMatchButton.SetActive(showNew);
+            }
+        }
+
         public string OptionText(int b)
         {
+            if (Std()) return stdView.OptionText(b / SqmEngine.OPT);
             int ty = optBuf[b + SqmEngine.O_TYPE];
             if (ty == SqmEngine.A_TSUMO) return "ツモ " + optBuf[b + SqmEngine.O_HAN] + "翻";
             if (ty == SqmEngine.A_RON)
@@ -1393,6 +1745,7 @@ namespace MonakaLabo.SquareMahjong
         private bool HostCheckEvent()
         {
             if (sPageN > 0 || lMatch == 0) return false;
+            if (Std()) return HostCheckEventStd();
             int seen = sWinsKyoku == engine.kyokuSeq ? sWinsSeen : 0;
             bool over = engine.phase == SqmEngine.PH_KYOKU_OVER && sKyokuOverSeen != engine.kyokuSeq;
             bool newWin = engine.winsN > seen;
@@ -1410,6 +1763,44 @@ namespace MonakaLabo.SquareMahjong
             RequestSerialization();
             dirty = true;
             return sPageN > 0;
+        }
+
+        /// <summary>普通の麻雀: 局が終わったら、和了(流し満貫を含む)1人1ページ + 流局・途中流局のページ</summary>
+        private bool HostCheckEventStd()
+        {
+            SqmStdEngine e = stdEngine;
+            if (e.phase != SqmStdEngine.PH_KYOKU_OVER || sKyokuOverSeen == e.kyokuSeq) return false;
+            sKyokuOverSeen = e.kyokuSeq;
+            sWinsKyoku = e.kyokuSeq;
+            sEvtWinFrom = 0;
+            sEvtWinTo = e.winsN;
+            sWinsSeen = e.winsN;
+            sEvtTail = e.resType != SqmStdEngine.RES_WIN;
+            sPageN = sEvtWinTo + (sEvtTail ? 1 : 0);
+            sPage = 0;
+            sAckMask = HumanMask();
+            pageWait = PAGE_AUTO;
+            RequestSerialization();
+            dirty = true;
+            return sPageN > 0;
+        }
+
+        /// <summary>普通の麻雀: 和了のページ page に出す和了の番号(親から巡る順)</summary>
+        private int StdPageWin(int page)
+        {
+            int n = sEvtWinTo - sEvtWinFrom;
+            int best = -1, k = 0;
+            for (int r = 0; r < stdEngine.NP && best < 0; r++)
+            {
+                int es = (stdEngine.dealer + r) % stdEngine.NP;
+                for (int w = sEvtWinFrom; w < sEvtWinTo; w++)
+                {
+                    if (stdEngine.winSeat[w] != es) continue;
+                    if (k == page) { best = w; break; }
+                    k++;
+                }
+            }
+            return best >= 0 ? best : (n > 0 ? sEvtWinFrom : 0);
         }
 
         private void HostNextPage()
@@ -1498,6 +1889,18 @@ namespace MonakaLabo.SquareMahjong
         private int CurrentPage()
         {
             if (lMatch == 0) return -1;
+            if (Std())
+            {
+                SqmStdEngine e = stdEngine;
+                if (sPageN > 0 && lMatch == sMatch && replayTo == 0 && e.phase == SqmStdEngine.PH_KYOKU_OVER && sEvtWinTo <= e.winsN)
+                {
+                    if (sPage < sEvtWinTo - sEvtWinFrom) return sPage;
+                    if (sEvtTail) return 99;
+                    return -1;
+                }
+                if (e.phase == SqmStdEngine.PH_MATCH_OVER) return 100;
+                return -1;
+            }
             if (sPageN > 0 && lMatch == sMatch && replayTo == 0 && sEvtWinTo <= engine.winsN)
             {
                 int wins = sEvtWinTo - sEvtWinFrom;
@@ -1520,7 +1923,13 @@ namespace MonakaLabo.SquareMahjong
             resHead.text = ""; resYaku0.text = ""; resYaku1.text = ""; resYaku2.text = ""; resHan.text = ""; resCalc.text = ""; resPoints.text = "";
             resBody.text = ""; resRankL.text = ""; resRankR.text = ""; resDoraLabel.text = ""; resUraLabel.text = "";
             string foot = "";
-            if (page == 100) RenderFinal();
+            if (Std())
+            {
+                if (page == 100) stdView.RenderFinal();
+                else if (page == 99) stdView.RenderDraw();
+                else stdView.RenderWin(StdPageWin(page));
+            }
+            else if (page == 100) RenderFinal();
             else if (page == 99) RenderDraw();
             else RenderWin(page);
             if (page != 100)
@@ -1715,7 +2124,7 @@ namespace MonakaLabo.SquareMahjong
             }
         }
 
-        private void ResTile(int i, int tile, bool mark)
+        public void ResTile(int i, int tile, bool mark)
         {
             if (i >= resHand.Length) return;
             HoloTile(resHand[i], tile);
@@ -1739,6 +2148,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>記録1つを再生した直後に、その手に合った音を鳴らす(追いつき中は鳴らさない)</summary>
         private void SfxFor(int code)
         {
+            if (Std()) { SfxForStd(code); return; }
             VoiceFor(code);
             int kind = (code >> 3) & 3;
             if (kind == K_DISCARD) PlaySfx(((code >> 5) & 1) == 1 ? SFX_RIICHI : SFX_DISCARD);
@@ -1757,6 +2167,41 @@ namespace MonakaLabo.SquareMahjong
             if (humanSeat >= 0 && engine.pendKind == SqmEngine.PEND_CALLS)
                 for (int i = 0; i < engine.pendN; i++) if (engine.pendSeats[i] == humanSeat) myCall = true;
             if (myCall && !wasMyCall) Notice();   // 鳴ける(ロンできる)ときも知らせる
+            wasMyCall = myCall;
+        }
+
+        /// <summary>普通の麻雀: 記録1つを再生した直後の音と声</summary>
+        private void SfxForStd(int code)
+        {
+            int es = code & 7, ts = StdTableSeat(es);
+            int ty = stdLastType;
+            SqmStdEngine e = stdEngine;
+            if (ty == SqmStdEngine.A_DISCARD)
+            {
+                if (stdLastRiichi == 1) { PlayVoice(ts, stdLastDouble ? VOICE_DOUBLE_RIICHI : VOICE_RIICHI, VOICE_RIICHI); PlaySfx(SFX_RIICHI); }
+                else PlaySfx(SFX_DISCARD);
+            }
+            else if (ty == SqmStdEngine.A_TSUMO) { PlayVoice(ts, VOICE_TSUMO, -1); PlaySfx(SFX_WIN); }
+            else if (ty == SqmStdEngine.A_RON) { PlayVoice(ts, VOICE_RON, -1); PlaySfx(SFX_WIN); }
+            else if (ty == SqmStdEngine.A_PON) { PlayVoice(ts, VOICE_PON, -1); PlaySfx(SFX_CALL); }
+            else if (ty == SqmStdEngine.A_CHI) { PlayVoice(ts, VOICE_CHI, -1); PlaySfx(SFX_CALL); }
+            else if (ty == SqmStdEngine.A_ANKAN || ty == SqmStdEngine.A_KAKAN || ty == SqmStdEngine.A_MINKAN) { PlayVoice(ts, VOICE_KAN, -1); PlaySfx(SFX_CALL); }
+            else if (ty == SqmStdEngine.A_KITA)
+            {
+                AudioClip pei = stdView.StdVoice(SqmStdView.STDV_PEI);
+                if (pei != null && voiceSources != null && ts >= 0 && ts < voiceSources.Length && voiceSources[ts] != null && voiceVolume > 0) voiceSources[ts].PlayOneShot(pei, voiceVolume);
+                PlaySfx(SFX_CALL);
+            }
+            else if (ty == SqmStdEngine.A_KYUSHU) { PlayVoice(ts, VOICE_KYUSHU, -1); PlaySfx(SFX_END); }
+            if (e.phase == SqmStdEngine.PH_KYOKU_OVER && ty != SqmStdEngine.A_NEXT && ty != SqmStdEngine.A_TSUMO && ty != SqmStdEngine.A_RON && ty != SqmStdEngine.A_KYUSHU) PlaySfx(SFX_END);
+            int me = humanSeat >= 0 ? StdEngineSeat(humanSeat) : -1;
+            bool myTurn = me >= 0 && e.pendKind == SqmStdEngine.PEND_TURN && e.turn == me;
+            if (myTurn && !wasMyTurn) Notice();
+            wasMyTurn = myTurn;
+            bool myCall = false;
+            if (me >= 0 && e.pendKind == SqmStdEngine.PEND_CALLS)
+                for (int i = 0; i < e.pendN; i++) if (e.pendSeats[i] == me) myCall = true;
+            if (myCall && !wasMyCall) Notice();
             wasMyCall = myCall;
         }
 
@@ -1817,6 +2262,7 @@ namespace MonakaLabo.SquareMahjong
         /// </summary>
         public string PadWaitText()
         {
+            if (Std()) return Running() ? stdView.PadWaitText() : "";
             if (humanSeat < 0 || lMatch == 0 || !Running() || engine.outRole[humanSeat] != SqmEngine.ROLE_NONE) return "";
             if (padWaitStep == engine.step) return padWaitText;
             padWaitStep = engine.step;
@@ -1843,6 +2289,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>パッドの牌を暗くするか(リーチ ON のとき、聴牌にならない牌)</summary>
         public bool PadTileDim(int i)
         {
+            if (Std()) return stdView.PadTileDim(i);
             int t = PadSlotTile(i);
             return riichiArmed && t >= 0 && riichiTile != null && !riichiTile[t];
         }
@@ -1856,14 +2303,15 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>鳴ける牌(捨てられた牌、搶槓なら加槓の牌)。k 枚目。無ければ -1</summary>
         public int PadCallTile(int k)
         {
+            if (Std()) return stdView.PadCallTile(k);
             if (humanSeat < 0 || lMatch == 0 || engine.pendKind != SqmEngine.PEND_CALLS || optN == 0 || !engine.dcActive) return -1;
             return k < engine.dcN ? engine.dcT[k] : -1;
         }
 
-        public int PadMainN() { return humanSeat >= 0 && handMainN != null ? handMainN[humanSeat] : 0; }
-        public int PadSlotTile(int i) { return humanSeat >= 0 ? handSlotTile[humanSeat * SLOT_HAND + i] : -1; }
-        public bool PadSelected(int i) { int slot = humanSeat * SLOT_HAND + i; return slot == sel0 || slot == sel1; }
-        public int OptType(int k) { return optBuf[k * SqmEngine.OPT + SqmEngine.O_TYPE]; }
+        public int PadMainN() { if (Std()) return stdView.PadMainN(); return humanSeat >= 0 && handMainN != null ? handMainN[humanSeat] : 0; }
+        public int PadSlotTile(int i) { if (Std()) return stdView.PadSlotTile(i); return humanSeat >= 0 ? handSlotTile[humanSeat * SLOT_HAND + i] : -1; }
+        public bool PadSelected(int i) { if (Std()) return stdView.PadSelected(i); int slot = humanSeat * SLOT_HAND + i; return slot == sel0 || slot == sel1; }
+        public int OptType(int k) { if (Std()) return stdView.OptType(k); return optBuf[k * SqmEngine.OPT + SqmEngine.O_TYPE]; }
         public int OptMode(int k) { return optBuf[k * SqmEngine.OPT + SqmEngine.O_MODE]; }
         public void PadOption(int k) { ClickOption(k); }
         public void KickSeat(int s) { RequestKick(s); }
@@ -1877,6 +2325,15 @@ namespace MonakaLabo.SquareMahjong
             if (replayTo > 0) return "追いついています…";
             if (padConfirm) return "「確認」を押してください。";
             if (sPageN > 0) return "ほかの人の確認を待っています。";
+            if (Std())
+            {
+                SqmStdEngine e = stdEngine;
+                if (e.phase == SqmStdEngine.PH_MATCH_OVER) return "このセットは終局しました。";
+                if (padMyTurn) return "あなたの番です。";
+                if (optN > 0) return "鳴きますか？";
+                if (e.pendKind == SqmStdEngine.PEND_TURN) return NameOf(StdTableSeat(e.turn)) + " の番です。";
+                return "";
+            }
             if (engine.phase == SqmEngine.PH_MATCH_OVER) return "このセットは終局しました。";
             if (padMyTurn) return "あなたの番です。";
             if (engine.pendKind == SqmEngine.PEND_CALLS) for (int i = 0; i < engine.pendN; i++) if (engine.pendSeats[i] == humanSeat) return "鳴きますか？";
@@ -1888,6 +2345,7 @@ namespace MonakaLabo.SquareMahjong
         public string PadGuide()
         {
             if (humanSeat < 0 || lMatch == 0) return "";
+            if (Std()) return stdView.PadGuide(padConfirm);
             if (padConfirm) return "和了・流局です。内容を確かめて「確認」を押してください。";
             if (padMyTurn)
             {
@@ -1903,6 +2361,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>点数タブの真ん中</summary>
         public string PadCenterText()
         {
+            if (Std()) return stdView.PadCenterText();
             int sticks = engine.rRiichiStick > 0 ? engine.kyotaku / engine.rRiichiStick : 0;
             return "<size=130%>東" + engine.kyoku + "局</size>\n残 " + engine.LiveLeft().ToString("0000") + "\n千点棒 ×" + sticks + "\n百点棒 ×" + engine.honba;
         }
@@ -1910,6 +2369,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>点数タブの席の箱: 席風・名前 / 順位・点数・自分との差 / リーチ・先発・後発</summary>
         public string PadSeatBox(int s)
         {
+            if (Std()) { int es = StdEngineSeat(s); return es >= 0 ? stdView.PadSeatBox(es) : ""; }
             int rank = 1;
             for (int q = 0; q < NP; q++)
             {
@@ -1938,6 +2398,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>終局の結果の表(順位・名前・持ち点・ウマ・最終)</summary>
         public string PadResultTable()
         {
+            if (Std()) return stdView.PadResultTable();
             string t = "<size=120%>終局の結果</size>\n<size=80%>順位<pos=12%>名前<pos=52%>持ち点<pos=72%>ウマ<pos=86%>最終</size>\n";
             for (int i = 0; i < NP; i++)
             {
@@ -1969,7 +2430,7 @@ namespace MonakaLabo.SquareMahjong
                     SqmPadBody b = padBodies[s];
                     if (b == null) continue;
                     bool mine = s == humanSeat;
-                    bool idle = humanSeat < 0 && sPlayer[s] == 0 && !npcOnly;
+                    bool idle = humanSeat < 0 && sPlayer[s] == 0 && !npcOnly && SeatOpen(s);
                     bool join = idle;
                     bool newGame = idle && sHost == 0 && !Running();
                     // 見せるのは、自分の席の板と、座れる空席の板だけ(NPC だけの試合中は全部隠す)
@@ -2151,6 +2612,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>デバッグ: いま切るべき牌(強い NPC が自分の席ならどうするか)。自分の番だけ、手番ごとに1回考える</summary>
         public string PadHint()
         {
+            if (Std()) { hintTileA = -1; hintTileB = -1; return ""; }
             if (!MyTurn()) { hintTileA = -1; hintTileB = -1; return ""; }
             if (hintStep == engine.step) return hintText;
             hintStep = engine.step;
@@ -2197,6 +2659,7 @@ namespace MonakaLabo.SquareMahjong
             if (replayTo > 0) top += "追いついています… " + lCount + " / " + replayTo + "  ";
             if (message.Length > 0) top += "<color=#ff8080>" + message + "</color>";
             holo.text = top;
+            if (Std()) { RefreshHoloStd(); return; }
 
             // ---- 左: 局・残り・点棒 ----
             if (holoRound != null) holoRound.text = "東" + engine.kyoku + "局";
@@ -2232,6 +2695,8 @@ namespace MonakaLabo.SquareMahjong
             for (int p = 0; p < NP; p++)
             {
                 int s = (view + p) % NP;
+                if (holoCellFrame != null && holoCellFrame[p] != null && !holoCellFrame[p].gameObject.activeSelf) holoCellFrame[p].gameObject.SetActive(true);
+                if (holoCellFill != null && holoCellFill[p] != null && !holoCellFill[p].gameObject.activeSelf) holoCellFill[p].gameObject.SetActive(true);
                 bool turn = Running() && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == s;
                 bool riichi = engine.riichiOn[s];
                 bool me = s == humanSeat;
@@ -2266,7 +2731,65 @@ namespace MonakaLabo.SquareMahjong
             ResultVoice(page);
         }
 
-        private void HoloTile(MeshRenderer r, int tile)
+        /// <summary>普通の麻雀のホロ: 左(局・残り・点棒)・中(ドラ表示)・右(使っている席だけの見取り図)</summary>
+        private void RefreshHoloStd()
+        {
+            SqmStdEngine e = stdEngine;
+            int view = humanSeat >= 0 ? humanSeat : sSeatMap[0];
+            stdView.RefreshHolo(view);
+            int left = e.LiveLeft();
+            if (holoLeft != null) holoLeft.text = left.ToString("00");
+            if (e.kyokuSeq != liveMaxSeq) { liveMaxSeq = e.kyokuSeq; liveMax = 0; }
+            if (left > liveMax) liveMax = left;
+            if (holoGauge != null)
+            {
+                int on = liveMax > 0 ? Mathf.CeilToInt(holoGauge.Length * (float)left / liveMax) : 0;
+                for (int i = 0; i < holoGauge.Length; i++)
+                {
+                    bool show = i < on;
+                    if (holoGauge[i] != null && holoGauge[i].activeSelf != show) holoGauge[i].SetActive(show);
+                }
+            }
+            RefreshHoloTime();
+            for (int p = 0; p < NP; p++)
+            {
+                int s = (view + p) % NP;
+                int es = StdEngineSeat(s);
+                bool used = es >= 0;
+                if (holoCellFrame != null && holoCellFrame[p] != null && holoCellFrame[p].gameObject.activeSelf != used) holoCellFrame[p].gameObject.SetActive(used);
+                if (holoCellFill != null && holoCellFill[p] != null && holoCellFill[p].gameObject.activeSelf != used) holoCellFill[p].gameObject.SetActive(used);
+                if (holoCellWind != null && holoCellWind[p] != null) holoCellWind[p].text = "";
+                if (holoCellName != null && holoCellName[p] != null) holoCellName[p].text = "";
+                if (holoCellScore != null && holoCellScore[p] != null) holoCellScore[p].text = "";
+                if (!used) continue;
+                bool turn = Running() && e.pendKind == SqmStdEngine.PEND_TURN && e.turn == es;
+                bool riichi = e.riichiOn[es];
+                bool me = s == humanSeat;
+                string w = stdView.WindName(e.SeatWind(es));
+                if (turn) w = "<color=#06202c>" + w + "</color>";
+                else if (riichi) w = "<color=#ff6a5a>" + w + "</color>";
+                else if (me) w = "<color=#ffd070>" + w + "</color>";
+                if (holoCellWind != null && holoCellWind[p] != null) holoCellWind[p].text = w;
+                if (holoCellFrame != null && holoCellFrame[p] != null)
+                {
+                    Material fm = riichi ? holoMatRed : me ? holoMatYellow : holoMatLine;
+                    if (holoCellFrame[p].sharedMaterial != fm) holoCellFrame[p].sharedMaterial = fm;
+                }
+                if (holoCellFill != null && holoCellFill[p] != null)
+                {
+                    Material fl = turn ? holoMatTurn : holoMatFill;
+                    if (holoCellFill[p].sharedMaterial != fl) holoCellFill[p].sharedMaterial = fl;
+                }
+                if (holoCellName != null && holoCellName[p] != null) holoCellName[p].text = me ? "<color=#ffd070>あなた</color>" : NameOf(s);
+                if (holoCellScore != null && holoCellScore[p] != null) holoCellScore[p].text = SegScore(e.score[es]);
+            }
+            int page = CurrentPage();
+            if (holoPlay != null && holoPlay.activeSelf != (page < 0)) holoPlay.SetActive(page < 0);
+            RefreshResult(page);
+            ResultVoice(page);
+        }
+
+        public void HoloTile(MeshRenderer r, int tile)
         {
             if (r == null) return;
             bool show = tile >= 0;

@@ -52,6 +52,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             npc.engine = engine;
             table.engine = engine;
             table.npc = npc;
+            // 普通の麻雀(ゲーム前設定で 四人・三人 を選んだとき)
+            var stdEngine = UdonSharpUndo.AddComponent<SqmStdEngine>(logic);
+            var stdNpc = UdonSharpUndo.AddComponent<SqmStdNpc>(logic);
+            var stdView = UdonSharpUndo.AddComponent<SqmStdView>(logic);
+            stdNpc.engine = stdEngine;
+            stdView.table = table;
+            stdView.engine = stdEngine;
+            stdView.npc = stdNpc;
+            table.stdEngine = stdEngine;
+            table.stdNpc = stdNpc;
+            table.stdView = stdView;
             table.archive = archive;
             archive.table = table;
             table.faceMats = matFaces;
@@ -235,6 +246,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.matTabOn = matPadTabOn; pad.matTabOff = matPadBg;
             pad.matBox = matPadBg; pad.matBoxMe = matPadTabOn;
             pad.btnMats = matPadBtn;
+            pad.matSetupOn = HoloMat("PadSetupOn", new Color(1f, 0.42f, 0.36f, 1f), Q_FILL);
+            pad.matSetupOff = matPadBg;
+            pad.matSetupDim = HoloMat("PadSetupDim", new Color(0.62f, 0.66f, 0.68f, 1f), Q_FILL);
+            pad.matSetupDimOn = HoloMat("PadSetupDimOn", new Color(0.55f, 0.24f, 0.22f, 1f), Q_FILL);
 
             var content = Group(table.padBodies[0].contentAnchor.gameObject, "PadContent");
             pad.content = content;
@@ -339,6 +354,25 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 PadKey(g, pad, 200 + i);
                 pad.btnRoots[i] = g;
             }
+            // ゲーム前設定(試合が無いとき): 人数(平方・四人・三人)・局数(東風戦・半荘)・NEW GAME(下の真ん中)
+            var setup = Group(game, "Setup");
+            pad.setupRoot = setup;
+            PText(setup, "Title", new Vector2(0, 0.07f), 0.075f, new Vector2(0.38f, 0.026f), TextAlignmentOptions.Center).text = "ゲーム前設定";
+            PText(setup, "ModeLabel", new Vector2(-0.15f, 0.033f), 0.07f, new Vector2(0.06f, 0.026f), TextAlignmentOptions.Center).text = "人数";
+            PText(setup, "RoundLabel", new Vector2(-0.15f, -0.008f), 0.07f, new Vector2(0.06f, 0.026f), TextAlignmentOptions.Center).text = "局数";
+            PadLine(setup, new Vector2(-0.115f, 0.0125f), new Vector2(0.0015f, 0.07f));
+            string[] setupLabels = { "平方", "四人", "三人", "東風戦", "半荘" };
+            pad.setupBacks = new MeshRenderer[5];
+            pad.setupLabels = new TextMeshPro[5];
+            for (int i = 0; i < 5; i++)
+            {
+                var at = i < 3 ? new Vector2(-0.065f + i * 0.085f, 0.033f) : new Vector2(-0.065f + (i - 3) * 0.085f, -0.008f);
+                var g = PadBtn(setup, "setup_" + i, setupLabels[i], matPadBg, at, new Vector2(0.072f, 0.03f), 0.085f, out pad.setupLabels[i], out pad.setupBacks[i]);
+                PadKey(g, pad, 400 + i);
+            }
+            pad.setupNew = PadBtn(setup, "new_game", "NEW GAME", matPadBtn[0], new Vector2(0, -0.064f), new Vector2(0.12f, 0.028f), 0.1f, out _, out _);
+            PadKey(pad.setupNew, pad, 405);
+            setup.SetActive(false);
             var confirm = PadBtn(game, "confirm", "確認", matPadBtn[0], new Vector2(0, -0.064f), new Vector2(0.2f, 0.028f), 0.11f, out _, out _);
             PadKey(confirm, pad, 210);
             confirm.SetActive(false);
@@ -352,6 +386,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             int[] col = { 0, 1, 1, 1, 0, -1, -1, -1 };
             int[] row = { -1, -1, 0, 1, 1, 1, 0, -1 };
             pad.boxFills = new MeshRenderer[8];
+            pad.boxFrames = new GameObject[8];
             pad.boxTexts = new TextMeshPro[8];
             for (int p = 0; p < 8; p++)
             {
@@ -359,6 +394,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 var frame = Prim(PrimitiveType.Quad, boxes, "frame_" + p, matPadLine);
                 frame.transform.localPosition = new Vector3(at.x, at.y, -0.0015f);
                 frame.transform.localScale = new Vector3(0.12f, 0.05f, 1);
+                pad.boxFrames[p] = frame;
                 var fill = Prim(PrimitiveType.Quad, boxes, "fill_" + p, matPadBg);
                 fill.transform.localPosition = new Vector3(at.x, at.y, -0.003f);
                 fill.transform.localScale = new Vector3(0.117f, 0.047f, 1);
@@ -798,6 +834,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.voiceOorasu = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_oorasu.wav");
             table.voiceRyuukyoku = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_ryuukyoku.wav");
             table.voiceShuukyoku = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_shuukyoku.wav");
+            // 普通の麻雀: 「南一局」〜「南四局」、北抜き・途中流局・点数の区切り(SqmStdView.STDV_* の順)
+            if (table.stdView != null)
+            {
+                table.stdView.kyokuVoicesSouth = new AudioClip[4];
+                for (int i = 0; i < 4; i++)
+                    table.stdView.kyokuVoicesSouth[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_kyoku_s" + (i + 1) + ".wav");
+                string[] sv = { "pei", "suufuu", "suucha", "suukan", "sancha", "mangan", "haneman", "baiman", "sanbai", "yakuman", "kazoe" };
+                table.stdView.stdVoices = new AudioClip[sv.Length];
+                for (int i = 0; i < sv.Length; i++)
+                    table.stdView.stdVoices[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_" + sv[i] + ".wav");
+            }
 
             // 宣言の声: 席ごとに、その席の上から鳴らす(SqmTable.VOICE_* の順)
             string[] voices = { "riichi", "pon", "chi", "kan", "ron", "tsumo", "kyushu", "ron_kata", "ron_nimai", "double_riichi" };
