@@ -2,6 +2,7 @@
 //   node make-tile-textures.mjs [JS版のフォルダ]
 // 1枚のページに全部の牌を並べて Edge(ヘッドレス)で撮り、Python(Pillow)で1枚ずつに切り分けて
 // Runtime/Textures/Tiles/tile_00.png 〜 tile_46.png に書き出す。
+// 普通の麻雀の赤ドラ(赤5筒・赤5索)は、5筒・5索の緑と青を赤に塗り替えて tile_47・tile_48 にする。
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -14,12 +15,18 @@ if (!JS_ROOT) { console.error('ブラウザ版のフォルダを引数か環境�
 const { tileSvg } = await import(pathToFileURL(join(JS_ROOT, 'js/ui/tile-art.js')).href);
 
 const W = 240, H = 320;          // 1枚の大きさ(牌の表面 26×35mm の比)
-const COLS = 8, N = 47;
+const COLS = 8, N = 49;
+// 赤ドラ: 5筒(13)・5索(22)の緑・青を赤に
+const RED_OF = { 47: 13, 48: 22 };
+function redden(svg) {
+  return svg.replace(/#0b7a3e/gi, '#c8102e').replace(/#1c3f94/gi, '#c8102e').replace(/#05522a/gi, '#8d0b20').replace(/#12296a/gi, '#8d0b20');
+}
+function artOf(t) { return t in RED_OF ? redden(tileSvg(RED_OF[t])) : tileSvg(t); }
 const ROWS = Math.ceil(N / COLS);
 const cells = [];
 for (let t = 0; t < N; t++) {
   const x = (t % COLS) * W, y = Math.floor(t / COLS) * H;
-  const art = 'data:image/svg+xml,' + encodeURIComponent(tileSvg(t));
+  const art = 'data:image/svg+xml,' + encodeURIComponent(artOf(t));
   cells.push(`<div style="position:absolute;left:${x}px;top:${y}px;width:${W}px;height:${H}px;background:linear-gradient(160deg,#fffdf6 30%,#efe6cf)">`
     + `<img src="${art}" style="position:absolute;left:${W * 0.06}px;top:${H * 0.04}px;width:${W * 0.88}px;height:${H * 0.92}px"></div>`);
 }

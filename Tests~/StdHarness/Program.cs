@@ -180,7 +180,7 @@ static class Program
         for (int i = 0; i < e.wallN; i++) { int k = e.KindOf(e.wall[i]); if (k >= 1 && k <= 7) noMan = false; }
         Check("三麻に 2萬〜8萬 が無い", noMan);
         e = new E(); e.SetRules(4, 2); e.NewMatch(1); AdvanceAll(e);
-        Check("四麻は136枚・赤3枚", e.wallN == 136 && e.wall.Take(136).Count(t => t >= E.RED0) == 3);
+        Check("四麻は136枚・赤2枚(5筒・5索)", e.wallN == 136 && e.wall.Take(136).Count(t => t >= E.RED0) == 2 && !e.wall.Take(136).Contains(E.RED0));
     }
 
     // ================================================================ 自動対局

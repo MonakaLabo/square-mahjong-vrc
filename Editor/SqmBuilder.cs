@@ -1130,20 +1130,23 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             matHoloFill = HoloMat("HoloFill", new Color(0.05f, 0.12f, 0.18f, 0.6f), Q_FILL);
             matHoloTurn = HoloMat("HoloTurn", new Color(0.45f, 0.85f, 1f, 0.95f), Q_FILL);
             matHoloSegBox = HoloMat("HoloSegBox", new Color(0.04f, 0.01f, 0.01f, 0.85f));
-            matFaces = new Material[47];
-            for (int t = 0; t < 47; t++)
+            // 47 種(平方麻雀) + 赤5筒・赤5索(普通の麻雀の赤ドラ。47・48)
+            matFaces = new Material[N_FACE];
+            for (int t = 0; t < N_FACE; t++)
             {
                 var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(PKG + "/Runtime/Textures/Tiles/tile_" + t.ToString("00") + ".png");
                 matFaces[t] = Mat("Face_" + t.ToString("00"), Color.white, tex);
             }
-            matHoloFaces = new Material[47];
-            for (int t = 0; t < 47; t++)
+            matHoloFaces = new Material[N_FACE];
+            for (int t = 0; t < N_FACE; t++)
             {
                 var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(PKG + "/Runtime/Textures/Tiles/tile_" + t.ToString("00") + ".png");
                 matHoloFaces[t] = ShaderMat("HoloFace_" + t.ToString("00"), "Unlit/Texture", Color.white, tex);
             }
             AssetDatabase.SaveAssets();
         }
+
+        const int N_FACE = 49;
 
         static Material Mat(string name, Color color, Texture2D tex)
         {

@@ -194,7 +194,7 @@ namespace MonakaLabo.SquareMahjong
 
         /// <summary>
         /// 既定のルール(よくあるネット麻雀・プロリーグ並み)。players = 4 か 3、rounds = 1(東風戦)か 2(東南戦)。
-        /// 喰いタン・後付けあり、赤ドラ(四麻は各色1枚、三麻は筒子・索子1枚ずつ)、飛びあり、オーラスの和了やめ・聴牌やめあり。
+        /// 喰いタン・後付けあり、赤ドラ(5筒・5索 の1枚ずつ。四麻・三麻とも)、飛びあり、オーラスの和了やめ・聴牌やめあり。
         /// </summary>
         public void SetRules(int players, int rounds)
         {
@@ -539,7 +539,7 @@ namespace MonakaLabo.SquareMahjong
                 for (int cp = 0; cp < 4; cp++)
                 {
                     int code = k;
-                    if (rAka && cp == 0 && k < 27 && k % 9 == 4) code = RED0 + k / 9;
+                    if (rAka && cp == 0 && k >= 9 && k < 27 && k % 9 == 4) code = RED0 + k / 9;   // 赤ドラは 5筒・5索 の1枚ずつ
                     wall[n++] = code;
                 }
             }
