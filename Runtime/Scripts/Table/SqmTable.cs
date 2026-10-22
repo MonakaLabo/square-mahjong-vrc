@@ -495,7 +495,7 @@ namespace MonakaLabo.SquareMahjong
             if (engine.kyoku >= engine.rKyokuCount && voiceOorasu != null) bannerQ[bannerQN++] = voiceOorasu;
             // 声が長いときは、言い終わるまで帯を出しておく
             float total = 0.4f;
-            for (int i = 0; i < bannerQN; i++) total += bannerQ[i].length + 0.08f;
+            for (int i = 0; i < bannerQN; i++) total += bannerQ[i].length + VOICE_GAP;
             if (total > bannerT) bannerT = total;
             bannerFull = bannerT;
             PlayBannerNext();
@@ -524,7 +524,7 @@ namespace MonakaLabo.SquareMahjong
             if (e.honba >= 1 && honbaVoices != null && e.honba <= honbaVoices.Length && honbaVoices[e.honba - 1] != null) bannerQ[bannerQN++] = honbaVoices[e.honba - 1];
             if (stdView.IsAllLast() && voiceOorasu != null) bannerQ[bannerQN++] = voiceOorasu;
             float total = 0.4f;
-            for (int i = 0; i < bannerQN; i++) total += bannerQ[i].length + 0.08f;
+            for (int i = 0; i < bannerQN; i++) total += bannerQ[i].length + VOICE_GAP;
             if (total > bannerT) bannerT = total;
             bannerFull = bannerT;
             PlayBannerNext();
@@ -538,7 +538,28 @@ namespace MonakaLabo.SquareMahjong
             if (bannerQi >= bannerQN) return;
             AudioClip c = bannerQ[bannerQi++];
             PlayCenterVoice(c);
-            if (bannerQi < bannerQN) SendCustomEventDelayedSeconds(nameof(PlayBannerNext), c.length + 0.08f);
+            if (bannerQi < bannerQN) SendCustomEventDelayedSeconds(nameof(PlayBannerNext), c.length + VOICE_GAP);
+        }
+
+        public const float VOICE_GAP = 0.3f;   // 続けて鳴らす声のあいだ(秒)
+        private float voiceEndAt;              // 宣言の声(ロン・ツモなど)が言い終わる時刻
+        private AudioClip pendingCenter;
+
+        /// <summary>宣言の声が鳴っていれば、言い終わって VOICE_GAP たってから鳴らす(「ロン」→「跳満」が重ならないように)</summary>
+        private void PlayCenterVoiceAfter(AudioClip c)
+        {
+            if (c == null) return;
+            float d = voiceEndAt + VOICE_GAP - Time.time;
+            if (d <= 0) { PlayCenterVoice(c); return; }
+            pendingCenter = c;
+            SendCustomEventDelayedSeconds(nameof(PlayPendingCenter), d);
+        }
+
+        public void PlayPendingCenter()
+        {
+            AudioClip c = pendingCenter;
+            pendingCenter = null;
+            PlayCenterVoice(c);
         }
 
         /// <summary>卓の中央から声を鳴らす(局・流局・終局の読み上げ)</summary>
@@ -558,7 +579,7 @@ namespace MonakaLabo.SquareMahjong
             if (key < 0 || key == resultVoiceKey) return;
             resultVoiceKey = key;
             if (replayTo > 0) return;
-            PlayCenterVoice(page == 100 ? voiceShuukyoku : voiceRyuukyoku);
+            PlayCenterVoiceAfter(page == 100 ? voiceShuukyoku : voiceRyuukyoku);
         }
 
         /// <summary>普通の麻雀: 和了のページで点数の区切り(満貫〜役満)、流局・途中流局・終局を読み上げる</summary>
@@ -569,15 +590,15 @@ namespace MonakaLabo.SquareMahjong
             if (key == resultVoiceKey) return;
             resultVoiceKey = key;
             if (replayTo > 0) return;
-            if (page == 100) { PlayCenterVoice(voiceShuukyoku); return; }
+            if (page == 100) { PlayCenterVoiceAfter(voiceShuukyoku); return; }
             if (page == 99)
             {
                 AudioClip ab = stdEngine.resType == SqmStdEngine.RES_ABORT ? stdView.AbortVoice() : null;
-                PlayCenterVoice(ab != null ? ab : voiceRyuukyoku);
+                PlayCenterVoiceAfter(ab != null ? ab : voiceRyuukyoku);
                 return;
             }
             AudioClip lv = stdView.LimitVoice(StdPageWin(page));
-            if (lv != null) PlayCenterVoice(lv);
+            if (lv != null) PlayCenterVoiceAfter(lv);
         }
 
         /// <summary>帯がすっと開いて、少し止まって、閉じる</summary>
@@ -2199,13 +2220,9 @@ namespace MonakaLabo.SquareMahjong
             else if (ty == SqmStdEngine.A_PON) { PlayVoice(ts, VOICE_PON, -1); PlaySfx(SFX_CALL); }
             else if (ty == SqmStdEngine.A_CHI) { PlayVoice(ts, VOICE_CHI, -1); PlaySfx(SFX_CALL); }
             else if (ty == SqmStdEngine.A_ANKAN || ty == SqmStdEngine.A_KAKAN || ty == SqmStdEngine.A_MINKAN) { PlayVoice(ts, VOICE_KAN, -1); PlaySfx(SFX_CALL); }
-            else if (ty == SqmStdEngine.A_KITA)
-            {
-                AudioClip pei = stdView.StdVoice(SqmStdView.STDV_PEI);
-                if (pei != null && voiceSources != null && ts >= 0 && ts < voiceSources.Length && voiceSources[ts] != null && voiceVolume > 0) voiceSources[ts].PlayOneShot(pei, voiceVolume);
-                PlaySfx(SFX_CALL);
-            }
-            else if (ty == SqmStdEngine.A_KYUSHU) { PlayVoice(ts, VOICE_KYUSHU, -1); PlaySfx(SFX_END); }
+            else if (ty == SqmStdEngine.A_KITA) { PlaySeatClip(ts, stdView.StdVoice(SqmStdView.STDV_PEI)); PlaySfx(SFX_CALL); }
+            // 九種九牌の声は普通の麻雀の分(平方麻雀の「十四種十四牌」は使わない。無ければ鳴らさない)
+            else if (ty == SqmStdEngine.A_KYUSHU) { PlaySeatClip(ts, stdView.StdVoice(SqmStdView.STDV_KYUSHU)); PlaySfx(SFX_END); }
             if (e.phase == SqmStdEngine.PH_KYOKU_OVER && ty != SqmStdEngine.A_NEXT && ty != SqmStdEngine.A_TSUMO && ty != SqmStdEngine.A_RON && ty != SqmStdEngine.A_KYUSHU) PlaySfx(SFX_END);
             int me = humanSeat >= 0 ? StdEngineSeat(humanSeat) : -1;
             bool myTurn = me >= 0 && e.pendKind == SqmStdEngine.PEND_TURN && e.turn == me;
@@ -2216,6 +2233,14 @@ namespace MonakaLabo.SquareMahjong
                 for (int i = 0; i < e.pendN; i++) if (e.pendSeats[i] == me) myCall = true;
             if (myCall && !wasMyCall) Notice();
             wasMyCall = myCall;
+        }
+
+        /// <summary>席 ts の位置から声を鳴らす(言い終わる時刻も覚える)</summary>
+        private void PlaySeatClip(int ts, AudioClip clip)
+        {
+            if (clip == null || voiceSources == null || ts < 0 || ts >= voiceSources.Length || voiceSources[ts] == null || voiceVolume <= 0) return;
+            voiceSources[ts].PlayOneShot(clip, voiceVolume);
+            if (Time.time + clip.length > voiceEndAt) voiceEndAt = Time.time + clip.length;
         }
 
         private bool wasMyTurn, wasMyCall, noticeLater;
@@ -2240,6 +2265,7 @@ namespace MonakaLabo.SquareMahjong
             if (clip == null && fallback >= 0 && fallback < voiceClips.Length) clip = voiceClips[fallback];
             if (clip == null) return;
             voiceSources[seat].PlayOneShot(clip, voiceVolume);
+            if (Time.time + clip.length > voiceEndAt) voiceEndAt = Time.time + clip.length;
         }
 
         /// <summary>記録1つを再生した直後に、宣言なら声を鳴らす</summary>

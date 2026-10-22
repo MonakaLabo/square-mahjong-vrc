@@ -867,7 +867,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.stdView.kyokuVoicesSouth = new AudioClip[4];
                 for (int i = 0; i < 4; i++)
                     table.stdView.kyokuVoicesSouth[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_kyoku_s" + (i + 1) + ".wav");
-                string[] sv = { "pei", "suufuu", "suucha", "suukan", "sancha", "mangan", "haneman", "baiman", "sanbai", "yakuman", "kazoe" };
+                string[] sv = { "pei", "suufuu", "suucha", "suukan", "sancha", "mangan", "haneman", "baiman", "sanbai", "yakuman", "kazoe", "kyushu9" };
                 table.stdView.stdVoices = new AudioClip[sv.Length];
                 for (int i = 0; i < sv.Length; i++)
                     table.stdView.stdVoices[i] = AssetDatabase.LoadAssetAtPath<AudioClip>(PKG + "/Runtime/Audio/Voice/voice_" + sv[i] + ".wav");

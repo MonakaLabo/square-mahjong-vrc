@@ -21,7 +21,7 @@ namespace MonakaLabo.SquareMahjong
         public AudioClip[] stdVoices;         // STDV_* の順
 
         public const int STDV_PEI = 0, STDV_SUUFUU = 1, STDV_SUUCHA = 2, STDV_SUUKAN = 3, STDV_SANCHA = 4,
-            STDV_MANGAN = 5, STDV_HANEMAN = 6, STDV_BAIMAN = 7, STDV_SANBAIMAN = 8, STDV_YAKUMAN = 9, STDV_KAZOE = 10;
+            STDV_MANGAN = 5, STDV_HANEMAN = 6, STDV_BAIMAN = 7, STDV_SANBAIMAN = 8, STDV_YAKUMAN = 9, STDV_KAZOE = 10, STDV_KYUSHU = 11;
 
         private const int OPT = SqmStdEngine.OPT;
         private const int NC = SqmStdEngine.NC;
@@ -247,7 +247,7 @@ namespace MonakaLabo.SquareMahjong
                     bool side = (f & SqmStdEngine.RV_RIICHI) != 0;
                     float wdt = side ? TH : TW;
                     float cx = -3 * (TW + 0.001f) + x + wdt / 2;
-                    float rad = 0.70f - row * (TH + 0.002f);
+                    float rad = 0.70f - row * (TH + 0.002f) + (side ? (TH - TW) / 2 : 0);   // 横にした牌も底辺をそろえる
                     Vector3 pos = u * rad + r * cx + Vector3.up * (TOP + TT / 2);
                     table.PlaceTile(table.riverTiles[b + n], table.riverFaces[b + n], Face(engine.rvC[o]), pos, ts, true, true, true, side);
                     x += wdt + 0.001f;
@@ -282,7 +282,9 @@ namespace MonakaLabo.SquareMahjong
                         bool side = k == sidePos;
                         bool back = ty == SqmStdEngine.M_ANKAN && (k == 0 || k == 3);
                         float wdt = side ? TH : TW;
-                        Vector3 pos = u * SqmTable.R_MELD + r * (x - wdt / 2) + Vector3.up * (TOP + TT / 2);
+                        // 横にした牌は奥行きが TW になるので、底辺(自分に近い辺)が縦の牌とそろうよう手前へずらす
+                        float rad = SqmTable.R_MELD + (side ? (TH - TW) / 2 : 0);
+                        Vector3 pos = u * rad + r * (x - wdt / 2) + Vector3.up * (TOP + TT / 2);
                         table.PlaceTile(table.meldTiles[b + n], table.meldFaces[b + n], Face(code), pos, ts, true, true, !back, side);
                         x -= wdt + 0.001f;
                         n++;
