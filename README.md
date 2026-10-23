@@ -9,7 +9,7 @@ SavannaMonaka が、Claude(Anthropic の AI)といっしょに作りました。
 *A VRChat world gimmick for "Square Mahjong" — an 8-player, 1,316-tile mahjong variant. Up to 8 players; empty seats are filled by NPCs. (UI is Japanese only.)*
 
 - ルールブック・ブラウザ版: <https://monakalabo.github.io/square-mahjong/>(ルールブック v0.8)
-- バージョン: 0.5.0
+- バージョン: 0.5.1
 
 ---
 

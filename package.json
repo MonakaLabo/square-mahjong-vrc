@@ -1,7 +1,7 @@
 {
   "name": "jp.monakalabo.square-mahjong",
   "displayName": "Square-Mahjong",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "unity": "2022.3",
   "description": "8人・1316枚・なんでも倍の麻雀「平方麻雀」を、VRChat のワールドに置いて遊べるギミック。普通の麻雀(四人・三人)にも切り替えられる。",
   "author": { "name": "SavannaMonaka (MonakaLabo)" },
