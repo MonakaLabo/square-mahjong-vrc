@@ -656,12 +656,12 @@ namespace MonakaLabo.SquareMahjong
                     else HostStep();
                 }
             }
-            DebugAutoPlay();
             else if (archiveAskWait > 0)
             {
                 archiveAskWait -= Time.deltaTime;
                 if (archiveAskWait <= 0 && lMatch == sMatch && lCount < sCount && replayTo == 0) AskArchive();
             }
+            DebugAutoPlay();
             if (dirty) { dirty = false; Refresh(); CheckKyokuBanner(); }
             clockWait -= Time.deltaTime;
             if (clockWait <= 0) { clockWait = 0.1f; RefreshHoloTime(); }
