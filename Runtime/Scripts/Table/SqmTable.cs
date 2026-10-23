@@ -81,6 +81,8 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] holoTrapFrame, holoTrapFill;
         public TextMeshPro[] holoTrapWind;
         public TextMeshPro[] holoCellWind, holoCellName, holoCellScore;
+        public GameObject[] holoCellScoreBox;  // 点数の7セグの下地(普通の麻雀で使わない所は隠す)
+        public Material holoMatEmpty;          // 三人打ちの空いた席の台形(文字なしの灰色)
         public Material holoMatLine, holoMatRed, holoMatYellow, holoMatFill, holoMatTurn;
         // 結果の画面(和了・流局・終局)。出ているあいだは holoPlay を隠す
         public GameObject resultRoot;
@@ -2796,6 +2798,7 @@ namespace MonakaLabo.SquareMahjong
                 int s = (view + p) % NP;
                 if (holoCellFrame != null && holoCellFrame[p] != null && !holoCellFrame[p].gameObject.activeSelf) holoCellFrame[p].gameObject.SetActive(true);
                 if (holoCellFill != null && holoCellFill[p] != null && !holoCellFill[p].gameObject.activeSelf) holoCellFill[p].gameObject.SetActive(true);
+                if (holoCellScoreBox != null && holoCellScoreBox[p] != null && !holoCellScoreBox[p].activeSelf) holoCellScoreBox[p].SetActive(true);
                 bool turn = Running() && engine.pendKind == SqmEngine.PEND_TURN && engine.turn == s;
                 bool riichi = engine.riichiOn[s];
                 bool me = s == humanSeat;
@@ -2863,11 +2866,20 @@ namespace MonakaLabo.SquareMahjong
                 if (holoCellName != null && holoCellName[p] != null) holoCellName[p].text = "";
                 if (holoCellScore != null && holoCellScore[p] != null) holoCellScore[p].text = "";
                 int q = p / 2;
+                // 点数の7セグの下地は、使っている席だけ
+                if (holoCellScoreBox != null && holoCellScoreBox[p] != null && holoCellScoreBox[p].activeSelf != used) holoCellScoreBox[p].SetActive(used);
                 if (p % 2 == 0 && holoTrapFrame != null && q < holoTrapFrame.Length)
                 {
-                    if (holoTrapFrame[q] != null && holoTrapFrame[q].gameObject.activeSelf != used) holoTrapFrame[q].gameObject.SetActive(used);
-                    if (holoTrapFill[q] != null && holoTrapFill[q].gameObject.activeSelf != used) holoTrapFill[q].gameObject.SetActive(used);
+                    // 台形は上下左右の4つとも出す。三人打ちの空いた席は、文字なしの灰色
+                    if (holoTrapFrame[q] != null && !holoTrapFrame[q].gameObject.activeSelf) holoTrapFrame[q].gameObject.SetActive(true);
+                    if (holoTrapFill[q] != null && !holoTrapFill[q].gameObject.activeSelf) holoTrapFill[q].gameObject.SetActive(true);
                     if (holoTrapWind[q] != null) holoTrapWind[q].text = "";
+                    if (!used)
+                    {
+                        if (holoTrapFrame[q] != null && holoTrapFrame[q].sharedMaterial != holoMatLine) holoTrapFrame[q].sharedMaterial = holoMatLine;
+                        Material em = holoMatEmpty != null ? holoMatEmpty : holoMatFill;
+                        if (holoTrapFill[q] != null && holoTrapFill[q].sharedMaterial != em) holoTrapFill[q].sharedMaterial = em;
+                    }
                 }
                 if (!used) continue;
                 bool turn = Running() && e.pendKind == SqmStdEngine.PEND_TURN && e.turn == es;

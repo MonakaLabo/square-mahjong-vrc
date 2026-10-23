@@ -249,6 +249,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.faceMats = matHoloFaces;
             pad.matTabOn = matPadTabOn; pad.matTabOff = matPadBg;
             pad.matBox = matPadBg; pad.matBoxMe = matPadTabOn;
+            pad.matBoxEmpty = HoloMat("PadBoxEmpty", new Color(0.62f, 0.66f, 0.68f, 1f), Q_FILL);   // 三人打ちの空いた席の台形
             pad.btnMats = matPadBtn;
             pad.matSetupOn = HoloMat("PadSetupOn", new Color(1f, 0.42f, 0.36f, 1f), Q_FILL);
             pad.matSetupOff = matPadBg;
@@ -746,6 +747,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holoCellWind = new TextMeshPro[8];
             table.holoCellName = new TextMeshPro[8];
             table.holoCellScore = new TextMeshPro[8];
+            table.holoCellScoreBox = new GameObject[8];
             var map = Group(play, "Map");
             table.holoCenter = HText(map, "Center", g, 0.44f, new Vector2(0.125f, 0.08f), TextAlignmentOptions.Center);
             table.holoCenter.color = new Color(1f, 0.82f, 0.44f);
@@ -776,6 +778,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.holoCellName[p].enableWordWrapping = false;
                 table.holoCellName[p].overflowMode = TextOverflowModes.Ellipsis;
                 table.holoCellScore[p] = SegText(cell, "Score", sPos, 0.36f, new Vector2(0.2f, 0.055f), true);
+                var sb = cell.transform.Find("ScoreBox");
+                if (sb != null) table.holoCellScoreBox[p] = sb.gameObject;
             }
 
             // ---- 右: 普通の麻雀の見取り図(真ん中の四角を、上下左右の台形 4つで囲む。名前と点数は上の 8マスのものを使う) ----
@@ -784,6 +788,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holoTrapFrame = new MeshRenderer[4];
             table.holoTrapFill = new MeshRenderer[4];
             table.holoTrapWind = new TextMeshPro[4];
+            table.holoMatEmpty = HoloMat("HoloEmpty", new Color(0.45f, 0.5f, 0.53f, 0.55f), Q_FILL);   // 三人打ちの空いた席の台形
             for (int q = 0; q < 4; q++)
             {
                 var frame = Trapezoid(trap, "frame_" + q, q, g, 0.075f, 0.075f, 0.2f, 0.2f, matHoloLine, "HoloTrap_" + q, 0.005f);

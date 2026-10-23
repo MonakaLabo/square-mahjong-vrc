@@ -57,6 +57,7 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro[] boxTexts;
         public TextMeshPro scoreCenter;
         public Material matBox, matBoxMe;
+        public Material matBoxEmpty;         // 三人打ちの空いた席の台形(文字なしの灰色)
         public TextMeshPro resultTable;      // 終局の結果の表
         // 点数の推移の折れ線グラフ(点数タブで表と切り替える。切り替えボタンは下の帯の右端)
         public GameObject graphRoot, graphToggle;
@@ -444,9 +445,11 @@ namespace MonakaLabo.SquareMahjong
                 Material f = p == 0 ? matBoxMe : matBox;
                 if (std && p % 2 == 0 && trapFrames != null && p / 2 < trapFrames.Length)
                 {
-                    SetActive(trapFrames[p / 2], used);
-                    SetActive(trapFills[p / 2].gameObject, used);
-                    if (trapFills[p / 2].sharedMaterial != f) trapFills[p / 2].sharedMaterial = f;
+                    // 台形は4つとも出す。三人打ちの空いた席は、文字なしの灰色
+                    SetActive(trapFrames[p / 2], true);
+                    SetActive(trapFills[p / 2].gameObject, true);
+                    Material tf = used ? f : (matBoxEmpty != null ? matBoxEmpty : matBox);
+                    if (trapFills[p / 2].sharedMaterial != tf) trapFills[p / 2].sharedMaterial = tf;
                 }
                 if (!used) continue;
                 if (boxFills[p].sharedMaterial != f) boxFills[p].sharedMaterial = f;
