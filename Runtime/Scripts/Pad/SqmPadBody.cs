@@ -8,9 +8,11 @@ namespace MonakaLabo.SquareMahjong
 {
     /// <summary>
     /// 席ごとのパッドの本体(板)。卓の右寄りに、少し傾けて付いている。
-    /// 設定で「パッドを掴めるようにする」を ON にした本人だけが、VR の手のグリップで左右の端を掴める。
-    /// 掴む処理は自前(VRCPickup は使わない。VRCPickup は掴んだ手に板を寄せてしまい、掴んだ所を保てない)。
-    /// 掴んだ瞬間の手と板の位置関係のまま動かし、離したらその場に置く。元の場所の近くで離すとくっつく。
+    /// 設定で「パッドを掴めるようにする」を ON にした本人だけが、左右の端を掴める。
+    ///   VR: 掴む処理は自前(VRCPickup は掴んだ手に板を寄せてしまい、掴んだ所を保てない)。手のグリップで端を握ると、
+    ///       掴んだ瞬間の手と板の位置関係のまま動かし、離したらその場に置く。
+    ///   デスクトップ: VRChat 標準の VRCPickup で掴む(ふつうの持ち物と同じ扱い)。VR の人には VRCPickup を使わせない。
+    /// どちらも、元の場所の近くで離すとくっつく。
     /// 位置の同期は同じ GameObject の VRCObjectSync が受け持つ(掴んだ人が持ち主になる)。
     /// 中身(タブ・手牌など)は SqmPad の1組を、座った人の手元でここに付ける。
     /// </summary>
@@ -24,6 +26,8 @@ namespace MonakaLabo.SquareMahjong
         public GameObject joinButton, newButton;
         public TextMeshPro nameText;        // ほかの人の席のパッドに出す名前
         public GameObject[] visuals;        // 板の見た目(隠すときに消す)
+        public VRC_Pickup pickup;           // デスクトップの人だけが使う(VR の人には pickupable を切っておく)
+        public Collider[] grips;            // VRCPickup で掴める所(板の左右の端だけ。真ん中はボタンを押す所)
 
         public const float W = 0.42f, H = 0.27f;   // 板の大きさ(m)
         public const float GRIP_IN = 0.198f, GRIP_OUT = 0.235f;   // 掴める所: 板の中心から左右へこの範囲(m)。真ん中はボタンを押す所なので掴まない
@@ -108,6 +112,7 @@ namespace MonakaLabo.SquareMahjong
             SetHome();
             if (!Networking.IsOwner(gameObject)) return;
             holding = false;
+            DropPickup();
             transform.SetPositionAndRotation(homePos, homeRot);
         }
 
@@ -117,6 +122,7 @@ namespace MonakaLabo.SquareMahjong
             SetHome();
             if (!Networking.IsOwner(gameObject)) Networking.SetOwner(Networking.LocalPlayer, gameObject);
             holding = false;
+            DropPickup();
             transform.SetPositionAndRotation(homePos, homeRot);
         }
 
@@ -124,6 +130,31 @@ namespace MonakaLabo.SquareMahjong
         {
             grab = on;
             if (!on && holding) Release();
+            UpdatePickup();
+        }
+
+        /// <summary>デスクトップの人で、掴めるようにしていて、板が見えているときだけ VRCPickup を使えるようにする</summary>
+        private void UpdatePickup()
+        {
+            VRCPlayerApi lp = Networking.LocalPlayer;
+            bool desk = grab && visible && Utilities.IsValid(lp) && !lp.IsUserInVR();
+            if (grips != null)
+                for (int i = 0; i < grips.Length; i++) if (grips[i] != null && grips[i].enabled != desk) grips[i].enabled = desk;
+            if (pickup == null) return;
+            if (pickup.pickupable != desk) pickup.pickupable = desk;
+            if (!desk && pickup.IsHeld) pickup.Drop();
+        }
+
+        /// <summary>デスクトップ: VRCPickup で持っていたのを離した。元の場所の近くなら、くっつける</summary>
+        public override void OnDrop()
+        {
+            SetHome();
+            if (Vector3.Distance(transform.position, homePos) <= SNAP) transform.SetPositionAndRotation(homePos, homeRot);
+        }
+
+        private void DropPickup()
+        {
+            if (pickup != null && pickup.IsHeld) pickup.Drop();
         }
 
         /// <summary>板ごと出す/隠す(手元だけ。位置の同期には関わらない)</summary>
@@ -133,6 +164,7 @@ namespace MonakaLabo.SquareMahjong
                 for (int i = 0; i < visuals.Length; i++) if (visuals[i] != null && visuals[i].activeSelf != on) visuals[i].SetActive(on);
             visible = on;
             if (!on && holding) Release();
+            UpdatePickup();
         }
 
         /// <summary>中身の無いときの表示(待機中・ほかの人の席)</summary>

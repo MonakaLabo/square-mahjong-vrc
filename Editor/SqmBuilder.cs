@@ -498,14 +498,32 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Vector3 edge = u * (SqmTable.RIM_AP + 0.01f) + Vector3.up * (TOP + SqmTable.RIM_H);
             g.transform.localPosition = edge - padUp * (PH / 2) + r * 0.3f;
             g.transform.localRotation = Quaternion.LookRotation((-u + Vector3.down).normalized, padUp);
-            // 掴む処理は SqmPadBody が自前で持つ(VR の手のグリップで、左右の端を掴む)。位置の同期は VRCObjectSync
+            // 掴む: VR は SqmPadBody が自前で(手のグリップで左右の端)、デスクトップは VRCPickup で。位置の同期は VRCObjectSync
+            // VRCPickup で掴める所は板の左右の端だけ(板全体に付けると、ボタンを押そうとしても掴む方に取られる)
+            var grips = new Collider[2];
+            for (int side = 0; side < 2; side++)
+            {
+                var col = g.AddComponent<BoxCollider>();
+                col.center = new Vector3((side == 0 ? -1 : 1) * (SqmPadBody.GRIP_IN + SqmPadBody.GRIP_OUT) / 2, 0, 0.004f);
+                col.size = new Vector3(SqmPadBody.GRIP_OUT - SqmPadBody.GRIP_IN, PH + 0.02f, 0.03f);
+                col.isTrigger = true;
+                col.enabled = false;   // 掴めるようにしたデスクトップの人の手元だけで有効にする
+                grips[side] = col;
+            }
             var rb = g.AddComponent<Rigidbody>();
             rb.isKinematic = true;
             rb.useGravity = false;
+            var pickup = g.AddComponent<VRC.SDK3.Components.VRCPickup>();
+            pickup.pickupable = false;
+            pickup.AutoHold = VRC.SDKBase.VRC_Pickup.AutoHoldMode.Yes;
+            pickup.orientation = VRC.SDKBase.VRC_Pickup.PickupOrientation.Any;
+            pickup.InteractionText = "パッド";
             g.AddComponent<VRC.SDK3.Components.VRCObjectSync>();
             var body = UdonSharpUndo.AddComponent<SqmPadBody>(g);
             body.table = table;
             body.seat = s;
+            body.pickup = pickup;
+            body.grips = grips;
 
             var frame = Prim(PrimitiveType.Cube, g, "Frame", matPadFrame);
             frame.transform.localPosition = new Vector3(0, 0, 0.007f);
