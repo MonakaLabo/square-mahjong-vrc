@@ -49,6 +49,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var engine = UdonSharpUndo.AddComponent<SqmEngine>(logic);
             var npc = UdonSharpUndo.AddComponent<SqmNpc>(logic);
             var archive = UdonSharpUndo.AddComponent<SqmArchive>(Group(root, "Archive"));
+            // 点数の推移(パッドのグラフ)。局が終わったときだけ送るので、卓とは別の GameObject に置く
+            var scoreLog = UdonSharpUndo.AddComponent<SqmScoreLog>(Group(root, "ScoreLog"));
             npc.engine = engine;
             table.engine = engine;
             table.npc = npc;
@@ -64,6 +66,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.stdNpc = stdNpc;
             table.stdView = stdView;
             table.archive = archive;
+            table.scoreLog = scoreLog;
+            scoreLog.table = table;
             archive.table = table;
             table.faceMats = matFaces;
 
@@ -277,10 +281,14 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             PadLine(content, new Vector2(0, -0.0815f), new Vector2(0.4f, 0.0015f));
             PadLine(content, new Vector2(-0.11f, -0.103f), new Vector2(0.0015f, 0.043f));
             PText(content, "InGameLabel", new Vector2(-0.155f, -0.088f), 0.03f, new Vector2(0.088f, 0.01f), TextAlignmentOptions.Center).text = "IN GAME";
-            var infoLabel = PText(content, "InfoLabel", new Vector2(0.045f, -0.088f), 0.03f, new Vector2(0.3f, 0.01f), TextAlignmentOptions.Center);
+            // 右端は点数タブのグラフの切り替えボタン(点数タブのときだけ出す)のために空ける
+            var infoLabel = PText(content, "InfoLabel", new Vector2(0.0225f, -0.088f), 0.03f, new Vector2(0.255f, 0.01f), TextAlignmentOptions.Center);
             infoLabel.text = "<cspace=0.8em>INFORMATION</cspace>";
             pad.inGameText = PText(content, "InGame", new Vector2(-0.155f, -0.107f), 0.055f, new Vector2(0.088f, 0.03f), TextAlignmentOptions.Center);
-            pad.infoText = PText(content, "Info", new Vector2(0.045f, -0.106f), 0.08f, new Vector2(0.3f, 0.028f), TextAlignmentOptions.Center);
+            pad.infoText = PText(content, "Info", new Vector2(0.0225f, -0.106f), 0.08f, new Vector2(0.255f, 0.028f), TextAlignmentOptions.Center);
+            pad.graphToggle = PadBtn(content, "graph_toggle", "グラフ", matPadBtn[8], new Vector2(0.172f, -0.1015f), new Vector2(0.038f, 0.03f), 0.06f, out pad.graphToggleLabel, out _);
+            PadKey(pad.graphToggle, pad, 330);
+            pad.graphToggle.SetActive(false);
 
             // ---- 対局 ----
             var game = Group(content, "Game");
@@ -415,6 +423,28 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.scoreCenter = PText(boxes, "Center", new Vector2(0, 0.002f), 0.065f, new Vector2(0.12f, 0.05f), TextAlignmentOptions.Center);
             pad.resultTable = PText(score, "Result", new Vector2(0, 0.002f), 0.07f, new Vector2(0.37f, 0.165f), TextAlignmentOptions.TopLeft);
             pad.resultTable.gameObject.SetActive(false);
+            // 点数の推移の折れ線グラフ(線は SqmPad.DrawGraph が置く)
+            var graph = Group(score, "Graph");
+            pad.graphRoot = graph;
+            var graphMat = HoloMat("PadGraphLine", Color.white, Q_FILL + 1);   // 色は線ごとに頂点の色で付ける
+            var frameG = Prim(PrimitiveType.Quad, graph, "Frame", matPadLine);
+            frameG.transform.localPosition = new Vector3(-0.0425f, -0.004f, -0.0015f);
+            frameG.transform.localScale = new Vector3(0.262f, 0.134f, 1);
+            var fillG = Prim(PrimitiveType.Quad, graph, "Fill", matPadBg);
+            fillG.transform.localPosition = new Vector3(-0.0425f, -0.004f, -0.003f);
+            fillG.transform.localScale = new Vector3(0.259f, 0.131f, 1);
+            pad.graphLines = new LineRenderer[8];
+            for (int l = 0; l < 8; l++) pad.graphLines[l] = GraphLine(graph, "line_" + l, graphMat);
+            pad.graphBase = GraphLine(graph, "base", graphMat);
+            pad.graphBase.startColor = new Color(0.29f, 0.4f, 0.44f, 0.6f);
+            pad.graphBase.endColor = pad.graphBase.startColor;
+            pad.graphBase.widthMultiplier = 0.0008f;
+            pad.graphTop = PText(graph, "Top", new Vector2(-0.14f, 0.067f), 0.042f, new Vector2(0.07f, 0.012f), TextAlignmentOptions.Left);
+            pad.graphBottom = PText(graph, "Bottom", new Vector2(-0.14f, -0.075f), 0.042f, new Vector2(0.07f, 0.012f), TextAlignmentOptions.Left);
+            pad.graphLegend = PText(graph, "Legend", new Vector2(0.14f, 0.0f), 0.045f, new Vector2(0.095f, 0.15f), TextAlignmentOptions.Left);
+            pad.graphLegend.enableWordWrapping = false;
+            pad.graphLegend.overflowMode = TextOverflowModes.Ellipsis;
+            graph.SetActive(false);
 
             // ---- ルール・設定(上下に送るリスト) ----
             var list = Group(content, "List");
@@ -550,6 +580,24 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             credit.text = "平方麻雀 v" + SqmPad.VERSION + "\n<size=70%>" + SqmPad.CREDIT + "</size>";
             body.visuals = new[] { frame, panel, anchor, idle, body.nameText.gameObject, credit.gameObject };
             return body;
+        }
+
+        /// <summary>パッドのグラフの線(パッドの面に寝かせて描く。点は SqmPad が入れる)</summary>
+        static LineRenderer GraphLine(GameObject parent, string name, Material mat)
+        {
+            var g = new GameObject(name);
+            g.transform.SetParent(parent.transform, false);
+            var lr = g.AddComponent<LineRenderer>();
+            lr.useWorldSpace = false;
+            lr.alignment = LineAlignment.TransformZ;
+            lr.positionCount = 0;
+            lr.widthMultiplier = 0.0015f;
+            lr.numCornerVertices = 2;
+            lr.numCapVertices = 2;
+            lr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            lr.receiveShadows = false;
+            lr.sharedMaterial = mat;
+            return lr;
         }
 
         /// <summary>パッドの文字: 太字のフォント(あれば)を、さらに太らせて少し大きく。背景との差を強くする(VR で小さい明朝の細い線が消えないように)</summary>

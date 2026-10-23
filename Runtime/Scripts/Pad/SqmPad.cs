@@ -58,6 +58,11 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro scoreCenter;
         public Material matBox, matBoxMe;
         public TextMeshPro resultTable;      // 終局の結果の表
+        // 点数の推移の折れ線グラフ(点数タブで表と切り替える。切り替えボタンは下の帯の右端)
+        public GameObject graphRoot, graphToggle;
+        public LineRenderer[] graphLines;    // 8(線 = 平方麻雀は卓の席、普通の麻雀はエンジンの席)
+        public LineRenderer graphBase;       // 開始の点数の線
+        public TextMeshPro graphTop, graphBottom, graphLegend, graphToggleLabel;
 
         // ルール・設定(上下に送るリスト)
         public GameObject listRoot;
@@ -77,6 +82,7 @@ namespace MonakaLabo.SquareMahjong
         private int tab;
         private int candGroup = -1, candPage;   // 候補を出している鳴きの種類と、その何ページ目か
         private int listTop;
+        private bool showGraph;   // 点数タブで、表の代わりにグラフを出す
         private bool wasOver;
         private bool ready;
 
@@ -107,6 +113,7 @@ namespace MonakaLabo.SquareMahjong
             if (code == 320) { listTop = Mathf.Max(0, listTop - 1); Refresh(); return; }
             if (code == 321) { listTop++; Refresh(); return; }
             if (code >= 400 && code < 405) { PressSetup(code - 400); return; }
+            if (code == 330) { showGraph = !showGraph; Refresh(); return; }
             if (code == 405) { table.NewMatch(); return; }
         }
 
@@ -176,6 +183,7 @@ namespace MonakaLabo.SquareMahjong
             else inGameText.text = "—";
             infoText.text = table.PadInfo();
 
+            SetActive(graphToggle, tab == TAB_SCORE && table.IsLive());
             SetActive(gameRoot, tab == TAB_GAME);
             SetActive(scoreRoot, tab == TAB_SCORE);
             SetActive(listRoot, tab == TAB_RULE || tab == TAB_SETTING);
@@ -406,6 +414,16 @@ namespace MonakaLabo.SquareMahjong
         // ---------------------------------------------------------------- 点数
         private void RefreshScore(bool over)
         {
+            if (graphToggleLabel != null) graphToggleLabel.text = showGraph ? (over ? "結果" : "表") : "グラフ";
+            bool graph = showGraph && table.GraphReady();
+            SetActive(graphRoot, graph);
+            if (graph)
+            {
+                SetActive(scoreBoxes, false);
+                SetActive(resultTable.gameObject, false);
+                DrawGraph();
+                return;
+            }
             SetActive(scoreBoxes, !over);
             SetActive(resultTable.gameObject, over);
             if (over) { resultTable.text = table.PadResultTable(); return; }
@@ -433,6 +451,86 @@ namespace MonakaLabo.SquareMahjong
                 if (boxFills[p].sharedMaterial != f) boxFills[p].sharedMaterial = f;
                 boxTexts[p].text = live ? table.PadSeatBox(s) : table.SeatDisplayName(s);
             }
+        }
+
+        // ---- 折れ線グラフ ----
+        private const float GX0 = -0.17f, GX1 = 0.085f, GY0 = -0.068f, GY1 = 0.06f, GZ = -0.004f;
+        private Color[] lineColor;
+        private string[] lineHex;
+
+        private void InitColors()
+        {
+            if (lineColor != null) return;
+            // 席ごとの色(はっきり見分けられる8色)
+            lineHex = new string[] { "3ec6e0", "f08a24", "d9468f", "4cb050", "e0b820", "8a63d2", "e04848", "2ba89a" };
+            lineColor = new Color[] {
+                new Color(0.243f, 0.776f, 0.878f), new Color(0.941f, 0.541f, 0.141f), new Color(0.851f, 0.275f, 0.561f), new Color(0.298f, 0.690f, 0.314f),
+                new Color(0.878f, 0.722f, 0.125f), new Color(0.541f, 0.388f, 0.824f), new Color(0.878f, 0.282f, 0.282f), new Color(0.169f, 0.659f, 0.604f) };
+        }
+
+        /// <summary>点数の推移を描く: 横は局(本場も1局。最初は開始の点数)、縦は点数。自分の線は濃く太く、ほかは彩度を落として細く</summary>
+        private void DrawGraph()
+        {
+            InitColors();
+            SqmScoreLog lg = table.scoreLog;
+            int n = lg.lgN, lines = lg.lgLines;
+            int lo = int.MaxValue, hi = int.MinValue;
+            for (int i = 0; i < n; i++)
+                for (int l = 0; l < lines; l++)
+                {
+                    int v = lg.At(i, l);
+                    if (v < lo) lo = v;
+                    if (v > hi) hi = v;
+                }
+            int start = lg.At(0, 0);
+            if (start < lo) lo = start;
+            if (start > hi) hi = start;
+            int span = hi - lo;
+            if (span < 2000) { lo -= (2000 - span) / 2; hi = lo + 2000; span = 2000; }
+            float pad = span * 0.06f;
+            float vlo = lo - pad, vhi = hi + pad;
+            string legend = "";
+            for (int l = 0; l < graphLines.Length; l++)
+            {
+                LineRenderer lr = graphLines[l];
+                bool use = l < lines && n > 0;
+                if (lr.gameObject.activeSelf != use) lr.gameObject.SetActive(use);
+                if (!use) continue;
+                int ts = table.GraphLineSeat(l);
+                bool me = ts >= 0 && ts == table.humanSeat;
+                Color c = lineColor[l];
+                if (!me)
+                {
+                    float gray = c.r * 0.3f + c.g * 0.59f + c.b * 0.11f;
+                    c = Color.Lerp(c, new Color(gray, gray, gray, 1f), 0.55f);
+                    c.a = 0.75f;
+                }
+                lr.startColor = c;
+                lr.endColor = c;
+                lr.widthMultiplier = me ? 0.0028f : 0.0013f;
+                lr.positionCount = n < 2 ? 2 : n;
+                for (int i = 0; i < n; i++) lr.SetPosition(i, GraphPoint(i, n, lg.At(i, l), vlo, vhi, me));
+                if (n < 2) lr.SetPosition(1, GraphPoint(1, 2, lg.At(0, l), vlo, vhi, me));
+                string name = ts >= 0 ? table.SeatDisplayName(ts) : "";
+                if (me) name = "<b>" + name + "</b>";
+                legend += "<color=#" + lineHex[l] + (me ? "" : "99") + ">━</color> " + name + "\n";
+            }
+            if (graphBase != null)
+            {
+                graphBase.positionCount = 2;
+                graphBase.SetPosition(0, GraphPoint(0, 2, start, vlo, vhi, false) + new Vector3(0, 0, 0.0005f));
+                graphBase.SetPosition(1, GraphPoint(1, 2, start, vlo, vhi, false) + new Vector3(0, 0, 0.0005f));
+            }
+            if (graphTop != null) graphTop.text = hi.ToString("N0");
+            if (graphBottom != null) graphBottom.text = lo.ToString("N0");
+            if (graphLegend != null) graphLegend.text = legend;
+        }
+
+        private Vector3 GraphPoint(int i, int n, int v, float vlo, float vhi, bool front)
+        {
+            float x = n < 2 ? GX0 : GX0 + (GX1 - GX0) * i / (n - 1);
+            float y = GY0 + (GY1 - GY0) * (v - vlo) / (vhi - vlo);
+            return new Vector3(x, y, GZ - (front ? 0.0005f : 0));
         }
 
         // ---------------------------------------------------------------- ルール・設定

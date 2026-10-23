@@ -30,6 +30,7 @@ namespace MonakaLabo.SquareMahjong
         public SqmEngine engine;
         public SqmNpc npc;
         public SqmArchive archive;
+        public SqmScoreLog scoreLog;         // 点数の推移(パッドのグラフ)
         public SqmPad pad;                   // 手元のパッドの中身(1組)
         public SqmStdEngine stdEngine;       // 普通の麻雀のエンジン・NPC・見た目(モードが 四人・三人 のとき)
         public SqmStdNpc stdNpc;
@@ -457,6 +458,7 @@ namespace MonakaLabo.SquareMahjong
             sPageN = 0; sPage = 0; sAckMask = 0; sEvtWinFrom = 0; sEvtWinTo = 0; sEvtTail = false;
             sWinsSeen = 0; sWinsKyoku = -1; sKyokuOverSeen = -1;
             ResetLocal();
+            if (scoreLog != null) scoreLog.HostStart(sMatch, Std() ? stdEngine.NP : NP, Std() ? stdEngine.score : engine.score);
             wait = 0.5f;
             message = "";
             RequestSerialization();
@@ -1189,6 +1191,7 @@ namespace MonakaLabo.SquareMahjong
             sPageN = 0; sPage = 0; sAckMask = 0;
             sStartMs = 0; sEndMs = 0; sKyokuMs = 0; sKyokuEndMs = 0;
             ResetLocal();
+            if (scoreLog != null) scoreLog.HostClear(sMatch);
             message = "";
             RequestSerialization();
             SendCustomNetworkEvent(NetworkEventTarget.All, nameof(NetReturnPads));   // パッドを元の場所へ
@@ -1791,7 +1794,7 @@ namespace MonakaLabo.SquareMahjong
             sEvtTail = over && engine.resType != SqmEngine.RES_WIN;
             sWinsSeen = engine.winsN;
             sWinsKyoku = engine.kyokuSeq;
-            if (over) sKyokuOverSeen = engine.kyokuSeq;
+            if (over) { sKyokuOverSeen = engine.kyokuSeq; HostLogScores(); }
             sPageN = (sEvtWinTo - sEvtWinFrom) + (sEvtTail ? 1 : 0);
             sPage = 0;
             sAckMask = HumanMask();
@@ -1807,6 +1810,7 @@ namespace MonakaLabo.SquareMahjong
             SqmStdEngine e = stdEngine;
             if (e.phase != SqmStdEngine.PH_KYOKU_OVER || sKyokuOverSeen == e.kyokuSeq) return false;
             sKyokuOverSeen = e.kyokuSeq;
+            HostLogScores();
             sWinsKyoku = e.kyokuSeq;
             sEvtWinFrom = 0;
             sEvtWinTo = e.winsN;
@@ -1838,6 +1842,21 @@ namespace MonakaLabo.SquareMahjong
             }
             return best >= 0 ? best : (n > 0 ? sEvtWinFrom : 0);
         }
+
+        /// <summary>ホスト: 局が終わったときの点数を、点数の推移に足す</summary>
+        private void HostLogScores()
+        {
+            if (scoreLog != null) scoreLog.HostAppend(lMatch, Std() ? stdEngine.score : engine.score);
+        }
+
+        /// <summary>点数の推移が届いた(または足した)。パッドを描き直す</summary>
+        public void OnScoreLog() { dirty = true; }
+
+        /// <summary>パッドのグラフに出せる記録があるか(今の試合のもの)</summary>
+        public bool GraphReady() { return scoreLog != null && lMatch > 0 && scoreLog.lgMatch == lMatch && scoreLog.lgN > 0; }
+
+        /// <summary>グラフの線 l の卓の席(平方麻雀は線 = 席、普通の麻雀はエンジンの席から)</summary>
+        public int GraphLineSeat(int l) { return Std() ? StdTableSeat(l) : l; }
 
         private void HostNextPage()
         {
