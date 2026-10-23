@@ -63,6 +63,7 @@ namespace MonakaLabo.SquareMahjong
         public LineRenderer[] graphLines;    // 8(線 = 平方麻雀は卓の席、普通の麻雀はエンジンの席)
         public LineRenderer graphBase;       // 開始の点数の線
         public TextMeshPro graphTop, graphBottom, graphLegend, graphToggleLabel;
+        public TextMeshPro[] graphTicks;     // 横軸の目盛り(局の名前)。点が多いときは間引く
 
         // ルール・設定(上下に送るリスト)
         public GameObject listRoot;
@@ -454,7 +455,7 @@ namespace MonakaLabo.SquareMahjong
         }
 
         // ---- 折れ線グラフ ----
-        private const float GX0 = -0.17f, GX1 = 0.085f, GY0 = -0.068f, GY1 = 0.06f, GZ = -0.004f;
+        private const float GX0 = -0.165f, GX1 = 0.08f, GY0 = -0.047f, GY1 = 0.058f, GZ = -0.004f;
         private Color[] lineColor;
         private string[] lineHex;
 
@@ -520,6 +521,22 @@ namespace MonakaLabo.SquareMahjong
                 graphBase.positionCount = 2;
                 graphBase.SetPosition(0, GraphPoint(0, 2, start, vlo, vhi, false) + new Vector3(0, 0, 0.0005f));
                 graphBase.SetPosition(1, GraphPoint(1, 2, start, vlo, vhi, false) + new Vector3(0, 0, 0.0005f));
+            }
+            // 横軸の目盛り: 局の名前。目盛りの数より点が多ければ、等しい間隔で間引く
+            if (graphTicks != null)
+            {
+                int slots = graphTicks.Length;
+                int step = n <= slots ? 1 : (n + slots - 1) / slots;
+                int k = 0;
+                for (int i = 0; i < n && k < slots; i += step)
+                {
+                    TextMeshPro t = graphTicks[k++];
+                    if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
+                    t.text = table.GraphTick(lg.KyokuAt(i));
+                    Vector3 p = GraphPoint(i, n, 0, 0f, 1f, false);
+                    t.gameObject.transform.localPosition = new Vector3(p.x, GY0 - 0.0115f, -0.005f);
+                }
+                for (; k < slots; k++) if (graphTicks[k].gameObject.activeSelf) graphTicks[k].gameObject.SetActive(false);
             }
             if (graphTop != null) graphTop.text = hi.ToString("N0");
             if (graphBottom != null) graphBottom.text = lo.ToString("N0");

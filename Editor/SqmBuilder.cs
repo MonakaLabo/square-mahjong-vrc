@@ -440,7 +440,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.graphBase.endColor = pad.graphBase.startColor;
             pad.graphBase.widthMultiplier = 0.0008f;
             pad.graphTop = PText(graph, "Top", new Vector2(-0.14f, 0.067f), 0.042f, new Vector2(0.07f, 0.012f), TextAlignmentOptions.Left);
-            pad.graphBottom = PText(graph, "Bottom", new Vector2(-0.14f, -0.075f), 0.042f, new Vector2(0.07f, 0.012f), TextAlignmentOptions.Left);
+            pad.graphBottom = PText(graph, "Bottom", new Vector2(-0.14f, -0.041f), 0.042f, new Vector2(0.07f, 0.012f), TextAlignmentOptions.Left);
+            // 横軸の目盛り(局の名前。位置は SqmPad.DrawGraph が点に合わせて置く)
+            pad.graphTicks = new TextMeshPro[9];
+            for (int i = 0; i < 9; i++)
+            {
+                pad.graphTicks[i] = PText(graph, "tick_" + i, new Vector2(0, -0.0585f), 0.034f, new Vector2(0.03f, 0.016f), TextAlignmentOptions.Center);
+                pad.graphTicks[i].enableWordWrapping = false;
+                pad.graphTicks[i].gameObject.SetActive(false);
+            }
             pad.graphLegend = PText(graph, "Legend", new Vector2(0.14f, 0.0f), 0.045f, new Vector2(0.095f, 0.15f), TextAlignmentOptions.Left);
             pad.graphLegend.enableWordWrapping = false;
             pad.graphLegend.overflowMode = TextOverflowModes.Ellipsis;

@@ -1846,7 +1846,9 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>ホスト: 局が終わったときの点数を、点数の推移に足す</summary>
         private void HostLogScores()
         {
-            if (scoreLog != null) scoreLog.HostAppend(lMatch, Std() ? stdEngine.score : engine.score);
+            if (scoreLog == null) return;
+            int kyoku = Std() ? stdEngine.round * 1000 + stdEngine.kyokuNo * 100 + stdEngine.honba : engine.kyoku * 100 + engine.honba;
+            scoreLog.HostAppend(lMatch, Std() ? stdEngine.score : engine.score, kyoku);
         }
 
         /// <summary>点数の推移が届いた(または足した)。パッドを描き直す</summary>
@@ -1854,6 +1856,16 @@ namespace MonakaLabo.SquareMahjong
 
         /// <summary>パッドのグラフに出せる記録があるか(今の試合のもの)</summary>
         public bool GraphReady() { return scoreLog != null && lMatch > 0 && scoreLog.lgMatch == lMatch && scoreLog.lgN > 0; }
+
+        /// <summary>グラフの横軸の目盛り: 「開始」「東1局」「東1局 / 1本場」(2行)(kyoku = 場 * 1000 + 局 * 100 + 本場)</summary>
+        public string GraphTick(int kyoku)
+        {
+            if (kyoku < 0) return "開始";
+            int rnd = kyoku / 1000, k = kyoku / 100 % 10, h = kyoku % 100;
+            string t = (rnd == 0 ? "東" : rnd == 1 ? "南" : "西") + k + "局";
+            if (h > 0) t += "\n" + h + "本場";
+            return t;
+        }
 
         /// <summary>グラフの線 l の卓の席(平方麻雀は線 = 席、普通の麻雀はエンジンの席から)</summary>
         public int GraphLineSeat(int l) { return Std() ? StdTableSeat(l) : l; }
