@@ -446,7 +446,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.graphTicks = new TextMeshPro[9];
             for (int i = 0; i < 9; i++)
             {
-                pad.graphTicks[i] = PText(graph, "tick_" + i, new Vector2(0, -0.0585f), 0.034f, new Vector2(0.03f, 0.016f), TextAlignmentOptions.Center);
+                pad.graphTicks[i] = PText(graph, "tick_" + i, new Vector2(0, -0.0585f), 0.042f, new Vector2(0.03f, 0.016f), TextAlignmentOptions.Center);
                 pad.graphTicks[i].enableWordWrapping = false;
                 pad.graphTicks[i].gameObject.SetActive(false);
             }

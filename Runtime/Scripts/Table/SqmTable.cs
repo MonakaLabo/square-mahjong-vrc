@@ -1806,6 +1806,7 @@ namespace MonakaLabo.SquareMahjong
             sWinsSeen = engine.winsN;
             sWinsKyoku = engine.kyokuSeq;
             if (over) { sKyokuOverSeen = engine.kyokuSeq; HostLogScores(); }
+            else if (newWin) HostLogScores();   // 平方戦: 先発の和了(点数はその場で払われる)も1点にする
             sPageN = (sEvtWinTo - sEvtWinFrom) + (sEvtTail ? 1 : 0);
             sPage = 0;
             sAckMask = HumanMask();
@@ -1859,6 +1860,18 @@ namespace MonakaLabo.SquareMahjong
         {
             if (scoreLog == null) return;
             int kyoku = Std() ? stdEngine.round * 1000 + stdEngine.kyokuNo * 100 + stdEngine.honba : engine.kyoku * 100 + engine.honba;
+            if (!Std())
+            {
+                // 平方戦は 先発(1)・後発(2) を 100000 の位に付ける。局の終わりの点は、先発の点がもうあれば「後」。
+                // 先発の和了でそのまま局が終わったときは「先」。先発が無い局は付けない
+                int last = scoreLog.lgN > 0 ? scoreLog.KyokuAt(scoreLog.lgN - 1) : -1;
+                bool firstLogged = last >= 0 && last % 100000 == kyoku && last / 100000 == 1;
+                int role;
+                if (engine.phase != SqmEngine.PH_KYOKU_OVER) role = 1;
+                else if (firstLogged) role = 2;
+                else role = engine.first >= 0 ? 1 : 0;
+                kyoku += role * 100000;
+            }
             scoreLog.HostAppend(lMatch, Std() ? stdEngine.score : engine.score, kyoku);
         }
 
@@ -1868,10 +1881,19 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>パッドのグラフに出せる記録があるか(今の試合のもの)</summary>
         public bool GraphReady() { return scoreLog != null && lMatch > 0 && scoreLog.lgMatch == lMatch && scoreLog.lgN > 0; }
 
-        /// <summary>グラフの横軸の目盛り: 「開始」「東1局」「東1局 / 1本場」(2行)(kyoku = 場 * 1000 + 局 * 100 + 本場)</summary>
+        /// <summary>
+        /// グラフの横軸の目盛り。普通の麻雀は「東1局」「東1局 / 1本場」(2行)(kyoku = 場 * 1000 + 局 * 100 + 本場)。
+        /// 平方戦は「3-2先」「3-0後」「3-0」(kyoku = 先後 * 100000 + 局 * 100 + 本場)。最初は「開始」
+        /// </summary>
         public string GraphTick(int kyoku)
         {
             if (kyoku < 0) return "開始";
+            if (!Std())
+            {
+                // 平方戦(東風戦だけ): 「局-本場」+ 先/後。例: 3-2先・3-0後・3-0
+                int role = kyoku / 100000, kk = kyoku % 100000;
+                return (kk / 100) + "-" + (kk % 100) + (role == 1 ? "先" : role == 2 ? "後" : "");
+            }
             int rnd = kyoku / 1000, k = kyoku / 100 % 10, h = kyoku % 100;
             string t = (rnd == 0 ? "東" : rnd == 1 ? "南" : "西") + k + "局";
             if (h > 0) t += "\n" + h + "本場";
