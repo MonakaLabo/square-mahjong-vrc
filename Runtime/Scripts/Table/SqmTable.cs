@@ -2105,10 +2105,11 @@ namespace MonakaLabo.SquareMahjong
         public void CenterRanks(bool center)
         {
             if (resRankL == null) return;
-            Vector3 p = resRankL.transform.localPosition;
+            Transform tr = resRankL.gameObject.transform;   // U# は TextMeshPro の .transform を使えない(GameObject を通す)
+            Vector3 p = tr.localPosition;
             if (!rankLXSet) { rankLXSet = true; rankLX = p.x; }
             float x = center ? 0f : rankLX;
-            if (p.x != x) resRankL.transform.localPosition = new Vector3(x, p.y, p.z);
+            if (p.x != x) tr.localPosition = new Vector3(x, p.y, p.z);
         }
 
         private void RenderFinal()
