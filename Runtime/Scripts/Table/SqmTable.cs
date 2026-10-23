@@ -232,6 +232,8 @@ namespace MonakaLabo.SquareMahjong
             return lMatch == sMatch && lCount == sCount && replayTo == 0;
         }
         private bool IsHuman(int s) { return sPlayer[s] != 0; }
+        /// <summary>その席を NPC が打つか(空いている席 / デバッグの自動プレイ中のホスト自身の席)</summary>
+        private bool NpcPlays(int s) { return s >= 0 && (!IsHuman(s) || (debugEnabled && debugAutoPlay && s == humanSeat && IsHost())); }
 
         private string NameOf(int s)
         {
@@ -614,7 +616,7 @@ namespace MonakaLabo.SquareMahjong
             bool on = bannerT > 0;
             if (kyokuBanner.gameObject.activeSelf != on) kyokuBanner.gameObject.SetActive(on);
             if (!on) return;
-            bannerT -= Time.deltaTime;
+            bannerT -= Time.deltaTime * SpeedMul();
             if (bannerT <= 0)
             {
                 dirty = true;   // 終わったら、操作ボタンを出し直す
@@ -646,14 +648,15 @@ namespace MonakaLabo.SquareMahjong
                 if (sPageN > 0)
                 {
                     // 結果の画面: だれも座っていなければ時間で進める(座っている人がいれば「確認」を待つ)
-                    if (HumanMask() == 0) { pageWait -= Time.deltaTime; if (pageWait <= 0) HostNextPage(); }
+                    if (HumanMask() == 0) { pageWait -= Time.deltaTime * SpeedMul(); if (pageWait <= 0) HostNextPage(); }
                 }
                 else if (CaughtUp() && Running() && bannerT <= 0)   // 局の始まりの演出が終わるまでは進めない
                 {
-                    if (wait > 0) wait -= Time.deltaTime;
+                    if (wait > 0) wait -= Time.deltaTime * SpeedMul();
                     else HostStep();
                 }
             }
+            DebugAutoPlay();
             else if (archiveAskWait > 0)
             {
                 archiveAskWait -= Time.deltaTime;
@@ -685,7 +688,7 @@ namespace MonakaLabo.SquareMahjong
                 if (sKyokuEndMs == 0) { sKyokuEndMs = Networking.GetServerTimeInMilliseconds(); RequestSerialization(); }
                 int d = engine.dealer;
                 // 人の親がアガリ止めを選べるときは、その人のボタンを待つ
-                if (IsHuman(d) && engine.CanAgariYame()) return;
+                if (!NpcPlays(d) && engine.CanAgariYame()) return;
                 if (Commit(EncodeNext(d, -1))) wait = 0.3f;
                 return;
             }
@@ -693,7 +696,7 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < engine.pendN; i++)
             {
                 int seat = engine.pendSeats[i];
-                if (IsHuman(seat)) continue;
+                if (!NpcPlays(seat)) continue;
                 uint nseed = engine.HashSeed(engine.seed.ToString() + ":" + engine.step + ":" + seat);
                 npc.Decide(seat, nseed);
                 bool discard = npc.action[SqmEngine.O_TYPE] == SqmEngine.A_DISCARD;
@@ -740,7 +743,7 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < e.pendN; i++)
             {
                 int es = e.pendSeats[i];
-                if (IsHuman(StdTableSeat(es))) continue;
+                if (!NpcPlays(StdTableSeat(es))) continue;
                 // 考えるのは何フレームかに分ける(打牌の受け入れを1フレームに1種類ずつ)。考えている間に記録が進んだら考え直す
                 int idx;
                 if (npcThinkSeat == es && npcThinkAt == lCount && npcThinkMatch == lMatch) idx = stdNpc.Continue();
@@ -2648,6 +2651,41 @@ namespace MonakaLabo.SquareMahjong
         }
 
         // ================================================================ デバッグ
+        // 自動プレイ: 自分の席を NPC が打つ(ホストなら HostStep が NPC の席として進める。ホストでなければ、手元の NPC に考えさせて送る)。
+        // 結果の画面の「確認」も自動で押す。速度: ホストの待ち(NPC の手の間・局の始まりの帯・だれも座っていないときの結果の画面)を縮める
+        [System.NonSerialized] public bool debugAutoPlay;
+        [System.NonSerialized] public int debugSpeed = 1;   // 1・2・4・8 倍
+        private float autoWait;
+
+        private float SpeedMul() { return debugEnabled && debugSpeed > 1 ? debugSpeed : 1f; }
+
+        private void DebugAutoPlay()
+        {
+            if (!debugEnabled || !debugAutoPlay || humanSeat < 0 || lMatch == 0 || !CaughtUp() || sentAt >= 0) return;
+            if (autoWait > 0) { autoWait -= Time.deltaTime * SpeedMul(); return; }
+            autoWait = 0.3f;
+            if (sPageN > 0) { if ((sAckMask & (1 << humanSeat)) != 0) Confirm(); return; }
+            if (IsHost() || !Running() || bannerT > 0) return;   // ホストは HostStep が自分の席を NPC として打つ
+            if (Std())
+            {
+                SqmStdEngine e = stdEngine;
+                int es = StdEngineSeat(humanSeat);
+                bool mine = false;
+                for (int i = 0; i < e.pendN; i++) if (e.pendSeats[i] == es) mine = true;
+                if (!mine || e.pendKind == SqmStdEngine.PEND_NEXT) return;
+                int idx = stdNpc.Decide(es, e.HashSeed("auto:" + lCount + ":" + es));
+                if (idx >= 0) SendCode(es | (idx << 3));
+                return;
+            }
+            bool my = false;
+            if (engine.pendKind == SqmEngine.PEND_TURN && engine.turn == humanSeat) my = true;
+            if (engine.pendKind == SqmEngine.PEND_CALLS) for (int i = 0; i < engine.pendN; i++) if (engine.pendSeats[i] == humanSeat) my = true;
+            if (engine.pendKind == SqmEngine.PEND_NEXT && engine.dealer == humanSeat && engine.CanAgariYame()) my = true;
+            if (!my) return;
+            npc.Decide(humanSeat, engine.HashSeed("auto:" + lCount + ":" + humanSeat));
+            SendCode(EncodeAct(npc.action));
+        }
+
         [System.NonSerialized] public int hintTileA = -1, hintTileB = -1;
         private int hintStep = -1;
         private string hintText = "";

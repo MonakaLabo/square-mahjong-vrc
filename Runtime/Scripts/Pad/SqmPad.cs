@@ -599,9 +599,9 @@ namespace MonakaLabo.SquareMahjong
             return -1;
         }
 
-        // 設定の並び: ふつうの項目(BaseCount 個) → デバッグ(debugEnabled のときだけ 3 個) → いちばん下は作者とバージョン(押せない)
+        // 設定の並び: ふつうの項目(BaseCount 個) → デバッグ(debugEnabled のときだけ 5 個) → いちばん下は作者とバージョン(押せない)
         private int BaseCount() { return table.IsHostMe() ? 7 + KickCount() : 5; }
-        private int DebugCount() { return table.debugEnabled ? 3 : 0; }
+        private int DebugCount() { return table.debugEnabled ? 5 : 0; }
         private int SettingCount() { return BaseCount() + DebugCount() + 1; }
         private bool IsCreditRow(int i) { return i == SettingCount() - 1; }
         private int DebugRow(int i) { int d = i - BaseCount(); return d >= 0 && d < DebugCount() ? d : -1; }
@@ -613,6 +613,8 @@ namespace MonakaLabo.SquareMahjong
             if (d == 0) return "<color=#a05000>[DEBUG]</color> 切るべき牌を表示";
             if (d == 1) return "<color=#a05000>[DEBUG]</color> 次の局で出す役";
             if (d == 2) return "<color=#a05000>[DEBUG]</color> 自分の席に仕込む";
+            if (d == 3) return "<color=#a05000>[DEBUG]</color> NPC による自動プレイ";
+            if (d == 4) return "<color=#a05000>[DEBUG]</color> NPC のプレイ速度(ホスト)";
             if (i == 0) return "効果音の音量";
             if (i == 1) return "声の音量";
             if (i == 2) return "パッドを掴めるようにする";
@@ -627,7 +629,7 @@ namespace MonakaLabo.SquareMahjong
         private bool SettingHasArrows(int i)
         {
             int d = DebugRow(i);
-            if (d >= 0) return d <= 1;
+            if (d >= 0) return d <= 1 || d >= 3;
             return i <= 2;
         }
 
@@ -638,6 +640,8 @@ namespace MonakaLabo.SquareMahjong
             if (d == 0) return debugHint ? "ON" : "OFF";
             if (d == 1) return engine.RigName(rigSel);
             if (d == 2) return table.CanRig() ? "実行 ▶" : "(ホストだけ)";
+            if (d == 3) return table.debugAutoPlay ? "ON" : "OFF";
+            if (d == 4) return "×" + table.debugSpeed;
             if (i == 0) return Bar(sfxStep);
             if (i == 1) return Bar(voiceStep);
             if (i == 2) return grabbable ? "ON" : "OFF";
@@ -652,6 +656,16 @@ namespace MonakaLabo.SquareMahjong
             if (d == 0) { debugHint = !debugHint; return; }
             if (d == 1) { rigSel = (rigSel + dir + SqmEngine.RIG_N) % SqmEngine.RIG_N; return; }
             if (d == 2) { table.RequestRig(rigSel); return; }
+            if (d == 3) { table.debugAutoPlay = !table.debugAutoPlay; return; }
+            if (d == 4)
+            {
+                // ×1 → ×2 → ×4 → ×8(◀ で逆)
+                int sp = table.debugSpeed;
+                if (dir > 0) sp = sp >= 8 ? 1 : sp * 2;
+                else sp = sp <= 1 ? 8 : sp / 2;
+                table.debugSpeed = sp;
+                return;
+            }
             if (i == 0) { sfxStep = Mathf.Clamp(sfxStep + dir, 0, 10); table.sfxVolume = sfxStep / 10f; }
             else if (i == 1) { voiceStep = Mathf.Clamp(voiceStep + dir, 0, 10); table.voiceVolume = voiceStep / 10f; }
             else if (i == 2) { grabbable = !grabbable; table.RefreshPads(); }
