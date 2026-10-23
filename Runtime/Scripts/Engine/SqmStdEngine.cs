@@ -190,6 +190,8 @@ namespace MonakaLabo.SquareMahjong
             hgType = new int[4]; hgKind = new int[4];
             cyId = new int[MAXYAKU]; cyHan = new int[MAXYAKU];
             optTmp = new int[OPT]; actTmp = new int[OPT]; ronSeats = new int[MAXP];
+            rigKey = new int[RIG_MAX]; rigSeat = new int[RIG_MAX]; rigTpl = new int[RIG_MAX];
+            rigFixed = new bool[136];
         }
 
         /// <summary>
@@ -595,12 +597,85 @@ namespace MonakaLabo.SquareMahjong
                 int j = RandInt(i + 1);
                 int x = wall[i]; wall[i] = wall[j]; wall[j] = x;
             }
+            if (rigCount > 0) ApplyRig();   // デバッグの仕込み(ふだんは無い)
             liveEnd = wallN - 14;
             doraN = 1;
             // 配牌: 親から 13 枚ずつ
             for (int r = 0; r < 13; r++)
                 for (int i = 0; i < NP; i++) AddHand((dealer + i) % NP, wall[wallPos++]);
             turn = dealer;
+        }
+
+        // ================================================================ デバッグの仕込み
+        // 局の番号(kyokuSeq)と席を決めて、その席の配牌にひな形の13枚を配り、2巡目のツモで和了牌が来るように山を並べ替える
+        // (1巡目にすると天和・地和になって、狙った役が見えなくなる。九種九牌は最初のツモで)。
+        // 三人打ちでも使えるように、萬子の 2〜8 は使わない。牌の種類の番号: 萬 0-8 / 筒 9-17 / 索 18-26 / 東南西北白發中 27-33
+        public const int RIG_MAX = 8, RIG_N = 9;
+        [System.NonSerialized] public int rigCount;
+        [System.NonSerialized] public int[] rigKey, rigSeat, rigTpl;
+        private bool[] rigFixed;
+        private int[] rigKinds;
+
+        public string RigName(int i)
+        {
+            if (i == 0) return "国士無双(十三面)";
+            if (i == 1) return "九蓮宝燈";
+            if (i == 2) return "大三元";
+            if (i == 3) return "四暗刻単騎";
+            if (i == 4) return "字一色";
+            if (i == 5) return "緑一色";
+            if (i == 6) return "清一色";
+            if (i == 7) return "七対子";
+            return "九種九牌";
+        }
+
+        /// <summary>ひな形 i の 14 枚(最後の1枚が和了牌)</summary>
+        private void InitRigKinds()
+        {
+            if (rigKinds != null) return;
+            rigKinds = new int[] {
+                0, 8, 9, 17, 18, 26, 27, 28, 29, 30, 31, 32, 33, 0,           // 国士無双(十三面): 么九牌13種 + 1萬
+                9, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17, 17, 17, 13,          // 九蓮宝燈(筒子): 1112345678999 + 5筒
+                31, 31, 31, 32, 32, 32, 33, 33, 33, 10, 11, 12, 13, 13,       // 大三元: 白發中 + 234筒 5筒 + 5筒
+                9, 9, 9, 11, 11, 11, 22, 22, 22, 24, 24, 24, 26, 26,          // 四暗刻単騎: 111筒 333筒 555索 777索 9索 + 9索
+                27, 27, 27, 28, 28, 28, 29, 29, 29, 31, 31, 31, 32, 32,       // 字一色: 東南西白 + 發 + 發
+                19, 20, 21, 19, 20, 21, 23, 23, 23, 25, 25, 25, 32, 32,       // 緑一色: 234索 234索 666索 888索 發 + 發
+                9, 9, 9, 9, 10, 11, 12, 13, 14, 15, 16, 17, 17, 17,           // 清一色(一気通貫): 1111筒 2〜8筒 99筒 + 9筒
+                9, 9, 11, 11, 19, 19, 21, 21, 31, 31, 32, 32, 33, 33,         // 七対子: 11筒 33筒 22索 44索 白白 發發 中 + 中
+                0, 8, 9, 17, 18, 26, 27, 28, 29, 12, 13, 14, 22, 23 };        // 九種九牌: 么九牌9種 + 456筒 5索 + 6索
+        }
+
+        private void ApplyRig()
+        {
+            InitRigKinds();
+            for (int i = 0; i < wallN; i++) rigFixed[i] = false;
+            for (int r = 0; r < rigCount; r++)
+            {
+                if (rigKey[r] != kyokuSeq) continue;
+                int s = rigSeat[r], tpl = rigTpl[r];
+                if (s < 0 || s >= NP || tpl < 0 || tpl >= RIG_N) continue;
+                int rel = (s - dealer + NP) % NP;
+                for (int j = 0; j < 14; j++)
+                {
+                    // 配牌は親から1枚ずつ巡るので、席 s の j 枚目は j*NP + rel。和了牌は2巡目のツモ(九種九牌は最初のツモ)
+                    int pos = j < 13 ? j * NP + rel : 13 * NP + (tpl == 8 ? 0 : NP) + rel;
+                    RigPut(pos, rigKinds[tpl * 14 + j]);
+                }
+            }
+        }
+
+        /// <summary>山の pos に種類 k の牌を持ってくる(まだ決めていない所の牌と入れ替える)</summary>
+        private void RigPut(int pos, int k)
+        {
+            if (pos >= wallN || !KindUsed(k)) return;
+            if (KindOf(wall[pos]) != k)
+                for (int q = 0; q < wallN; q++)
+                {
+                    if (q == pos || rigFixed[q] || KindOf(wall[q]) != k) continue;
+                    int x = wall[q]; wall[q] = wall[pos]; wall[pos] = x;
+                    break;
+                }
+            rigFixed[pos] = true;
         }
 
         /// <summary>嶺上牌を引く。王牌が減った分、海底が1つ前にずれる(三麻で嶺上が足りなくなったら、山の最後から取る)</summary>

@@ -364,6 +364,7 @@ namespace MonakaLabo.SquareMahjong
             if (lMode != MODE_SQUARE && stdEngine != null)
             {
                 StdRules();
+                CopyRig();
                 if (!stdEngine.RestoreKyokuStart((uint)sSeed, snap)) return false;
                 for (int s = 0; s < 4; s++) stdNpc.SetSeat(s, sStyle[s] % SqmStdNpc.N_STYLES);
             }
@@ -397,7 +398,24 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>普通の麻雀のルール(人数・局数)をエンジンに入れる</summary>
         private void StdRules()
         {
+            InitRules();
+            int[] a = sStdRuleUsed;
             stdEngine.SetRules(sModeUsed == MODE_THREE ? 3 : 4, sRoundsUsed == 2 ? 2 : 1);
+            stdEngine.rAka = StdRuleIdx(a, 0) == 0;
+            stdEngine.rKuitan = StdRuleIdx(a, 1) == 0;
+            stdEngine.rDoubleYakuman = StdRuleIdx(a, 2) == 0;
+            stdEngine.rKiriage = StdRuleIdx(a, 3) == 1;
+            stdEngine.rNagashi = StdRuleIdx(a, 4) == 0;
+            stdEngine.rTobi = StdRuleIdx(a, 5) == 0;
+            stdEngine.rAgariYame = StdRuleIdx(a, 6) == 0;
+            if (StdRuleIdx(a, 7) == 1) for (int i = 0; i < SqmStdEngine.MAXP; i++) stdEngine.rUma[i] = 0;
+            stdEngine.rPao = StdRuleIdx(a, 8) == 0;
+            stdEngine.rSanchaho = StdRuleIdx(a, 9) == 0;
+            if (stdEngine.rPlayers == 3)
+            {
+                stdEngine.rKita = StdRuleIdx(a, 10) == 0;
+                stdEngine.rTsumoLoss = StdRuleIdx(a, 11) == 0;
+            }
         }
 
         // ================================================================ ホスト: 試合を進める
@@ -438,6 +456,7 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 9; i > 0; i--) { int j = UnityEngine.Random.Range(0, i + 1); int x = order[i]; order[i] = order[j]; order[j] = x; }
             for (int s = 0; s < NP; s++) sStyle[s] = order[s];
             for (int i = 0; i < N_RULE; i++) sRuleUsed[i] = sRule[i];   // この試合のルール
+            for (int i = 0; i < N_STDRULE; i++) sStdRuleUsed[i] = sStdRule[i];
             sModeUsed = stdEngine != null ? sMode : MODE_SQUARE;
             sRoundsUsed = sRounds == 2 ? 2 : 1;
             if (sModeUsed != MODE_SQUARE)
@@ -453,7 +472,12 @@ namespace MonakaLabo.SquareMahjong
                 for (int es = 0; es < 4; es++) sStyle[es] = UnityEngine.Random.Range(0, SqmStdNpc.N_STYLES);
             }
             sRigN = 0;
-            if (sRigPendT >= 0 && sRigPendS >= 0) { sRigK[0] = 0; sRigS[0] = sRigPendS; sRigT[0] = sRigPendT; sRigN = 1; }
+            if (sRigPendT >= 0 && sRigPendS >= 0)
+            {
+                // 普通の麻雀は、席をエンジンの席にする(使わない席なら仕込まない)
+                int rs = sModeUsed != MODE_SQUARE ? StdEngineSeat(sRigPendS) : sRigPendS;
+                if (rs >= 0) { sRigK[0] = 0; sRigS[0] = rs; sRigT[0] = sRigPendT; sRigN = 1; }
+            }
             sRigPendT = -1; sRigPendS = -1;
             sCount = 0;
             sStartMs = Networking.GetServerTimeInMilliseconds();
@@ -825,6 +849,7 @@ namespace MonakaLabo.SquareMahjong
             if (lMode != MODE_SQUARE && stdEngine != null)
             {
                 StdRules();
+                CopyRig();
                 stdEngine.NewMatch((uint)sSeed);
                 for (int s = 0; s < 4; s++) stdNpc.SetSeat(s, sStyle[s] % SqmStdNpc.N_STYLES);
             }
@@ -2581,6 +2606,11 @@ namespace MonakaLabo.SquareMahjong
         // ================================================================ ルール(開始前にホストが決める。パッドのルールタブ)
         // 値は「選択肢の番号」で持つ。sRule = いま決めている値、sRuleUsed = いまの試合を始めたときの値(途中参加の再生にも使う)
         public const int N_RULE = 12;
+        public const int N_STDRULE = 12;
+        [UdonSynced] private int[] sStdRule = new int[N_STDRULE];       // 普通の麻雀のルール(値の持ち方は sRule と同じ)
+        [UdonSynced] private int[] sStdRuleUsed = new int[N_STDRULE];
+        private string[] stdRuleNames;
+        private string[][] stdRuleOpts;
         [UdonSynced] private int[] sRule = new int[N_RULE];
         [UdonSynced] private int[] sRuleUsed = new int[N_RULE];
         private string[] ruleNames;
@@ -2607,14 +2637,33 @@ namespace MonakaLabo.SquareMahjong
             ruleOpts[11] = new string[] { "あり", "なし" };
             ruleDefault = new int[] { 1, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0 };
             if (sRule == null || sRule.Length != N_RULE) sRule = new int[N_RULE];
+            // 普通の麻雀のルール(既定はどれも最初の選択肢 = 0.4.0 で決めた固定のルール)
+            stdRuleNames = new string[] { "赤ドラ(5筒・5索)", "喰いタン", "ダブル役満", "切り上げ満貫", "流し満貫", "トビ終了(0点未満で終局)",
+                "オーラスの和了やめ・聴牌やめ", "順位点(ウマ)", "責任払い(大三元・大四喜)", "三家和の流局(四人)", "北抜き(三人)", "ツモ損(三人)" };
+            stdRuleOpts = new string[N_STDRULE][];
+            for (int i = 0; i < N_STDRULE; i++) stdRuleOpts[i] = new string[] { "あり", "なし" };
+            stdRuleOpts[3] = new string[] { "なし", "あり" };
+            stdRuleOpts[7] = new string[] { "あり(四人 10-30・三人 15)", "なし" };
+            if (sStdRule == null || sStdRule.Length != N_STDRULE) sStdRule = new int[N_STDRULE];
+            if (sStdRuleUsed == null || sStdRuleUsed.Length != N_STDRULE) sStdRuleUsed = new int[N_STDRULE];
             if (sRuleUsed == null || sRuleUsed.Length != N_RULE) sRuleUsed = new int[N_RULE];
         }
 
-        public int RuleCount() { return N_RULE; }
-        public string RuleName(int i) { InitRules(); return ruleNames[i]; }
-        public int RuleValue(int i) { InitRules(); return RuleIdx(sRule, i); }
-        public string RuleOptLabel(int i, int v) { InitRules(); return ruleOpts[i][v]; }
+        /// <summary>ルールタブに出すのが普通の麻雀のルールか(試合中はその試合、試合の前はゲーム前設定で選んでいるもの)</summary>
+        public bool StdRulesShown() { return stdEngine != null && (Running() ? Std() : sMode != MODE_SQUARE); }
+        public string RuleTitle() { return StdRulesShown() ? "普通の麻雀のルール" : "平方麻雀のルール"; }
+        public int RuleCount() { return StdRulesShown() ? N_STDRULE : N_RULE; }
+        public string RuleName(int i) { InitRules(); return StdRulesShown() ? stdRuleNames[i] : ruleNames[i]; }
+        public int RuleValue(int i) { InitRules(); return StdRulesShown() ? StdRuleIdx(sStdRule, i) : RuleIdx(sRule, i); }
+        public string RuleOptLabel(int i, int v) { InitRules(); return StdRulesShown() ? stdRuleOpts[i][v] : ruleOpts[i][v]; }
         public bool CanEditRules() { return IsHostMe() && !Running(); }
+
+        private int StdRuleIdx(int[] arr, int i)
+        {
+            int v = arr[i] - 1;
+            if (v < 0 || v >= stdRuleOpts[i].Length) v = 0;   // 既定はどれも最初の選択肢
+            return v;
+        }
 
         /// <summary>保存されている値(0 = 既定、それ以外は 選択肢の番号 + 1)を選択肢の番号に</summary>
         private int RuleIdx(int[] arr, int i)
@@ -2627,6 +2676,15 @@ namespace MonakaLabo.SquareMahjong
         public void RequestRule(int i, int dir)
         {
             InitRules();
+            if (StdRulesShown())
+            {
+                if (i < 0 || i >= N_STDRULE || !CanEditRules()) return;
+                int sn = stdRuleOpts[i].Length;
+                int sv = (StdRuleIdx(sStdRule, i) + dir + sn) % sn;
+                if (IsHost()) HostSetStdRule(i, sv);
+                else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetStdRule), i, sv);
+                return;
+            }
             if (i < 0 || i >= N_RULE || !CanEditRules()) return;
             int n = ruleOpts[i].Length;
             int v = (RuleIdx(sRule, i) + dir + n) % n;
@@ -2641,6 +2699,24 @@ namespace MonakaLabo.SquareMahjong
             VRCPlayerApi p = NetworkCalling.CallingPlayer;
             if (!Utilities.IsValid(p) || p.playerId != sHost || Running()) return;
             HostSetRule(i, v);
+        }
+
+        [NetworkCallable]
+        public void NetStdRule(int i, int v)
+        {
+            if (!IsHost()) return;
+            VRCPlayerApi p = NetworkCalling.CallingPlayer;
+            if (!Utilities.IsValid(p) || p.playerId != sHost || Running()) return;
+            HostSetStdRule(i, v);
+        }
+
+        private void HostSetStdRule(int i, int v)
+        {
+            InitRules();
+            if (i < 0 || i >= N_STDRULE || v < 0 || v >= stdRuleOpts[i].Length) return;
+            sStdRule[i] = v + 1;
+            RequestSerialization();
+            dirty = true;
         }
 
         private void HostSetRule(int i, int v)
@@ -2715,6 +2791,13 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>同期された仕込みを、エンジンに写す(配牌の前に効く)</summary>
         private void CopyRig()
         {
+            if (sModeUsed != MODE_SQUARE && stdEngine != null)
+            {
+                int sn = sRigN < 0 ? 0 : sRigN > SqmStdEngine.RIG_MAX ? SqmStdEngine.RIG_MAX : sRigN;
+                for (int i = 0; i < sn; i++) { stdEngine.rigKey[i] = sRigK[i]; stdEngine.rigSeat[i] = sRigS[i]; stdEngine.rigTpl[i] = sRigT[i]; }
+                stdEngine.rigCount = sn;
+                return;
+            }
             engine.InitRig();
             int n = sRigN < 0 ? 0 : sRigN > SqmEngine.RIG_MAX ? SqmEngine.RIG_MAX : sRigN;
             for (int i = 0; i < n; i++) { engine.rigKey[i] = sRigK[i]; engine.rigSeat[i] = sRigS[i]; engine.rigTpl[i] = sRigT[i]; }
@@ -2736,15 +2819,19 @@ namespace MonakaLabo.SquareMahjong
         public void DebugOff() { SetDebug(false); }
         public void DebugToggle() { SetDebug(!debugEnabled); }
 
+        /// <summary>仕込みのひな形の数・名前(普通の麻雀のルールを出しているときは普通の麻雀のもの)</summary>
+        public int RigCount() { return StdRulesShown() ? SqmStdEngine.RIG_N : SqmEngine.RIG_N; }
+        public string RigNameOf(int i) { return StdRulesShown() ? stdEngine.RigName(i) : engine.RigName(i); }
+
         public bool CanRig() { return debugEnabled && humanSeat >= 0 && (sHost == 0 || sHost == MyId()); }
 
         /// <summary>デバッグ: 次の局で、自分の席に役のひな形を仕込む(試合の前なら、次の試合の最初の局)</summary>
         public void RequestRig(int tpl)
         {
-            if (!CanRig() || tpl < 0 || tpl >= SqmEngine.RIG_N) return;
+            if (!CanRig() || tpl < 0 || tpl >= RigCount()) return;
             if (IsHost()) HostRig(humanSeat, tpl);
             else SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(NetRig), humanSeat, tpl);
-            message = "次の局に「" + engine.RigName(tpl) + "」を仕込みました";
+            message = "次の局に「" + RigNameOf(tpl) + "」を仕込みました";
             dirty = true;
         }
 
@@ -2760,13 +2847,21 @@ namespace MonakaLabo.SquareMahjong
 
         private void HostRig(int seat, int tpl)
         {
-            if (tpl < 0 || tpl >= SqmEngine.RIG_N) return;
+            if (tpl < 0 || tpl >= RigCount()) return;
             if (!Running()) { sRigPendT = tpl; sRigPendS = seat; }
             else
             {
                 if (sRigN >= SqmEngine.RIG_MAX) return;
                 // 次の配牌のときのエンジンの局番号(配り終えると 1 増える)
-                sRigK[sRigN] = engine.kyokuSeq; sRigS[sRigN] = seat; sRigT[sRigN] = tpl; sRigN++;
+                if (Std())
+                {
+                    // 普通の麻雀の局の番号は、局が終わって「次へ」で増えてから配る
+                    int es = StdEngineSeat(seat);
+                    if (es < 0) return;
+                    sRigK[sRigN] = stdEngine.phase == SqmStdEngine.PH_DEAL ? stdEngine.kyokuSeq : stdEngine.kyokuSeq + 1;
+                    sRigS[sRigN] = es; sRigT[sRigN] = tpl; sRigN++;
+                }
+                else { sRigK[sRigN] = engine.kyokuSeq; sRigS[sRigN] = seat; sRigT[sRigN] = tpl; sRigN++; }
                 CopyRig();
             }
             RequestSerialization();
@@ -2776,7 +2871,7 @@ namespace MonakaLabo.SquareMahjong
         /// <summary>デバッグ: いま切るべき牌(強い NPC が自分の席ならどうするか)。自分の番だけ、手番ごとに1回考える</summary>
         public string PadHint()
         {
-            if (Std()) { hintTileA = -1; hintTileB = -1; return ""; }
+            if (Std()) return PadHintStd();
             if (!MyTurn()) { hintTileA = -1; hintTileB = -1; return ""; }
             if (hintStep == engine.step) return hintText;
             hintStep = engine.step;
@@ -2797,6 +2892,33 @@ namespace MonakaLabo.SquareMahjong
             else if (ty == SqmEngine.A_KAN) hintText = "カン(" + TileCode(npc.action[SqmEngine.O_TILE]) + ")";
             else if (ty == SqmEngine.A_ABORT) hintText = "十四種十四牌";
             else hintText = "";
+            return hintText;
+        }
+
+        /// <summary>デバッグ(普通の麻雀): 自分の番に、NPC ならどうするか。手番ごとに1回考える</summary>
+        private string PadHintStd()
+        {
+            hintTileA = -1; hintTileB = -1;
+            if (!MyTurn()) { hintStep = -1; return ""; }
+            if (hintStep == lCount + 1000000) return hintText;
+            hintStep = lCount + 1000000;
+            int es = StdEngineSeat(humanSeat);
+            int idx = stdNpc.Decide(es, stdEngine.HashSeed("hint:" + lCount));
+            hintText = "";
+            if (idx < 0) return hintText;
+            stdEngine.BuildLegal(es);
+            int ty = stdEngine.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_TYPE];
+            int tile = stdEngine.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_TILE];
+            if (ty == SqmStdEngine.A_DISCARD)
+            {
+                hintTileA = stdView.Face(tile);
+                hintText = "切るべき牌: " + stdView.TileName(tile);
+                if (stdEngine.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_RIICHI] == 1) hintText += "(リーチ)";
+            }
+            else if (ty == SqmStdEngine.A_TSUMO) hintText = "ツモ和了できます";
+            else if (ty == SqmStdEngine.A_ANKAN || ty == SqmStdEngine.A_KAKAN) hintText = "カン(" + stdView.TileName(tile) + ")";
+            else if (ty == SqmStdEngine.A_KITA) hintText = "北抜き";
+            else if (ty == SqmStdEngine.A_KYUSHU) hintText = "九種九牌";
             return hintText;
         }
 

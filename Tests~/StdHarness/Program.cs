@@ -218,6 +218,24 @@ static class Program
             Check("速い和了判定が、分け方を数えるやり方と同じ", agree == total, $"{agree}/{total}");
             Check("NPC の向聴数が、全部ためすやり方と同じ", shAgree == 30000, $"{shAgree}/30000");
         }
+        // デバッグの仕込み: 配牌にひな形の13枚、2巡目のツモ(九種九牌は最初のツモ)に和了牌
+        foreach (int players in new[] { 4, 3 })
+            for (int tpl = 0; tpl < E.RIG_N; tpl++)
+                for (uint sd = 1; sd <= 5; sd++)
+                {
+                    var g = new E(); g.SetRules(players, 2);
+                    g.rigCount = 1; g.rigKey[0] = 0; g.rigSeat[0] = 1; g.rigTpl[0] = tpl;
+                    g.NewMatch(sd); AdvanceAll(g);
+                    int rel = (1 - g.dealer + g.NP) % g.NP;
+                    int[] h = new int[E.NK];
+                    g.KindCounts(1, h);
+                    if (g.turn == 1 && g.drawnCode[1] >= 0) h[g.KindOf(g.drawnCode[1])]--;   // 親なら最初のツモを除く
+                    int winPos = 13 * g.NP + (tpl == 8 ? 0 : g.NP) + rel;
+                    int win = g.KindOf(g.wall[winPos]);
+                    h[win]++;
+                    bool ok = tpl == 8 ? Enumerable.Range(0, 34).Count(k => g.IsYaochuK(k) && h[k] > 0) >= 9 : g.IsAgari(h, 4);
+                    Check($"仕込み {(players == 4 ? "四人" : "三人")} {g.RigName(tpl)} 種{sd}", ok, string.Join(",", h));
+                }
         e = new E(); e.SetRules(4, 2); e.NewMatch(1); AdvanceAll(e);
         Check("四麻は136枚・赤2枚(5筒・5索)", e.wallN == 136 && e.wall.Take(136).Count(t => t >= E.RED0) == 2 && !e.wall.Take(136).Contains(E.RED0));
     }

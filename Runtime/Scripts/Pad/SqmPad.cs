@@ -560,7 +560,7 @@ namespace MonakaLabo.SquareMahjong
             int n = rule ? table.RuleCount() : SettingCount();
             if (listTop > Mathf.Max(0, n - ROWS)) listTop = Mathf.Max(0, n - ROWS);
             bool edit = rule && table.CanEditRules();
-            listTitle.text = rule ? (edit ? "ルール(ホストが変更できます)" : "ルール(開始前にホストが決めます)") : "設定";
+            listTitle.text = rule ? table.RuleTitle() + (edit ? "(ホストが変更できます)" : "(開始前にホストが決めます)") : "設定";
             for (int r = 0; r < ROWS; r++)
             {
                 int i = listTop + r;
@@ -638,7 +638,7 @@ namespace MonakaLabo.SquareMahjong
             if (IsCreditRow(i)) return "v" + VERSION;
             int d = DebugRow(i);
             if (d == 0) return debugHint ? "ON" : "OFF";
-            if (d == 1) return engine.RigName(rigSel);
+            if (d == 1) { if (rigSel >= table.RigCount()) rigSel = 0; return table.RigNameOf(rigSel); }
             if (d == 2) return table.CanRig() ? "実行 ▶" : "(ホストだけ)";
             if (d == 3) return table.debugAutoPlay ? "ON" : "OFF";
             if (d == 4) return "×" + table.debugSpeed;
@@ -654,7 +654,7 @@ namespace MonakaLabo.SquareMahjong
         {
             int d = DebugRow(i);
             if (d == 0) { debugHint = !debugHint; return; }
-            if (d == 1) { rigSel = (rigSel + dir + SqmEngine.RIG_N) % SqmEngine.RIG_N; return; }
+            if (d == 1) { int rn = table.RigCount(); rigSel = ((rigSel + dir) % rn + rn) % rn; return; }
             if (d == 2) { table.RequestRig(rigSel); return; }
             if (d == 3) { table.debugAutoPlay = !table.debugAutoPlay; return; }
             if (d == 4)
