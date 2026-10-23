@@ -730,7 +730,8 @@ namespace MonakaLabo.SquareMahjong
         public void RenderFinal()
         {
             SqmTable t = table;
-            t.resTitle.text = "終局";
+            t.resTitle.text = "終局　" + t.MatchTypeName();
+            t.CenterRanks(true);
             string l = "";
             string[] ord = new string[] { "1st.", "2nd.", "3rd.", "4th." };
             for (int i = 0; i < engine.NP; i++)

@@ -652,6 +652,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 table.holoGauge[i] = seg;
             }
             table.holoRound = HText(play, "Round", c + new Vector2(0, 0.135f), 1.0f, new Vector2(0.5f, 0.13f), TextAlignmentOptions.Center);
+            // 試合の種類(平方戦・東風戦・半荘戦)。局の上に
+            table.holoMatchType = HText(play, "MatchType", c + new Vector2(0, 0.24f), 0.5f, new Vector2(0.36f, 0.07f), TextAlignmentOptions.Center);
             HText(play, "LeftLabel", c + new Vector2(-0.15f, 0.015f), 0.62f, new Vector2(0.1f, 0.1f), TextAlignmentOptions.Center).text = "残";
             table.holoLeft = SegText(play, "Left", c + new Vector2(0.065f, 0.015f), 0.66f, new Vector2(0.3f, 0.1f), false);
             // 点棒(上: 供託の千点棒、下: 本場の百点棒)と本数
@@ -668,7 +670,9 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
             // ---- 中: ドラ表示牌・ロン牌・時間 ----
             HText(play, "DoraLabel", new Vector2(-0.31f, 0.3f), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left).text = "ドラ表示牌";
-            HText(play, "RonLabel", new Vector2(-0.31f, 0.05f), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left).text = "ロン牌";
+            var ronLabel = HText(play, "RonLabel", new Vector2(-0.31f, 0.05f), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left);
+            ronLabel.text = "ロン牌";
+            table.holoRonLabel = ronLabel.gameObject;   // 普通の麻雀(ロン牌が無い)では隠す
             table.holoDora = HoloTiles(play, "Dora", SqmTable.N_DORA, 0.3f);
             table.holoRon = HoloTiles(play, "Ron", SqmTable.N_RON, 0.05f);
             HText(play, "SetLabel", new Vector2(-0.3f, -0.21f), 0.44f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "セット";

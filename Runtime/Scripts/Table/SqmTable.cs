@@ -69,6 +69,8 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro holo;             // ホロのお知らせ(下の行)
         public GameObject holoPlay;          // 試合中だけ出す部分
         public TextMeshPro holoRound, holoLeft, holoSticks, holoSetTime, holoKyokuTime, holoCenter;
+        public TextMeshPro holoMatchType;    // 試合の種類(平方戦・東風戦・半荘戦)
+        public GameObject holoRonLabel;      // 「ロン牌」の見出し(普通の麻雀では隠す)
         public GameObject[] holoGauge;       // 残り枚数の円のゲージ(上から時計回り)
         public MeshRenderer[] holoDora;      // ドラ表示牌 18
         public MeshRenderer[] holoRon;       // ロン牌 12
@@ -2089,9 +2091,30 @@ namespace MonakaLabo.SquareMahjong
             resBody.text = list;
         }
 
+        /// <summary>試合の種類: 平方戦・東風戦・半荘戦</summary>
+        public string MatchTypeName()
+        {
+            if (!Std()) return "平方戦";
+            return stdEngine.rRounds == 2 ? "半荘戦" : "東風戦";
+        }
+
+        private float rankLX;
+        private bool rankLXSet;   // U# で float.IsNaN が使えるか分からないので、覚えたかどうかを別に持つ
+
+        /// <summary>終局の順位の表を、真ん中に寄せる(普通の麻雀。4人まで1列) / 左に戻す(平方麻雀。8人を2列)</summary>
+        public void CenterRanks(bool center)
+        {
+            if (resRankL == null) return;
+            Vector3 p = resRankL.transform.localPosition;
+            if (!rankLXSet) { rankLXSet = true; rankLX = p.x; }
+            float x = center ? 0f : rankLX;
+            if (p.x != x) resRankL.transform.localPosition = new Vector3(x, p.y, p.z);
+        }
+
         private void RenderFinal()
         {
-            resTitle.text = "終局";
+            CenterRanks(false);
+            resTitle.text = "終局　" + MatchTypeName();
             string l = "", r = "";
             string[] ord = new string[] { "1st.", "2nd.", "3rd.", "4th.", "5th.", "6th.", "7th.", "8th." };
             for (int i = 0; i < NP; i++)
@@ -2700,6 +2723,8 @@ namespace MonakaLabo.SquareMahjong
             if (replayTo > 0) top += "追いついています… " + lCount + " / " + replayTo + "  ";
             if (message.Length > 0) top += "<color=#ff8080>" + message + "</color>";
             holo.text = top;
+            if (holoMatchType != null) holoMatchType.text = MatchTypeName();
+            if (holoRonLabel != null && holoRonLabel.activeSelf == Std()) holoRonLabel.SetActive(!Std());
             if (Std()) { RefreshHoloStd(); return; }
 
             // ---- 左: 局・残り・点棒 ----
