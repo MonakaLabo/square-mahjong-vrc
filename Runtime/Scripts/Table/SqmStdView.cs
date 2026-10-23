@@ -684,8 +684,9 @@ namespace MonakaLabo.SquareMahjong
             {
                 int id = engine.winYakuId[w * SqmStdEngine.MAXYAKU + k];
                 int han = engine.winYakuHan[w * SqmStdEngine.MAXYAKU + k];
-                string v = id >= 40 ? (han >= 2 ? "ダブル役満" : "役満") : han + "翻";
-                string line = engine.YakuName(id) + "<pos=78%>" + v + "\n";
+                // 役満の行は、翻の欄を少し左から(「役満×2」が右端で折り返さないように。一番長い「国士無双十三面待ち」にも重ならない所)
+                string v = id >= 40 ? (han >= 2 ? "役満×" + han : "役満") : han + "翻";
+                string line = engine.YakuName(id) + (id >= 40 ? "<pos=70%>" : "<pos=78%>") + v + "\n";
                 if (k < per) c0 += line; else if (k < per * 2) c1 += line; else c2 += line;
             }
             t.resYaku0.text = c0; t.resYaku1.text = c1; t.resYaku2.text = c2;
