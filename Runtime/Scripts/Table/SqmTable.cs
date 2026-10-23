@@ -87,6 +87,7 @@ namespace MonakaLabo.SquareMahjong
         // 結果の画面(和了・流局・終局)。出ているあいだは holoPlay を隠す
         public GameObject resultRoot;
         public TextMeshPro resTitle, resHead, resYaku0, resYaku1, resYaku2, resHan, resCalc, resPoints, resBody, resRankL, resRankR, resFoot, resDoraLabel, resUraLabel;
+        public TextMeshPro resYakuman;       // 役満の役(3列を使わず、横いっぱいに大きく)
         public MeshRenderer[] resHand;       // 手牌 36
         public GameObject[] resHandMark;     // 和了牌の赤枠 36
         public MeshRenderer[] resDora, resUra;   // 18 ずつ
@@ -2046,6 +2047,7 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < resDora.Length; i++) HoloTile(resDora[i], -1);
             for (int i = 0; i < resUra.Length; i++) HoloTile(resUra[i], -1);
             resHead.text = ""; resYaku0.text = ""; resYaku1.text = ""; resYaku2.text = ""; resHan.text = ""; resCalc.text = ""; resPoints.text = "";
+            if (resYakuman != null) resYakuman.text = "";
             resBody.text = ""; resRankL.text = ""; resRankR.text = ""; resDoraLabel.text = ""; resUraLabel.text = "";
             string foot = "";
             if (Std())

@@ -875,6 +875,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.resYaku0 = YakuCol(g, "Yaku0", -0.82f);
             table.resYaku1 = YakuCol(g, "Yaku1", -0.3f);
             table.resYaku2 = YakuCol(g, "Yaku2", 0.22f);
+            // 役満は3列を使わず、3列ぶんの幅に大きく(折り返さず、入らなければ文字を小さく)
+            table.resYakuman = HText(g, "Yakuman", new Vector2(-0.3f, -0.21f), 0.5f, new Vector2(1.54f, 0.25f), TextAlignmentOptions.TopLeft);
+            table.resYakuman.enableWordWrapping = false;
+            table.resYakuman.enableAutoSizing = true;
+            table.resYakuman.fontSizeMin = 0.16f;
+            table.resYakuman.fontSizeMax = 0.5f;
 
             // 翻・点数(右)
             table.resHan = HText(g, "Han", new Vector2(0.84f, -0.1f), 0.62f, new Vector2(0.56f, 0.1f), TextAlignmentOptions.Right);

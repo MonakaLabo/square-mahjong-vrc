@@ -656,6 +656,25 @@ namespace MonakaLabo.SquareMahjong
             return null;
         }
 
+        /// <summary>役を3列に並べる(役満でないとき)</summary>
+        private void RenderYakuCols(int w, int yn)
+        {
+            SqmTable t = table;
+            int per = (yn + 2) / 3;
+            if (per < 1) per = 1;
+            string c0 = "", c1 = "", c2 = "";
+            for (int k = 0; k < yn; k++)
+            {
+                int id = engine.winYakuId[w * SqmStdEngine.MAXYAKU + k];
+                int han = engine.winYakuHan[w * SqmStdEngine.MAXYAKU + k];
+                // 役満がここに来るのは、卓を置き直す前(役満の欄が無い)ときだけ
+                string v = id >= 40 ? (han >= 2 ? "ダブル役満" : "役満") : han + "翻";
+                string line = engine.YakuName(id) + "<pos=78%>" + v + "\n";
+                if (k < per) c0 += line; else if (k < per * 2) c1 += line; else c2 += line;
+            }
+            t.resYaku0.text = c0; t.resYaku1.text = c1; t.resYaku2.text = c2;
+        }
+
         /// <summary>和了の画面(w = engine.win* の番号)</summary>
         public void RenderWin(int w)
         {
@@ -677,19 +696,20 @@ namespace MonakaLabo.SquareMahjong
                 for (int i = 0; i < t.resUra.Length && i < engine.doraN; i++) t.HoloTile(t.resUra[i], Face(engine.UraIndicator(i)));
             }
             int yn = engine.winYakuN[w];
-            int per = (yn + 2) / 3;
-            if (per < 1) per = 1;
-            string c0 = "", c1 = "", c2 = "";
-            for (int k = 0; k < yn; k++)
+            if (engine.winYakuman[w] > 0 && t.resYakuman != null)
             {
-                int id = engine.winYakuId[w * SqmStdEngine.MAXYAKU + k];
-                int han = engine.winYakuHan[w * SqmStdEngine.MAXYAKU + k];
-                // 役満の行は、翻の欄を少し左から(「役満×2」が右端で折り返さないように。一番長い「国士無双十三面待ち」にも重ならない所)
-                string v = id >= 40 ? (han >= 2 ? "役満×" + han : "役満") : han + "翻";
-                string line = engine.YakuName(id) + (id >= 40 ? "<pos=70%>" : "<pos=78%>") + v + "\n";
-                if (k < per) c0 += line; else if (k < per * 2) c1 += line; else c2 += line;
+                // 役満は、3列を使わず横いっぱいに大きく(「ダブル役満」が折り返さないように)
+                string ym = "";
+                for (int k = 0; k < yn; k++)
+                {
+                    int id = engine.winYakuId[w * SqmStdEngine.MAXYAKU + k];
+                    int han = engine.winYakuHan[w * SqmStdEngine.MAXYAKU + k];
+                    ym += engine.YakuName(id) + "<pos=58%>" + (han >= 2 ? "ダブル役満" : "役満") + "\n";
+                }
+                t.resYakuman.text = ym;
+                t.resYaku0.text = ""; t.resYaku1.text = ""; t.resYaku2.text = "";
             }
-            t.resYaku0.text = c0; t.resYaku1.text = c1; t.resYaku2.text = c2;
+            else RenderYakuCols(w, yn);
             int lim = engine.winLimit[w];
             string ln = LimitName(lim, engine.winYakuman[w]);
             if (lim == SqmStdEngine.LIM_YAKUMAN) t.resHan.text = ln;
