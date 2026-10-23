@@ -755,6 +755,12 @@ namespace MonakaLabo.SquareMahjong
                 int ty = e.legal[idx * SqmStdEngine.OPT + SqmStdEngine.O_TYPE];
                 if (!Commit(es | (idx << 3))) { message = "NPC エラー: " + e.lastError; wait = 2f; return; }
                 if (ty == SqmStdEngine.A_DISCARD) wait = NPC_DELAY;
+                else if (ty == SqmStdEngine.A_KITA)
+                {
+                    // 北抜きが続くとき、「ぺー」が重ならないよう、言い終わって VOICE_GAP たってから次へ
+                    AudioClip pei = stdView.StdVoice(SqmStdView.STDV_PEI);
+                    wait = (pei != null ? pei.length : 0f) + VOICE_GAP;
+                }
                 return;
             }
             // 人の番: リーチ中で、ツモ和了・槓・北抜きができないときのツモ切りは自動
