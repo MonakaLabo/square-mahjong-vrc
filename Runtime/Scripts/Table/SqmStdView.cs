@@ -536,25 +536,22 @@ namespace MonakaLabo.SquareMahjong
         }
 
         private int waitStepKey = -1;
-        private string waitText = "";
-
-        /// <summary>パッドの「待ち」の行(聴牌していれば待ちの牌と残り枚数、フリテン)</summary>
-        public string PadWaitText()
+        /// <summary>パッドの待ち(table.padWait*)を書く。13 枚の形のときだけ。手牌が変わったときだけ数え直す</summary>
+        public void PadWaitsUpdate()
         {
             int es = MyES();
-            if (es < 0) return "";
+            if (es < 0) { table.ClearPadWaits(); waitStepKey = -1; return; }
             int key = engine.kyokuSeq * 1000 + engine.riverN[es] * 10 + engine.meldN[es] + engine.handN[es] * 100000;
-            if (key == waitStepKey) return waitText;
+            if (key == waitStepKey) return;
             waitStepKey = key;
-            waitText = "";
-            if ((engine.handN[es] + 3 * engine.meldN[es]) % 3 != 1) return waitText;   // 13 枚の形のときだけ
+            table.ClearPadWaits();
+            if ((engine.handN[es] + 3 * engine.meldN[es]) % 3 != 1) return;
             int n = engine.WaitsOf(es);
-            if (n == 0) return waitText;
-            string t = "待ち ";
-            for (int i = 0; i < n; i++) t += (i > 0 ? " " : "") + TileName(engine.waitK[i]);
-            if (engine.IsFuriten(es)) t += "  <color=#c03030>フリテン</color>";
-            waitText = t;
-            return waitText;
+            int show = n < SqmTable.PAD_WAITS ? n : SqmTable.PAD_WAITS;
+            for (int i = 0; i < show; i++) { table.padWaitA[i] = Face(engine.waitK[i]); table.padWaitB[i] = -1; table.padWaitNoYaku[i] = false; }
+            table.padWaitN = show;
+            table.padWaitMore = n - show;
+            table.padFuriten = n > 0 && engine.IsFuriten(es);
         }
 
         public string PadGuide(bool confirm)
@@ -572,33 +569,40 @@ namespace MonakaLabo.SquareMahjong
             return "";
         }
 
-        public string PadInGameText()
-        {
-            return RoundName() + " " + engine.honba + "本場\n残 " + engine.LiveLeft().ToString("00");
-        }
+        public string PadKyokuLabel() { return RoundName() + " " + engine.honba + "本場"; }
 
-        public string PadCenterText()
-        {
-            return "<size=130%>" + RoundName() + "</size>\n残 " + engine.LiveLeft().ToString("00") + "\n千点棒 ×" + engine.kyotaku + "\n百点棒 ×" + engine.honba;
-        }
+        public string PadCenterText() { return table.PadCenter(RoundName(), engine.LiveLeft().ToString("00"), engine.kyotaku, engine.honba); }
 
-        public string PadSeatBox(int es)
+        /// <summary>点数タブの席の箱の中身を table.padS* に書く</summary>
+        public void PadSeatParts(int es)
         {
-            string[] ord = new string[] { "1st.", "2nd.", "3rd.", "4th." };
             int me = MyES();
-            string t = "<size=125%>" + WindName(engine.SeatWind(es)) + "家</size> " + table.SeatNameOf(TS(es)) + "\n";
-            t += ord[engine.RankOf(es)] + " " + engine.score[es].ToString("N0");
-            if (me >= 0 && es != me)
+            table.padSWind = WindName(engine.SeatWind(es));
+            table.padSName = table.SeatNameOf(TS(es));
+            table.padSScore = engine.score[es];
+            table.padSSub = "<color=#8fb8cc>" + table.PadOrd(engine.RankOf(es) + 1) + "</color>";
+            if (me >= 0 && es != me) table.padSSub += "　" + table.PadDiffText(engine.score[es] - engine.score[me]);
+            table.padSRiichi = engine.riichiOn[es];
+            table.padSTurn = engine.pendKind == SqmStdEngine.PEND_TURN && engine.turn == es;
+            string t = "";
+            if (table.padSRiichi) t += table.PadTag("リーチ", "ff6a5a");
+            if (table.padSTurn) t += table.PadTag("手番", "5fd4f5");
+            table.padSTags = t;
+        }
+
+        /// <summary>副露の k 枚目が、新しい面子(や北)の始まりか(パッドで面子の間をあける)</summary>
+        public bool PadMeldStart(int k)
+        {
+            int es = MyES();
+            if (es < 0) return false;
+            int n = 0;
+            for (int m = 0; m < engine.meldN[es]; m++)
             {
-                int d = engine.score[es] - engine.score[me];
-                if (d > 0) t += " <color=#d04040>+" + d.ToString("N0") + "</color>";
-                else if (d < 0) t += " <color=#3070c0>" + d.ToString("N0") + "</color>";
-                else t += " ±0";
+                int ty = engine.mType[es * 4 + m];
+                if (n == k) return true;
+                n += (ty == SqmStdEngine.M_CHI || ty == SqmStdEngine.M_PON) ? 3 : 4;
             }
-            t += "\n";
-            if (engine.riichiOn[es]) t += "<color=#d06010>リーチ</color> ";
-            if (engine.pendKind == SqmStdEngine.PEND_TURN && engine.turn == es) t += " <color=#2a8aa8>▶手番</color>";
-            return t;
+            return n == k && engine.kitaN[es] > 0;
         }
 
         public string PadResultTable()
@@ -608,7 +612,7 @@ namespace MonakaLabo.SquareMahjong
             {
                 int es = engine.mrSeat[i];
                 string line = (i + 1) + "位<pos=12%>" + table.SeatNameOf(TS(es)) + "<pos=52%>" + engine.mrScore[i].ToString("N0") + "<pos=78%>" + Final10(engine.mrFinal10[i]);
-                if (es == MyES()) line = "<color=#2a8aa8>" + line + "</color>";
+                if (es == MyES()) line = "<color=#5fd4f5>" + line + "</color>";
                 t += line + "\n";
             }
             return t;
@@ -618,7 +622,7 @@ namespace MonakaLabo.SquareMahjong
         {
             int a = v < 0 ? -v : v;
             string s = (a / 10) + "." + (a % 10);
-            return v > 0 ? "+" + s : v < 0 ? "<color=#d04040>-" + s + "</color>" : s;
+            return v > 0 ? "+" + s : v < 0 ? "<color=#ff6a5a>-" + s + "</color>" : s;
         }
 
         // ================================================================ 結果の画面

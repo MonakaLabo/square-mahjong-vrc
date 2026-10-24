@@ -421,26 +421,65 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // ================================================================ 手元のパッド
         // 本体(板)は席ごとに8枚。卓の右寄りに少し傾けて付ける。中身(SqmPad)は1組で、座った人の手元で自分の席の板に付ける。
         // 板の中の座標(m): 原点が板の中央、x が右、y が上。読む人は -Z 側から見る。板の内側は 0.40 × 0.25
+        // 見た目はホロと同じ紺と水色。ボタンは上下の辺が水平な六角形で、並んだボタン(タブなど)は間の端を四角にしてつなげる。枠の角は四角
         const float PW = SqmPadBody.W, PH = SqmPadBody.H;
-        static readonly Color PAD_TEXT = new Color(0.1f, 0.16f, 0.2f);
-        static Material matPadPanel, matPadBg, matPadFrame, matPadLine, matPadTabOn, matPadLift;
-        static Material[] matPadBtn;
+        static readonly Color P_SCREEN = C("0c1824"), P_SURF = C("14283a"), P_SURF2 = C("1b3449"), P_LINE = C("2f6d8a"), P_CYAN = C("5fd4f5"),
+            P_TEXT = C("e0f5ff"), P_MUTED = C("8fb8cc"), P_DARK = C("06202c"), P_YEL = C("ffd170"), P_RED = C("ff6a5a"), P_ORA = C("ffb35c"),
+            P_GRN = C("7dffa0"), P_BLUE = C("79b8ff"), P_PINK = C("f78ad1"), P_PURP = C("c9a8ff"), P_DEEP = C("24485e"), P_ORA_LINE = C("a0582a"),
+            P_SEG = C("ff6a4a");
+        static Color C(string hex) { Color c; ColorUtility.TryParseHtmlString("#" + hex, out c); return c; }
+        static Color Alpha(Color c, float a) { c.a = a; return c; }
+        // 半透明どうしの描く順番(小さいほど奥): 光 → 枠の縁 → 枠の下地 → 飾り → ボタンの縁 → ボタンの色 → つまみ
+        const int QP_GLOW = 2981, QP_FRAME_LINE = 2982, QP_FRAME = 2983, QP_DECOR = 2984, QP_BTN_LINE = 2986, QP_BTN = 2987, QP_KNOB = 2988;
+        // ボタンの色の組
+        const int PB_NORMAL = 0, PB_CYAN = 1, PB_RED = 2, PB_ORANGE = 3;
+        static Material matPadPanel, matPadFrame, matPadLift, matPadBack;
+        static Material mpLine, mpSurf, mpSurf2, mpLineMe, mpLineTurn, mpLineDbg, mpGlowCyan, mpGlowOra, mpWindBg, mpStripe, mpHandBg, mpEmpty;
+        static Material mbLine, mbFill, mbCyan, mbCyanLine, mbScreen, mbOra, mbOraLine, mbOraDark, mbRedLine, mbRedDark, mbDeep, mbKnobOn, mbKnobOff;
+        static Material[] mbStyleFill, mbStyleLine;
+        static Color[] mbStyleText;
+
+        static Material PM(string name, Color c, int q) { return HoloMat("Pad_" + name, c, q); }
 
         static void PadAssets()
         {
-            // 背景は白に近すぎると、ワールドの光の演出(ブルームなど)でにじんで文字が薄く見えるので、少し落とす
-            matPadPanel = HoloMat("PadPanel", new Color(0.78f, 0.9f, 0.93f, 1f), Q_BACK);
-            matPadBg = HoloMat("PadBg", new Color(0.78f, 0.9f, 0.93f, 1f), Q_FILL);
-            matPadFrame = Mat("PadFrame", new Color(0.49f, 0.51f, 0.51f), null);
-            matPadLine = HoloMat("PadLine", new Color(0.29f, 0.4f, 0.44f, 1f));
-            matPadTabOn = HoloMat("PadTabOn", new Color(0.54f, 0.77f, 0.84f, 1f), Q_FILL);
-            matPadLift = HoloMat("PadLift", new Color(0.96f, 0.72f, 0.24f, 1f));
-            // SqmPad.BTN_* の順: 確定・リーチ・リーチON・カン・ポン・チー・和了・パス・その他
-            Color[] c = {
-                new Color(0.71f, 0.9f, 0.95f), new Color(0.97f, 0.79f, 0.56f), new Color(1f, 0.62f, 0.25f), new Color(0.97f, 0.54f, 0.82f),
-                new Color(0.62f, 0.89f, 0.64f), new Color(0.66f, 0.78f, 1f), new Color(1f, 0.54f, 0.5f), new Color(0.82f, 0.85f, 0.86f), new Color(0.88f, 0.78f, 1f) };
-            matPadBtn = new Material[c.Length];
-            for (int i = 0; i < c.Length; i++) matPadBtn[i] = HoloMat("PadBtn_" + i, new Color(c[i].r, c[i].g, c[i].b, 1f), Q_FILL);
+            // 板の画面は暗い紺(明るい色のように、ワールドの光の演出でにじんで文字が薄くなることもない)
+            matPadPanel = HoloMat("PadPanel", P_SCREEN, Q_BACK);
+            matPadFrame = Mat("PadFrame", new Color(0.16f, 0.19f, 0.21f), null);
+            matPadLift = HoloMat("PadLift", P_ORA, QP_DECOR);
+            matPadBack = PM("TileBack", C("3d7a94"), QP_BTN);
+            mpLine = PM("FrameLine", P_LINE, QP_FRAME_LINE);
+            mpLineMe = PM("FrameLineMe", P_YEL, QP_FRAME_LINE);
+            mpLineTurn = PM("FrameLineTurn", P_CYAN, QP_FRAME_LINE);
+            mpLineDbg = PM("FrameLineDebug", P_ORA_LINE, QP_FRAME_LINE);
+            mpSurf = PM("Surf", P_SURF, QP_FRAME);
+            mpSurf2 = PM("Surf2", P_SURF2, QP_FRAME);
+            mpEmpty = PM("Empty", C("3a4a55"), QP_FRAME);
+            mpGlowCyan = PM("GlowCyan", Alpha(P_CYAN, 0.3f), QP_GLOW);
+            mpGlowOra = PM("GlowOrange", Alpha(P_ORA, 0.3f), QP_GLOW);
+            mpWindBg = PM("WindBg", Alpha(P_CYAN, 0.08f), QP_DECOR);
+            mpStripe = PM("Stripe", Alpha(P_SURF, 0.75f), QP_DECOR);
+            mpHandBg = PM("HandBg", Alpha(P_SURF, 0.6f), QP_DECOR);
+            mbLine = PM("BtnLine", P_LINE, QP_BTN_LINE);
+            mbFill = PM("BtnFill", P_SURF2, QP_BTN);
+            mbCyan = PM("BtnCyan", P_CYAN, QP_BTN);
+            mbCyanLine = PM("BtnCyanLine", P_CYAN, QP_BTN_LINE);
+            mbScreen = PM("BtnScreen", P_SCREEN, QP_BTN);
+            mbOra = PM("BtnOrange", P_ORA, QP_BTN);
+            mbOraLine = PM("BtnOrangeLine", P_ORA, QP_BTN_LINE);
+            mbOraDark = PM("BtnOrangeDark", C("2a2620"), QP_BTN);
+            mbRedLine = PM("BtnRedLine", P_RED, QP_BTN_LINE);
+            mbRedDark = PM("BtnRedDark", C("2a1c1c"), QP_BTN);
+            mbDeep = PM("BtnDeep", P_DEEP, QP_BTN);
+            mbKnobOn = PM("KnobOn", P_DARK, QP_KNOB);
+            mbKnobOff = PM("KnobOff", P_MUTED, QP_KNOB);
+            // 操作ボタンの色(SqmPad.BTN_* の順): 確定・リーチ・リーチON・カン・ポン・チー・和了・パス・その他
+            Color[] line = { P_CYAN, P_ORA, P_ORA, P_PINK, P_GRN, P_BLUE, P_RED, P_LINE, P_PURP };
+            Color[] fill = { P_CYAN, C("2a2620"), P_ORA, C("2a1c28"), C("1a2a20"), C("1a2232"), P_RED, P_SURF2, C("221c2e") };
+            mbStyleText = new[] { P_DARK, P_ORA, P_DARK, P_PINK, P_GRN, P_BLUE, P_DARK, P_MUTED, P_PURP };
+            mbStyleFill = new Material[9];
+            mbStyleLine = new Material[9];
+            for (int i = 0; i < 9; i++) { mbStyleFill[i] = PM("Style" + i, fill[i], QP_BTN); mbStyleLine[i] = PM("StyleLine" + i, line[i], QP_BTN_LINE); }
         }
 
         static void BuildPads(GameObject root, SqmTable table)
@@ -457,14 +496,17 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.table = table;
             pad.engine = table.engine;
             pad.faceMats = matHoloFaces;
-            pad.matTabOn = matPadTabOn; pad.matTabOff = matPadBg;
-            pad.matBox = matPadBg; pad.matBoxMe = matPadTabOn;
-            pad.matBoxEmpty = HoloMat("PadBoxEmpty", new Color(0.62f, 0.66f, 0.68f, 1f), Q_FILL);   // 三人打ちの空いた席の台形
-            pad.btnMats = matPadBtn;
-            pad.matSetupOn = HoloMat("PadSetupOn", new Color(1f, 0.42f, 0.36f, 1f), Q_FILL);
-            pad.matSetupOff = matPadBg;
-            pad.matSetupDim = HoloMat("PadSetupDim", new Color(0.62f, 0.66f, 0.68f, 1f), Q_FILL);
-            pad.matSetupDimOn = HoloMat("PadSetupDimOn", new Color(0.55f, 0.24f, 0.22f, 1f), Q_FILL);
+            pad.matBack = matPadBack;
+            pad.matOnFill = mbCyan; pad.matOnBorder = mbCyanLine; pad.matOffFill = mpSurfBtn(); pad.matOffBorder = mbLine;
+            pad.matDbgOnFill = mbOra; pad.matDbgOnBorder = mbOraLine; pad.matDbgOffBorder = PM("BtnOrangeDim", P_ORA_LINE, QP_BTN_LINE);
+            pad.matBtnFill = mbFill; pad.matBtnBorder = mbLine;
+            pad.matDimFill = PM("BtnDimFill", P_SURF, QP_BTN); pad.matDimBorder = PM("BtnDimLine", P_DEEP, QP_BTN_LINE); pad.matDimOnFill = mbDeep;
+            pad.matBox = mpSurf; pad.matBoxMe = mpSurf2; pad.matBoxEmpty = mpEmpty;
+            pad.matLine = mpLine; pad.matLineMe = mpLineMe; pad.matLineTurn = mpLineTurn;
+            pad.matMeterOn = mbCyan; pad.matMeterOff = mbDeep; pad.matKnobOn = mbKnobOn; pad.matKnobOff = mbKnobOff;
+            pad.switchOn = new[] { mbCyan, mbOra, mbOra };
+            pad.btnFills = mbStyleFill; pad.btnBorders = mbStyleLine; pad.btnText = mbStyleText;
+            pad.colText = P_TEXT; pad.colMuted = P_MUTED; pad.colDark = P_DARK; pad.colCyan = P_CYAN; pad.colYellow = P_YEL; pad.colRed = P_RED; pad.colOrange = P_ORA;
 
             var content = Group(table.padBodies[0].contentAnchor.gameObject, "PadContent");
             pad.content = content;
@@ -478,65 +520,131 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pa.dopplerLevel = 0f;
             table.padAudio = pa;
 
-            // ---- 上の帯: タブ ----
-            string[] tabs = { "対局", "点数", "ルール", "設定" };
-            pad.tabBacks = new MeshRenderer[4];
-            for (int i = 0; i < 4; i++)
+            PadBars(content, pad);
+            PadGame(content, pad);
+            PadScore(content, pad);
+            PadRule(content, pad);
+            PadSetting(content, pad);
+            PadDebug(content, pad);
+
+            // ---- VRChat 標準のビームで押せるように: 押せる所ごとに、透明な UI のボタンを重ねる ----
+            // VR では UI を指すと VRChat のレーザーが出て、トリガーで押せる(デスクトップでもクリックで押せる)。
+            // 押せる所の当たり判定(BoxCollider)は外す。残すと、手で触って押すのと UI とで二重に押される
+            foreach (var k in content.GetComponentsInChildren<SqmPadKey>(true)) UiButton(k.gameObject, k);
+            foreach (var b in table.padBodies) foreach (var bt in b.GetComponentsInChildren<SqmButton>(true)) UiButton(bt.gameObject, bt);
+
+            pad.listRoot.SetActive(false);
+            pad.scoreRoot.SetActive(false);
+            pad.settingRoot.SetActive(false);
+            pad.debugRoot.SetActive(false);
+            content.SetActive(false);
+        }
+
+        static Material mpSurfBtn() { return PM("BtnOff", P_SURF, QP_BTN); }
+
+        // ---- 上の帯(タブ・局と残り)と下の帯(・INFO・とお知らせ・表とグラフの切り替え) ----
+        static void PadBars(GameObject content, SqmPad pad)
+        {
+            string[] tabs = { "対局", "点数", "ルール", "設定", "Debug" };
+            pad.tabRoots = new GameObject[5];
+            pad.tabFills = new MeshRenderer[5];
+            pad.tabBorders = new MeshRenderer[5];
+            pad.tabLabels = new TextMeshPro[5];
+            pad.tabGlows = new GameObject[5];
+            var size = new Vector2(0.054f, 0.026f);
+            for (int i = 0; i < 5; i++)
             {
-                var g = PadBtn(content, "tab_" + i, tabs[i], matPadBg, new Vector2(-0.147f + i * 0.098f, 0.104f), new Vector2(0.096f, 0.034f), 0.12f, out _, out pad.tabBacks[i]);
+                var g = Group(content, "tab_" + i);
+                g.transform.localPosition = new Vector3(-0.17f + i * 0.0552f, 0.104f, 0);
+                pad.tabRoots[i] = g;
+                pad.tabGlows[i] = MeshObj(g, "Glow", HexMesh(size.x + 0.008f, size.y + 0.008f, true, true), i == 4 ? mpGlowOra : mpGlowCyan, new Vector3(0, 0, -0.0015f)).gameObject;
+                if (i == 3)
+                {
+                    // 設定タブ: Debug タブがあれば間のボタン(右も四角)、無ければ右端(右をとがらせる)
+                    pad.tab3Mid = HexShape(g, "ShapeMid", size, false, false, mbFill, mbLine, out pad.tabFills[i], out pad.tabBorders[i]);
+                    pad.tab3End = HexShape(g, "ShapeEnd", size, false, true, mbFill, mbLine, out pad.tab3EndFill, out pad.tab3EndBorder);
+                }
+                else HexShape(g, "Shape", size, i == 0, i == 4, mbFill, i == 4 ? mbOraLine : mbLine, out pad.tabFills[i], out pad.tabBorders[i]);
+                pad.tabLabels[i] = PText(g, "Label", Vector2.zero, 0.072f, size, TextAlignmentOptions.Center);
+                pad.tabLabels[i].text = tabs[i];
+                pad.tabLabels[i].color = i == 4 ? P_ORA : P_MUTED;
+                PadCollider(g, size);
                 PadKey(g, pad, 100 + i);
             }
-            PadLine(content, new Vector2(0, 0.0865f), new Vector2(0.4f, 0.0015f));
-            // ---- 下の帯: IN GAME と INFORMATION ----
-            // 小さい見出し(IN GAME / INFORMATION)と本文は、別々の文字にする(1つにすると行が重なる)
-            PadLine(content, new Vector2(0, -0.0815f), new Vector2(0.4f, 0.0015f));
-            PadLine(content, new Vector2(-0.11f, -0.103f), new Vector2(0.0015f, 0.043f));
-            PText(content, "InGameLabel", new Vector2(-0.155f, -0.088f), 0.03f, new Vector2(0.088f, 0.01f), TextAlignmentOptions.Center).text = "IN GAME";
-            // 右端は点数タブのグラフの切り替えボタン(点数タブのときだけ出す)のために空ける
-            var infoLabel = PText(content, "InfoLabel", new Vector2(0.0225f, -0.088f), 0.03f, new Vector2(0.255f, 0.01f), TextAlignmentOptions.Center);
-            infoLabel.text = "<cspace=0.8em>INFORMATION</cspace>";
-            pad.inGameText = PText(content, "InGame", new Vector2(-0.155f, -0.107f), 0.055f, new Vector2(0.088f, 0.03f), TextAlignmentOptions.Center);
-            pad.infoText = PText(content, "Info", new Vector2(0.0225f, -0.106f), 0.08f, new Vector2(0.255f, 0.028f), TextAlignmentOptions.Center);
-            pad.graphToggle = PadBtn(content, "graph_toggle", "グラフ", matPadBtn[8], new Vector2(0.172f, -0.1015f), new Vector2(0.038f, 0.03f), 0.06f, out pad.graphToggleLabel, out _);
-            PadKey(pad.graphToggle, pad, 330);
-            pad.graphToggle.SetActive(false);
+            pad.tabRoots[4].SetActive(false);
+            pad.statusText = PText(content, "Status", new Vector2(0.08f, 0.104f), 0.062f, new Vector2(0.15f, 0.03f), TextAlignmentOptions.Right);
+            pad.statusText.color = P_MUTED;
+            pad.statusText.enableWordWrapping = false;
+            pad.statusLeft = PSeg(content, "Left", new Vector2(0.1755f, 0.104f), 0.07f, new Vector2(0.035f, 0.03f), TextAlignmentOptions.Right);
+            RectQ(content, "TopLine", new Vector2(0, 0.0855f), new Vector2(0.396f, 0.0008f), mbLine);
 
-            // ---- 対局 ----
-            var game = Group(content, "Game");
-            pad.gameRoot = game;
-            // 案内の文は、右上の「直前の打牌」のぶん左に寄せる
-            pad.gameMessage = PText(game, "Message", new Vector2(-0.03f, 0.07f), 0.075f, new Vector2(0.32f, 0.026f), TextAlignmentOptions.Center);
-            var lastP = Group(game, "LastDiscard");
-            pad.lastRoot = lastP;
-            pad.lastWind = PText(lastP, "Wind", new Vector2(0.142f, 0.07f), 0.06f, new Vector2(0.016f, 0.02f), TextAlignmentOptions.Center);
-            pad.lastTiles = new MeshRenderer[2];
+            Frame(content, "InfoBar", -0.196f, -0.1f, 0.196f, -0.124f, mpSurf, mpLine);
+            pad.infoTag = PText(content, "InfoTag", new Vector2(-0.176f, -0.112f), 0.045f, new Vector2(0.036f, 0.016f), TextAlignmentOptions.Center);
+            pad.infoTag.text = "・INFO・";
+            RectQ(content, "InfoSep", new Vector2(-0.1568f, -0.112f), new Vector2(0.0006f, 0.016f), mbLine);
+            pad.infoText = PText(content, "Info", new Vector2(-0.017f, -0.112f), 0.07f, new Vector2(0.27f, 0.024f), TextAlignmentOptions.Left);
+            pad.infoText.enableWordWrapping = false;
+            pad.infoText.overflowMode = TextOverflowModes.Ellipsis;
+            // 点数タブの「表 | グラフ」(つなげた2つ)
+            var tg = Group(content, "GraphToggle");
+            pad.toggleRoot = tg;
+            pad.toggleFills = new MeshRenderer[2];
+            pad.toggleBorders = new MeshRenderer[2];
+            pad.toggleLabels = new TextMeshPro[2];
+            string[] tl = { "表", "グラフ" };
             for (int i = 0; i < 2; i++)
             {
-                var t = Prim(PrimitiveType.Quad, lastP, "tile_" + i, matHoloFaces[0]);
-                t.transform.localPosition = new Vector3(0.16f + i * 0.0165f, 0.07f, -0.003f);
-                t.transform.localScale = new Vector3(0.015f, 0.021f, 1);
-                pad.lastTiles[i] = t.GetComponent<MeshRenderer>();
-                t.SetActive(false);
+                var b = HexBtn(tg, "toggle_" + i, tl[i], new Vector2(0.1335f + i * 0.0405f, -0.112f), new Vector2(0.04f, 0.018f), 0.055f,
+                    mbFill, mbLine, P_MUTED, i == 0, i == 1, out pad.toggleLabels[i], out pad.toggleFills[i], out pad.toggleBorders[i]);
+                PadKey(b, pad, 331 + i);
             }
+            tg.SetActive(false);
+        }
+
+        // ---- 対局 ----
+        static void PadGame(GameObject content, SqmPad pad)
+        {
+            var game = Group(content, "Game");
+            pad.gameRoot = game;
+            pad.gameMessage = PText(game, "Message", new Vector2(-0.066f, 0.075f), 0.062f, new Vector2(0.26f, 0.018f), TextAlignmentOptions.Left);
+            pad.gameMessage.enableWordWrapping = false;
+            pad.gameSub = PText(game, "Sub", new Vector2(-0.066f, 0.06f), 0.05f, new Vector2(0.26f, 0.014f), TextAlignmentOptions.Left);
+            pad.gameSub.color = P_MUTED;
+            pad.gameSub.enableWordWrapping = false;
+            // 直前の打牌(右上の枠)
+            var lastP = Group(game, "LastDiscard");
+            pad.lastRoot = lastP;
+            Frame(lastP, "Frame", 0.07f, 0.081f, 0.196f, 0.058f, mpSurf, mpLine);
+            var ll = PText(lastP, "Label", new Vector2(0.084f, 0.0695f), 0.05f, new Vector2(0.024f, 0.02f), TextAlignmentOptions.Center);
+            ll.text = "打牌";
+            ll.color = P_MUTED;
+            pad.lastWind = PText(lastP, "Wind", new Vector2(0.122f, 0.0695f), 0.07f, new Vector2(0.016f, 0.02f), TextAlignmentOptions.Center);
+            pad.lastWind.color = P_CYAN;
+            pad.lastTiles = new MeshRenderer[2];
+            for (int i = 0; i < 2; i++) pad.lastTiles[i] = TileQ(lastP, "tile_" + i, new Vector2(0.143f + i * 0.016f, 0.0695f), new Vector2(0.0145f, 0.0195f));
+            pad.lastName = PText(lastP, "Name", new Vector2(0.181f, 0.0695f), 0.045f, new Vector2(0.028f, 0.02f), TextAlignmentOptions.Center);
+            pad.lastName.color = P_MUTED;
+            pad.lastName.enableWordWrapping = false;
+            pad.lastName.overflowMode = TextOverflowModes.Ellipsis;
             lastP.SetActive(false);
-            pad.waitText = PText(game, "Waits", new Vector2(0, -0.048f), 0.048f, new Vector2(0.38f, 0.014f), TextAlignmentOptions.Center);
-            pad.waitText.enableWordWrapping = false;
-            pad.waitText.overflowMode = TextOverflowModes.Ellipsis;
+            // 手牌の下地
+            RectQ(game, "HandBg", new Vector2(0, 0.011f), new Vector2(0.396f, 0.078f), mpHandBg);
+            // 手牌(位置は SqmPad.PlaceHand が決める)
             pad.handTiles = new MeshRenderer[30];
             pad.handLift = new GameObject[30];
             pad.handDim = new GameObject[30];
             pad.handHint = new GameObject[30];
             var hintMat = HoloMat("PadHint", new Color(0.95f, 0.45f, 0.05f, 1f), Q_FILL);
-            var dimMat = HoloMat("PadDim", new Color(0.1f, 0.15f, 0.2f, 0.55f), 2999);
+            var dimMat = HoloMat("PadDim", new Color(0.03f, 0.06f, 0.1f, 0.6f), 2999);
             for (int i = 0; i < 30; i++)
             {
                 var lift = Prim(PrimitiveType.Quad, game, "lift_" + i.ToString("00"), matPadLift);
-                lift.transform.localScale = new Vector3(0.025f, 0.034f, 1);
+                lift.transform.localScale = new Vector3(0.0258f, 0.034f, 1);
                 lift.SetActive(false);
                 pad.handLift[i] = lift;
                 var t = Prim(PrimitiveType.Quad, game, "tile_" + i.ToString("00"), matHoloFaces[0]);
                 t.transform.localPosition = new Vector3(0, 0, -0.003f);
-                t.transform.localScale = new Vector3(0.022f, 0.03f, 1);
+                t.transform.localScale = new Vector3(0.0228f, 0.031f, 1);
                 var box = t.AddComponent<BoxCollider>();
                 box.isTrigger = true;
                 box.center = new Vector3(0, 0, -0.003f);
@@ -544,7 +652,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 PadKey(t, pad, i);
                 t.SetActive(false);
                 var dim = Prim(PrimitiveType.Quad, game, "dim_" + i.ToString("00"), dimMat);
-                dim.transform.localScale = new Vector3(0.022f, 0.03f, 1);
+                dim.transform.localScale = new Vector3(0.0228f, 0.031f, 1);
                 dim.SetActive(false);
                 pad.handDim[i] = dim;
                 // デバッグ: 切るべき牌の印(牌の上に細い橙の線)
@@ -555,161 +663,470 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 pad.handTiles[i] = t.GetComponent<MeshRenderer>();
             }
             pad.meldTiles = new MeshRenderer[24];
-            for (int i = 0; i < 24; i++)
-            {
-                var t = Prim(PrimitiveType.Quad, game, "meld_" + i.ToString("00"), matHoloFaces[0]);
-                t.transform.localPosition = new Vector3(-0.185f + i * 0.0125f, 0.04f, -0.003f);
-                t.transform.localScale = new Vector3(0.012f, 0.016f, 1);
-                t.SetActive(false);
-                pad.meldTiles[i] = t.GetComponent<MeshRenderer>();
-            }
-            // 鳴ける牌(捨てられた牌)。ツモ牌と同じ、上の段の右に出す
-            var callLabel = PText(game, "CallLabel", new Vector2(0.075f, 0.04f), 0.06f, new Vector2(0.06f, 0.02f), TextAlignmentOptions.Right);
+            for (int i = 0; i < 24; i++) { pad.meldTiles[i] = TileQ(game, "meld_" + i.ToString("00"), Vector2.zero, new Vector2(0.0115f, 0.0156f)); pad.meldTiles[i].gameObject.SetActive(false); }
+            // ツモ牌・鳴ける牌の見出し(ツモ牌の列の上)
+            var labelAt = new Vector2(SqmPad.DRAW_X + SqmPad.HAND_ST / 2, SqmPad.DRAW_Y + 0.029f);
+            pad.drawLabel = PText(game, "DrawLabel", labelAt, 0.042f, new Vector2(0.05f, 0.01f), TextAlignmentOptions.Center);
+            pad.drawLabel.text = "ツモ";
+            pad.drawLabel.color = P_CYAN;
+            var callLabel = PText(game, "CallLabel", labelAt, 0.042f, new Vector2(0.05f, 0.01f), TextAlignmentOptions.Center);
             callLabel.text = "鳴ける牌";
+            callLabel.color = P_CYAN;
             callLabel.gameObject.SetActive(false);
             pad.callLabel = callLabel.gameObject;
             pad.callTiles = new MeshRenderer[2];
             for (int i = 0; i < 2; i++)
             {
-                var t = Prim(PrimitiveType.Quad, game, "call_" + i, matHoloFaces[0]);
-                t.transform.localPosition = new Vector3(0.135f + i * 0.024f, 0.04f, -0.003f);
-                t.transform.localScale = new Vector3(0.022f, 0.03f, 1);
-                t.SetActive(false);
-                pad.callTiles[i] = t.GetComponent<MeshRenderer>();
+                pad.callTiles[i] = TileQ(game, "call_" + i, new Vector2(SqmPad.DRAW_X + i * SqmPad.HAND_ST, SqmPad.DRAW_Y), new Vector2(0.0228f, 0.031f));
+                pad.callTiles[i].gameObject.SetActive(false);
             }
+            // 待ち(小さい牌。位置は SqmPad.RefreshWaits が決める)
+            pad.waitLabel = PText(game, "WaitLabel", new Vector2(-0.181f, SqmPad.WAIT_Y), 0.055f, new Vector2(0.03f, 0.02f), TextAlignmentOptions.Left);
+            pad.waitLabel.text = "待ち";
+            pad.waitLabel.color = P_MUTED;
+            pad.waitTiles = new MeshRenderer[16];
+            pad.waitDim = new GameObject[16];
+            for (int i = 0; i < 16; i++)
+            {
+                pad.waitTiles[i] = TileQ(game, "wait_" + i.ToString("00"), Vector2.zero, new Vector2(0.0115f, 0.0155f));
+                pad.waitTiles[i].gameObject.SetActive(false);
+                var d = Prim(PrimitiveType.Quad, game, "waitDim_" + i.ToString("00"), dimMat);
+                d.transform.localScale = new Vector3(0.0115f, 0.0155f, 1);
+                d.SetActive(false);
+                pad.waitDim[i] = d;
+            }
+            pad.waitPlus = new TextMeshPro[8];
+            for (int i = 0; i < 8; i++)
+            {
+                pad.waitPlus[i] = PText(game, "plus_" + i, Vector2.zero, 0.045f, new Vector2(0.008f, 0.015f), TextAlignmentOptions.Center);
+                pad.waitPlus[i].text = "+";
+                pad.waitPlus[i].color = P_MUTED;
+            }
+            pad.waitNote = PText(game, "WaitNote", Vector2.zero, 0.05f, new Vector2(0.15f, 0.02f), TextAlignmentOptions.Left);
+            pad.waitNote.color = P_MUTED;
+            pad.waitNote.enableWordWrapping = false;
+            // 操作ボタン(右下に右寄せ。位置は SqmPad が決める。ひとつずつ独立した六角形)
             pad.btnRoots = new GameObject[6];
-            pad.btnBacks = new MeshRenderer[6];
+            pad.btnFillR = new MeshRenderer[6];
+            pad.btnBorderR = new MeshRenderer[6];
             pad.btnLabels = new TextMeshPro[6];
             for (int i = 0; i < 6; i++)
             {
-                var g = PadBtn(game, "btn_" + i, "", matPadBtn[0], new Vector2(-0.165f + i * 0.066f, -0.064f), new Vector2(0.06f, 0.024f), 0.075f, out pad.btnLabels[i], out pad.btnBacks[i]);
+                var g = HexBtn(game, "btn_" + i, "", new Vector2(-0.165f + i * SqmPad.BTN_STEP, SqmPad.BTN_Y), new Vector2(SqmPad.BTN_W, 0.028f), 0.072f,
+                    mbStyleFill[0], mbStyleLine[0], mbStyleText[0], true, true, out pad.btnLabels[i], out pad.btnFillR[i], out pad.btnBorderR[i]);
                 g.SetActive(false);
                 PadKey(g, pad, 200 + i);
                 pad.btnRoots[i] = g;
             }
-            // ゲーム前設定(試合が無いとき): 人数(平方・四人・三人)・局数(東風戦・半荘)・NEW GAME(下の真ん中)
-            var setup = Group(game, "Setup");
-            pad.setupRoot = setup;
-            PText(setup, "Title", new Vector2(0, 0.07f), 0.075f, new Vector2(0.38f, 0.026f), TextAlignmentOptions.Center).text = "ゲーム前設定";
-            PText(setup, "ModeLabel", new Vector2(-0.15f, 0.033f), 0.07f, new Vector2(0.06f, 0.026f), TextAlignmentOptions.Center).text = "人数";
-            PText(setup, "RoundLabel", new Vector2(-0.15f, -0.008f), 0.07f, new Vector2(0.06f, 0.026f), TextAlignmentOptions.Center).text = "局数";
-            PadLine(setup, new Vector2(-0.115f, 0.0125f), new Vector2(0.0015f, 0.07f));
-            string[] setupLabels = { "平方", "四人", "三人", "東風戦", "半荘" };
-            pad.setupBacks = new MeshRenderer[5];
-            pad.setupLabels = new TextMeshPro[5];
-            for (int i = 0; i < 5; i++)
-            {
-                var at = i < 3 ? new Vector2(-0.065f + i * 0.085f, 0.033f) : new Vector2(-0.065f + (i - 3) * 0.085f, -0.008f);
-                var g = PadBtn(setup, "setup_" + i, setupLabels[i], matPadBg, at, new Vector2(0.072f, 0.03f), 0.085f, out pad.setupLabels[i], out pad.setupBacks[i]);
-                PadKey(g, pad, 400 + i);
-            }
-            pad.setupNew = PadBtn(setup, "new_game", "NEW GAME", matPadBtn[0], new Vector2(0, -0.064f), new Vector2(0.12f, 0.028f), 0.1f, out _, out _);
-            PadKey(pad.setupNew, pad, 405);
-            setup.SetActive(false);
-            var confirm = PadBtn(game, "confirm", "確認", matPadBtn[0], new Vector2(0, -0.064f), new Vector2(0.2f, 0.028f), 0.11f, out _, out _);
+            // 和了・流局の「確認」
+            var confirm = Btn(game, "confirm", "確認", new Vector2(0.117f, SqmPad.BTN_Y), new Vector2(0.15f, 0.03f), 0.09f, PB_CYAN);
             PadKey(confirm, pad, 210);
             confirm.SetActive(false);
             pad.confirmRoot = confirm;
 
-            // ---- 点数 ----
+            // ゲーム前設定(試合が無いとき): 人数(平方・四人・三人)・局数(東風戦・半荘)・NEW GAME
+            var setup = Group(game, "Setup");
+            pad.setupRoot = setup;
+            PText(setup, "Title", new Vector2(-0.066f, 0.075f), 0.07f, new Vector2(0.26f, 0.02f), TextAlignmentOptions.Left).text = "ゲーム前設定";
+            var ml = PText(setup, "ModeLabel", new Vector2(-0.172f, 0.035f), 0.062f, new Vector2(0.05f, 0.024f), TextAlignmentOptions.Left);
+            ml.text = "人数";
+            ml.color = P_MUTED;
+            var rl = PText(setup, "RoundLabel", new Vector2(-0.172f, 0.0f), 0.062f, new Vector2(0.05f, 0.024f), TextAlignmentOptions.Left);
+            rl.text = "局数";
+            rl.color = P_MUTED;
+            string[] setupLabels = { "平方", "四人", "三人", "東風戦", "半荘" };
+            pad.setupFills = new MeshRenderer[5];
+            pad.setupBorders = new MeshRenderer[5];
+            pad.setupLabels = new TextMeshPro[5];
+            for (int i = 0; i < 5; i++)
+            {
+                // 人数の3つ・局数の2つは、それぞれつなげる
+                int j = i < 3 ? i : i - 3, n = i < 3 ? 3 : 2;
+                var at = new Vector2(-0.112f + j * 0.0605f, i < 3 ? 0.035f : 0.0f);
+                var g = HexBtn(setup, "setup_" + i, setupLabels[i], at, new Vector2(0.06f, 0.026f), 0.075f,
+                    mbFill, mbLine, P_TEXT, j == 0, j == n - 1, out pad.setupLabels[i], out pad.setupFills[i], out pad.setupBorders[i]);
+                PadKey(g, pad, 400 + i);
+            }
+            pad.setupNew = Btn(setup, "new_game", "NEW GAME", new Vector2(0.132f, SqmPad.BTN_Y), new Vector2(0.12f, 0.03f), 0.085f, PB_CYAN);
+            PadKey(pad.setupNew, pad, 405);
+            setup.SetActive(false);
+        }
+
+        // ---- 点数(表・グラフ・終局の結果) ----
+        static void PadScore(GameObject content, SqmPad pad)
+        {
             var score = Group(content, "Score");
             pad.scoreRoot = score;
             var boxes = Group(score, "Boxes");
             pad.scoreBoxes = boxes;
             int[] col = { 0, 1, 1, 1, 0, -1, -1, -1 };
             int[] row = { -1, -1, 0, 1, 1, 1, 0, -1 };
-            pad.boxFills = new MeshRenderer[8];
+            const float CW = 0.126f, CH = 0.054f;
             pad.boxFrames = new GameObject[8];
-            pad.boxTexts = new TextMeshPro[8];
+            pad.boxBorders = new MeshRenderer[8];
+            pad.boxFills = new MeshRenderer[8];
+            pad.boxGlows = new GameObject[8];
+            pad.boxParts = new GameObject[8];
+            pad.boxWind = new TextMeshPro[8];
+            pad.boxName = new TextMeshPro[8];
+            pad.boxScore = new TextMeshPro[8];
+            pad.boxSub = new TextMeshPro[8];
+            pad.boxTags = new TextMeshPro[8];
             for (int p = 0; p < 8; p++)
             {
-                var at = new Vector2(col[p] * 0.127f, 0.002f + row[p] * 0.056f);
-                var frame = Prim(PrimitiveType.Quad, boxes, "frame_" + p, matPadLine);
-                frame.transform.localPosition = new Vector3(at.x, at.y, -0.0015f);
-                frame.transform.localScale = new Vector3(0.12f, 0.05f, 1);
-                pad.boxFrames[p] = frame;
-                var fill = Prim(PrimitiveType.Quad, boxes, "fill_" + p, matPadBg);
-                fill.transform.localPosition = new Vector3(at.x, at.y, -0.003f);
-                fill.transform.localScale = new Vector3(0.117f, 0.047f, 1);
-                pad.boxFills[p] = fill.GetComponent<MeshRenderer>();
-                pad.boxTexts[p] = PText(boxes, "text_" + p, at, 0.055f, new Vector2(0.11f, 0.044f), TextAlignmentOptions.TopLeft);
+                var c = new Vector2(col[p] * 0.132f, -0.004f + row[p] * 0.0585f);
+                var fr = Group(boxes, "frame_" + p);
+                pad.boxFrames[p] = fr;
+                pad.boxGlows[p] = RectQ(fr, "Glow", c, new Vector2(CW + 0.008f, CH + 0.008f), mpGlowCyan).gameObject;
+                pad.boxGlows[p].SetActive(false);
+                pad.boxBorders[p] = RectQ(fr, "Border", c, new Vector2(CW + 0.0016f, CH + 0.0016f), mpLine);
+                pad.boxFills[p] = RectQ(fr, "Fill", c, new Vector2(CW, CH), mpSurf);
+                // 中身: 左に席風(大きく)、右に名前・点数(7セグ)・順位と自分との差、右上に札
+                var parts = Group(boxes, "parts_" + p);
+                pad.boxParts[p] = parts;
+                float xl = c.x - CW / 2;
+                RectQ(parts, "WindBg", new Vector2(xl + 0.017f, c.y), new Vector2(0.026f, CH - 0.01f), mpWindBg);
+                pad.boxWind[p] = PText(parts, "Wind", new Vector2(xl + 0.017f, c.y), 0.15f, new Vector2(0.026f, CH), TextAlignmentOptions.Center);
+                pad.boxName[p] = PText(parts, "Name", new Vector2(xl + 0.079f, c.y + 0.019f), 0.052f, new Vector2(0.09f, 0.016f), TextAlignmentOptions.Left);
+                pad.boxName[p].enableWordWrapping = false;
+                pad.boxName[p].overflowMode = TextOverflowModes.Ellipsis;
+                pad.boxScore[p] = PSeg(parts, "Score", new Vector2(xl + 0.078f, c.y + 0.0015f), 0.085f, new Vector2(0.088f, 0.02f), TextAlignmentOptions.Left);
+                pad.boxSub[p] = PText(parts, "Sub", new Vector2(xl + 0.078f, c.y - 0.0185f), 0.048f, new Vector2(0.088f, 0.015f), TextAlignmentOptions.Left);
+                pad.boxSub[p].enableWordWrapping = false;
+                pad.boxTags[p] = PText(parts, "Tags", new Vector2(c.x + CW / 2 - 0.044f, c.y + 0.0175f), 0.04f, new Vector2(0.08f, 0.012f), TextAlignmentOptions.Right);
+                pad.boxTags[p].enableWordWrapping = false;
             }
-            // 普通の麻雀: 真ん中を台形 4つで囲む(文字は上の箱の上下左右のものを使う)
+            // 普通の麻雀: 真ん中を台形 4つで囲む(中身は上の箱の上下左右のものを使う)
             var trapBoxes = Group(boxes, "Trap");
             pad.trapRoot = trapBoxes;
-            pad.trapFrames = new GameObject[4];
             pad.trapFills = new MeshRenderer[4];
             for (int q = 0; q < 4; q++)
             {
-                pad.trapFrames[q] = Trapezoid(trapBoxes, "frame_" + q, q, new Vector2(0, 0.002f), 0.065f, 0.03f, 0.19f, 0.082f, matPadLine, "PadTrap_" + q, -0.0015f);
-                pad.trapFills[q] = Trapezoid(trapBoxes, "fill_" + q, q, new Vector2(0, 0.002f), 0.067f, 0.032f, 0.188f, 0.08f, matPadBg, "PadTrapFill_" + q, -0.003f).GetComponent<MeshRenderer>();
+                Trapezoid(trapBoxes, "frame_" + q, q, new Vector2(0, -0.004f), 0.068f, 0.03f, 0.198f, 0.089f, mpLine, "PadTrap2_" + q, -0.002f);
+                pad.trapFills[q] = Trapezoid(trapBoxes, "fill_" + q, q, new Vector2(0, -0.004f), 0.069f, 0.031f, 0.197f, 0.088f, mpSurf, "PadTrapFill2_" + q, -0.002f).GetComponent<MeshRenderer>();
             }
             trapBoxes.SetActive(false);
-            pad.scoreCenter = PText(boxes, "Center", new Vector2(0, 0.002f), 0.065f, new Vector2(0.12f, 0.05f), TextAlignmentOptions.Center);
-            pad.resultTable = PText(score, "Result", new Vector2(0, 0.002f), 0.07f, new Vector2(0.37f, 0.165f), TextAlignmentOptions.TopLeft);
+            pad.scoreCenter = PText(boxes, "Center", new Vector2(0, -0.004f), 0.065f, new Vector2(0.12f, 0.05f), TextAlignmentOptions.Center);
+            pad.resultTable = PText(score, "Result", new Vector2(0, -0.006f), 0.07f, new Vector2(0.38f, 0.17f), TextAlignmentOptions.TopLeft);
             pad.resultTable.gameObject.SetActive(false);
+
             // 点数の推移の折れ線グラフ(線は SqmPad.DrawGraph が置く)
             var graph = Group(score, "Graph");
             pad.graphRoot = graph;
+            Frame(graph, "Frame", -0.198f, 0.08f, 0.074f, -0.094f, mpSurf, mpLine);
             var graphMat = HoloMat("PadGraphLine", Color.white, Q_FILL + 1);   // 色は線ごとに頂点の色で付ける
-            var frameG = Prim(PrimitiveType.Quad, graph, "Frame", matPadLine);
-            frameG.transform.localPosition = new Vector3(-0.0425f, -0.004f, -0.0015f);
-            frameG.transform.localScale = new Vector3(0.262f, 0.134f, 1);
-            var fillG = Prim(PrimitiveType.Quad, graph, "Fill", matPadBg);
-            fillG.transform.localPosition = new Vector3(-0.0425f, -0.004f, -0.003f);
-            fillG.transform.localScale = new Vector3(0.259f, 0.131f, 1);
-            pad.graphLines = new LineRenderer[8];
-            for (int l = 0; l < 8; l++) pad.graphLines[l] = GraphLine(graph, "line_" + l, graphMat);
+            pad.gridLines = new LineRenderer[5];
+            pad.gridLabels = new TextMeshPro[5];
+            for (int i = 0; i < 5; i++)
+            {
+                pad.gridLines[i] = GraphLine(graph, "grid_" + i, graphMat);
+                pad.gridLines[i].startColor = Alpha(P_DEEP, 1f);
+                pad.gridLines[i].endColor = pad.gridLines[i].startColor;
+                pad.gridLines[i].widthMultiplier = 0.0007f;
+                pad.gridLabels[i] = PText(graph, "gridLabel_" + i, Vector2.zero, 0.038f, new Vector2(0.03f, 0.008f), TextAlignmentOptions.Center);
+                pad.gridLabels[i].color = P_MUTED;
+            }
             pad.graphBase = GraphLine(graph, "base", graphMat);
-            pad.graphBase.startColor = new Color(0.29f, 0.4f, 0.44f, 0.6f);
+            pad.graphBase.startColor = Alpha(C("4a8aa8"), 1f);
             pad.graphBase.endColor = pad.graphBase.startColor;
             pad.graphBase.widthMultiplier = 0.0008f;
-            pad.graphTop = PText(graph, "Top", new Vector2(-0.14f, 0.067f), 0.042f, new Vector2(0.07f, 0.012f), TextAlignmentOptions.Left);
-            pad.graphBottom = PText(graph, "Bottom", new Vector2(-0.14f, -0.041f), 0.042f, new Vector2(0.07f, 0.012f), TextAlignmentOptions.Left);
+            pad.graphLines = new LineRenderer[8];
+            for (int l = 0; l < 8; l++) pad.graphLines[l] = GraphLine(graph, "line_" + l, graphMat);
+            pad.graphDot = GraphLine(graph, "dot", graphMat);
+            pad.graphDot.widthMultiplier = 0.0056f;
+            pad.graphDot.numCapVertices = 6;
             // 横軸の目盛り(局の名前。位置は SqmPad.DrawGraph が点に合わせて置く)
             pad.graphTicks = new TextMeshPro[9];
             for (int i = 0; i < 9; i++)
             {
-                pad.graphTicks[i] = PText(graph, "tick_" + i, new Vector2(0, -0.0585f), 0.042f, new Vector2(0.03f, 0.016f), TextAlignmentOptions.Center);
+                pad.graphTicks[i] = PText(graph, "tick_" + i, Vector2.zero, 0.042f, new Vector2(0.03f, 0.016f), TextAlignmentOptions.Center);
                 pad.graphTicks[i].enableWordWrapping = false;
+                pad.graphTicks[i].color = P_MUTED;
                 pad.graphTicks[i].gameObject.SetActive(false);
             }
-            pad.graphLegend = PText(graph, "Legend", new Vector2(0.14f, 0.0f), 0.045f, new Vector2(0.095f, 0.15f), TextAlignmentOptions.Left);
-            pad.graphLegend.enableWordWrapping = false;
-            pad.graphLegend.overflowMode = TextOverflowModes.Ellipsis;
+            // 凡例(右。今の点数の順)
+            var me = Group(graph, "LegendMe");
+            pad.legendMe = me;
+            RectQ(me, "Border", Vector2.zero, new Vector2(0.1206f, 0.0196f), mpLineMe);
+            RectQ(me, "Fill", Vector2.zero, new Vector2(0.119f, 0.018f), mpSurf2);
+            me.SetActive(false);
+            pad.legendBars = new LineRenderer[8];
+            pad.legendNames = new TextMeshPro[8];
+            pad.legendScores = new TextMeshPro[8];
+            for (int k = 0; k < 8; k++)
+            {
+                float y = 0.072f - k * 0.0205f;
+                pad.legendBars[k] = GraphLine(graph, "legendBar_" + k, graphMat);
+                pad.legendBars[k].widthMultiplier = 0.0022f;
+                pad.legendBars[k].numCapVertices = 0;
+                pad.legendNames[k] = PText(graph, "legendName_" + k, new Vector2(0.122f, y), 0.05f, new Vector2(0.05f, 0.016f), TextAlignmentOptions.Left);
+                pad.legendNames[k].enableWordWrapping = false;
+                pad.legendNames[k].overflowMode = TextOverflowModes.Ellipsis;
+                pad.legendScores[k] = PText(graph, "legendScore_" + k, new Vector2(0.17f, y), 0.048f, new Vector2(0.05f, 0.016f), TextAlignmentOptions.Right);
+            }
             graph.SetActive(false);
+        }
 
-            // ---- ルール・設定(上下に送るリスト) ----
-            var list = Group(content, "List");
+        // ---- ルール(上下に送るリスト) ----
+        static void PadRule(GameObject content, SqmPad pad)
+        {
+            var list = Group(content, "Rule");
             pad.listRoot = list;
-            pad.listTitle = PText(list, "Title", new Vector2(0, 0.072f), 0.07f, new Vector2(0.38f, 0.024f), TextAlignmentOptions.Center);
+            pad.listTitle = PText(list, "Title", new Vector2(-0.066f, 0.074f), 0.072f, new Vector2(0.26f, 0.022f), TextAlignmentOptions.Left);
+            pad.listTitle.enableWordWrapping = false;
+            pad.listPage = PText(list, "Page", new Vector2(0.083f, 0.07f), 0.045f, new Vector2(0.05f, 0.016f), TextAlignmentOptions.Right);
+            pad.listPage.color = P_MUTED;
+            // ▲▼(つなげた2つ)
+            PadKey(HexBtn(list, "up", "▲", new Vector2(0.1535f, 0.07f), new Vector2(0.022f, 0.016f), 0.045f, mbFill, mbLine, P_TEXT, true, false, out _, out _, out _), pad, 320);
+            PadKey(HexBtn(list, "down", "▼", new Vector2(0.1757f, 0.07f), new Vector2(0.022f, 0.016f), 0.045f, mbFill, mbLine, P_TEXT, false, true, out _, out _, out _), pad, 321);
             pad.rowLabels = new TextMeshPro[SqmPad.ROWS];
             pad.rowValues = new TextMeshPro[SqmPad.ROWS];
             pad.rowLeft = new GameObject[SqmPad.ROWS];
             pad.rowRight = new GameObject[SqmPad.ROWS];
             for (int r = 0; r < SqmPad.ROWS; r++)
             {
-                float y = 0.048f - r * 0.024f;
-                pad.rowLabels[r] = PText(list, "label_" + r, new Vector2(-0.085f, y), 0.068f, new Vector2(0.2f, 0.022f), TextAlignmentOptions.Left);
+                float y = 0.045f - r * 0.0198f;
+                if (r % 2 == 0) RectQ(list, "stripe_" + r, new Vector2(-0.0045f, y), new Vector2(0.387f, 0.0198f), mpStripe);
+                pad.rowLabels[r] = PText(list, "label_" + r, new Vector2(-0.107f, y), 0.062f, new Vector2(0.17f, 0.0198f), TextAlignmentOptions.Left);
                 pad.rowLabels[r].enableWordWrapping = false;
-                pad.rowValues[r] = PText(list, "value_" + r, new Vector2(0.085f, y), 0.062f, new Vector2(0.095f, 0.022f), TextAlignmentOptions.Center);
+                ValueBox(list, "box_" + r, new Vector2(0.116f, y), new Vector2(0.108f, 0.015f));
+                pad.rowValues[r] = PText(list, "value_" + r, new Vector2(0.116f, y), 0.056f, new Vector2(0.108f, 0.015f), TextAlignmentOptions.Center);
                 pad.rowValues[r].enableWordWrapping = false;
-                pad.rowLeft[r] = PadBtn(list, "left_" + r, "◀", matPadBtn[7], new Vector2(0.03f, y), new Vector2(0.018f, 0.018f), 0.06f, out _, out _);
-                pad.rowRight[r] = PadBtn(list, "right_" + r, "▶", matPadBtn[7], new Vector2(0.142f, y), new Vector2(0.018f, 0.018f), 0.06f, out _, out _);
+                pad.rowLeft[r] = Btn(list, "left_" + r, "◀", new Vector2(0.051f, y), new Vector2(0.018f, 0.015f), 0.04f, PB_NORMAL);
+                pad.rowRight[r] = Btn(list, "right_" + r, "▶", new Vector2(0.181f, y), new Vector2(0.018f, 0.015f), 0.04f, PB_NORMAL);
                 PadKey(pad.rowLeft[r], pad, 300 + r * 2);
                 PadKey(pad.rowRight[r], pad, 301 + r * 2);
             }
-            PadKey(PadBtn(list, "up", "▲", matPadBtn[0], new Vector2(0.183f, 0.048f), new Vector2(0.022f, 0.02f), 0.06f, out _, out _), pad, 320);
-            PadKey(PadBtn(list, "down", "▼", matPadBtn[0], new Vector2(0.183f, -0.072f), new Vector2(0.022f, 0.02f), 0.06f, out _, out _), pad, 321);
-            // ---- VRChat 標準のビームで押せるように: 押せる所ごとに、透明な UI のボタンを重ねる ----
-            // VR では UI を指すと VRChat のレーザーが出て、トリガーで押せる(デスクトップでもクリックで押せる)。
-            // 押せる所の当たり判定(BoxCollider)は外す。残すと、手で触って押すのと UI とで二重に押される
-            foreach (var k in content.GetComponentsInChildren<SqmPadKey>(true)) UiButton(k.gameObject, k);
-            foreach (var b in table.padBodies) foreach (var bt in b.GetComponentsInChildren<SqmButton>(true)) UiButton(bt.gameObject, bt);
+            // スクロールバー(見えている範囲。つまみの位置と長さは SqmPad が決める)
+            RectQ(list, "ScrollTrack", new Vector2(0.195f, SqmPad.SCROLL_TOP - SqmPad.SCROLL_H / 2), new Vector2(0.004f, SqmPad.SCROLL_H), mpSurf);
+            pad.scrollThumb = RectQ(list, "ScrollThumb", new Vector2(0.195f, SqmPad.SCROLL_TOP - 0.03f), new Vector2(0.004f, 0.06f), mbCyan).gameObject;
+        }
 
-            list.SetActive(false);
-            score.SetActive(false);
-            content.SetActive(false);
+        // ---- 設定(音・パッド・席の3つの枠) ----
+        static void PadSetting(GameObject content, SqmPad pad)
+        {
+            var st = Group(content, "Setting");
+            pad.settingRoot = st;
+            Card(st, "Sound", -0.198f, 0.081f, -0.002f, 0.012f, "音", P_CYAN, mpLine);
+            pad.meterSegs = new MeshRenderer[20];
+            pad.meterVals = new TextMeshPro[2];
+            string[] ml = { "効果音", "声" };
+            for (int m = 0; m < 2; m++)
+            {
+                float x0 = -0.192f, y = m == 0 ? 0.051f : 0.027f;
+                PText(st, "meterLabel_" + m, new Vector2(x0 + 0.03f, y), 0.058f, new Vector2(0.06f, 0.018f), TextAlignmentOptions.Left).text = ml[m];
+                PadKey(Btn(st, "meterDown_" + m, "－", new Vector2(x0 + 0.07f, y), new Vector2(0.016f, 0.014f), 0.045f, PB_NORMAL), pad, 500 + m * 2);
+                for (int i = 0; i < 10; i++)
+                    pad.meterSegs[m * 10 + i] = RectQ(st, "seg_" + m + "_" + i, new Vector2(x0 + 0.0824f + i * 0.0062f, y), new Vector2(0.0048f, 0.008f), mbCyan);
+                PadKey(Btn(st, "meterUp_" + m, "＋", new Vector2(x0 + 0.149f, y), new Vector2(0.016f, 0.014f), 0.045f, PB_NORMAL), pad, 501 + m * 2);
+                pad.meterVals[m] = PText(st, "meterVal_" + m, new Vector2(x0 + 0.172f, y), 0.05f, new Vector2(0.03f, 0.018f), TextAlignmentOptions.Right);
+                pad.meterVals[m].color = P_MUTED;
+            }
+            Card(st, "Pad", 0.004f, 0.081f, 0.198f, 0.012f, "パッド", P_CYAN, mpLine);
+            pad.switchTrack = new MeshRenderer[3];
+            pad.switchKnobR = new MeshRenderer[3];
+            pad.switchKnob = new GameObject[3];
+            pad.switchText = new TextMeshPro[3];
+            PText(st, "GrabLabel", new Vector2(0.07f, 0.051f), 0.058f, new Vector2(0.12f, 0.018f), TextAlignmentOptions.Left).text = "掴めるようにする";
+            PadKey(SwitchObj(st, "GrabSwitch", new Vector2(0.174f, 0.051f), pad, 0), pad, 504);
+            PText(st, "HomeLabel", new Vector2(0.07f, 0.027f), 0.058f, new Vector2(0.12f, 0.018f), TextAlignmentOptions.Left).text = "元の位置に戻す";
+            PadKey(Btn(st, "Home", "戻す", new Vector2(0.17f, 0.027f), new Vector2(0.044f, 0.016f), 0.05f, PB_NORMAL), pad, 505);
+
+            Card(st, "Seat", -0.198f, 0.004f, 0.198f, -0.094f, "席", P_CYAN, mpLine);
+            var credit = PText(st, "Credit", new Vector2(0.098f, -0.006f), 0.04f, new Vector2(0.2f, 0.012f), TextAlignmentOptions.Right);
+            credit.text = "平方麻雀 v" + SqmPad.VERSION + "　" + SqmPad.CREDIT;
+            credit.color = C("5a7d90");
+            pad.setSeatName = PText(st, "SeatName", new Vector2(-0.072f, -0.02f), 0.058f, new Vector2(0.24f, 0.018f), TextAlignmentOptions.Left);
+            pad.setSeatName.enableWordWrapping = false;
+            PadKey(Btn(st, "Leave", "席を立つ", new Vector2(0.164f, -0.02f), new Vector2(0.054f, 0.018f), 0.05f, PB_RED), pad, 506);
+            // ホストだけ: 新しい試合・Reset・立たせる(座っている人ごと)
+            var host = Group(st, "Host");
+            pad.hostRoot = host;
+            var hl = PText(host, "Label", new Vector2(-0.18f, -0.042f), 0.045f, new Vector2(0.024f, 0.016f), TextAlignmentOptions.Left);
+            hl.text = "ホスト";
+            hl.color = P_MUTED;
+            PadKey(Btn(host, "NewMatch", "新しい試合", new Vector2(-0.12f, -0.042f), new Vector2(0.07f, 0.016f), 0.048f, PB_NORMAL), pad, 507);
+            PadKey(Btn(host, "Reset", "Reset(試合をやめる)", new Vector2(-0.036f, -0.042f), new Vector2(0.09f, 0.016f), 0.048f, PB_RED), pad, 508);
+            pad.kickRoots = new GameObject[7];
+            pad.kickLabels = new TextMeshPro[7];
+            for (int k = 0; k < 7; k++)
+            {
+                var at = new Vector2(-0.146f + (k % 4) * 0.096f, -0.063f - (k / 4) * 0.02f);
+                var g = HexBtn(host, "kick_" + k, "", at, new Vector2(0.09f, 0.016f), 0.042f, mbFill, mbLine, P_TEXT, true, true, out pad.kickLabels[k], out _, out _);
+                pad.kickLabels[k].overflowMode = TextOverflowModes.Ellipsis;
+                PadKey(g, pad, 510 + k);
+                pad.kickRoots[k] = g;
+            }
+            var note = PText(st, "GuestNote", new Vector2(-0.042f, -0.042f), 0.048f, new Vector2(0.3f, 0.016f), TextAlignmentOptions.Left);
+            note.text = "ホストになると「新しい試合」「Reset」「立たせる」がここに出ます";
+            note.color = P_MUTED;
+            pad.guestNote = note.gameObject;
+        }
+
+        // ---- Debug(デバッグモードが有効なときだけタブが出る。表示・NPC・仕込みの3つの枠) ----
+        static void PadDebug(GameObject content, SqmPad pad)
+        {
+            var dg = Group(content, "Debug");
+            pad.debugRoot = dg;
+            Card(dg, "View", -0.198f, 0.081f, -0.002f, 0.012f, "表示", P_ORA, mpLineDbg);
+            PText(dg, "HintLabel", new Vector2(-0.122f, 0.051f), 0.058f, new Vector2(0.14f, 0.018f), TextAlignmentOptions.Left).text = "切るべき牌を表示";
+            PadKey(SwitchObj(dg, "HintSwitch", new Vector2(-0.03f, 0.051f), pad, 1), pad, 520);
+            var hd = PText(dg, "HintNote", new Vector2(-0.097f, 0.03f), 0.045f, new Vector2(0.19f, 0.016f), TextAlignmentOptions.Left);
+            hd.text = "自分の番に、NPC ならどう切るかを手牌に印で出します";
+            hd.color = P_MUTED;
+            hd.enableWordWrapping = false;
+            Card(dg, "Npc", 0.004f, 0.081f, 0.198f, 0.012f, "NPC", P_ORA, mpLineDbg);
+            PText(dg, "AutoLabel", new Vector2(0.07f, 0.051f), 0.058f, new Vector2(0.12f, 0.018f), TextAlignmentOptions.Left).text = "自動プレイ";
+            PadKey(SwitchObj(dg, "AutoSwitch", new Vector2(0.174f, 0.051f), pad, 2), pad, 521);
+            PText(dg, "SpeedLabel", new Vector2(0.06f, 0.027f), 0.058f, new Vector2(0.1f, 0.018f), TextAlignmentOptions.Left).text = "プレイ速度 <size=75%><color=#8fb8cc>(ホスト)</color></size>";
+            PadKey(Btn(dg, "SpeedDown", "◀", new Vector2(0.128f, 0.027f), new Vector2(0.018f, 0.015f), 0.04f, PB_NORMAL), pad, 522);
+            ValueBox(dg, "SpeedBox", new Vector2(0.1575f, 0.027f), new Vector2(0.037f, 0.015f));
+            pad.dbgSpeed = PText(dg, "Speed", new Vector2(0.1575f, 0.027f), 0.056f, new Vector2(0.037f, 0.015f), TextAlignmentOptions.Center);
+            PadKey(Btn(dg, "SpeedUp", "▶", new Vector2(0.187f, 0.027f), new Vector2(0.018f, 0.015f), 0.04f, PB_NORMAL), pad, 523);
+            Card(dg, "Rig", -0.198f, 0.004f, 0.198f, -0.062f, "仕込み(次の局で出す役)", P_ORA, mpLineDbg);
+            PText(dg, "RigLabel", new Vector2(-0.142f, -0.025f), 0.058f, new Vector2(0.1f, 0.018f), TextAlignmentOptions.Left).text = "出す役";
+            PadKey(Btn(dg, "RigPrev", "◀", new Vector2(-0.118f, -0.025f), new Vector2(0.018f, 0.015f), 0.04f, PB_NORMAL), pad, 524);
+            ValueBox(dg, "RigBox", new Vector2(-0.052f, -0.025f), new Vector2(0.11f, 0.015f));
+            pad.dbgRig = PText(dg, "Rig", new Vector2(-0.052f, -0.025f), 0.056f, new Vector2(0.11f, 0.015f), TextAlignmentOptions.Center);
+            pad.dbgRig.enableWordWrapping = false;
+            PadKey(Btn(dg, "RigNext", "▶", new Vector2(0.014f, -0.025f), new Vector2(0.018f, 0.015f), 0.04f, PB_NORMAL), pad, 525);
+            PadKey(Btn(dg, "RigDo", "自分の席に仕込む", new Vector2(0.164f, -0.025f), new Vector2(0.054f, 0.018f), 0.045f, PB_ORANGE), pad, 526);
+            pad.dbgRigNote = PText(dg, "RigNote", new Vector2(-0.002f, -0.044f), 0.045f, new Vector2(0.38f, 0.016f), TextAlignmentOptions.Left);
+            pad.dbgRigNote.color = P_MUTED;
+        }
+
+        // ---- パッドの部品 ----
+        /// <summary>六角形(上と下の辺が水平、左右の端がとがる)の板。lp / rp = 左端・右端をとがらせるか(並んだボタンの間は四角にしてつなげる)</summary>
+        static Mesh HexMesh(float w, float h, bool lp, bool rp)
+        {
+            string name = "PadHex_" + Mathf.RoundToInt(w * 10000) + "x" + Mathf.RoundToInt(h * 10000) + (lp ? "L" : "") + (rp ? "R" : "");
+            string path = GEN + "/" + name + ".asset";
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            bool isNew = mesh == null;
+            if (isNew) mesh = new Mesh { name = name };
+            mesh.Clear();
+            float k = h * 0.32f, x = w / 2, y = h / 2, kl = lp ? k : 0, kr = rp ? k : 0;
+            mesh.vertices = new[] { Vector3.zero, new Vector3(-x + kl, y), new Vector3(x - kr, y), new Vector3(x, 0), new Vector3(x - kr, -y), new Vector3(-x + kl, -y), new Vector3(-x, 0) };
+            // 表は -z 向き(ほかの板と同じ)。-z から見て時計回りになるよう三角形を組む
+            mesh.triangles = new[] { 0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5, 0, 5, 6, 0, 6, 1 };
+            mesh.uv = new Vector2[7];
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            if (isNew) AssetDatabase.CreateAsset(mesh, path);
+            else EditorUtility.SetDirty(mesh);
+            return mesh;
+        }
+
+        static MeshRenderer MeshObj(GameObject parent, string name, Mesh mesh, Material mat, Vector3 pos)
+        {
+            var g = new GameObject(name);
+            g.transform.SetParent(parent.transform, false);
+            g.transform.localPosition = pos;
+            g.AddComponent<MeshFilter>().sharedMesh = mesh;
+            var r = g.AddComponent<MeshRenderer>();
+            r.sharedMaterial = mat;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            r.receiveShadows = false;
+            return r;
+        }
+
+        /// <summary>六角形の形(縁 + 色)。縁は少し大きい同じ形を、描く順番で後ろに敷く</summary>
+        static GameObject HexShape(GameObject parent, string name, Vector2 size, bool lp, bool rp, Material fill, Material border, out MeshRenderer fillR, out MeshRenderer borderR)
+        {
+            var g = Group(parent, name);
+            borderR = MeshObj(g, "Border", HexMesh(size.x + 0.0022f, size.y + 0.0016f, lp, rp), border, new Vector3(0, 0, -0.002f));
+            fillR = MeshObj(g, "Fill", HexMesh(size.x, size.y, lp, rp), fill, new Vector3(0, 0, -0.002f));
+            return g;
+        }
+
+        /// <summary>押せる所(四角全体。文字より手前に、少し厚めに)</summary>
+        static void PadCollider(GameObject g, Vector2 size)
+        {
+            var box = g.AddComponent<BoxCollider>();
+            box.center = new Vector3(0, 0, -0.003f);
+            box.size = new Vector3(size.x, size.y, 0.008f);
+            box.isTrigger = true;
+        }
+
+        /// <summary>パッドの六角形のボタン(縁 + 色 + 文字 + 押せる所)。押したときの動きは PadKey / TableKey で付ける</summary>
+        static GameObject HexBtn(GameObject parent, string name, string label, Vector2 at, Vector2 size, float fontSize, Material fill, Material border, Color textColor,
+            bool lp, bool rp, out TextMeshPro text, out MeshRenderer fillR, out MeshRenderer borderR)
+        {
+            var g = Group(parent, name);
+            g.transform.localPosition = new Vector3(at.x, at.y, 0);
+            HexShape(g, "Shape", size, lp, rp, fill, border, out fillR, out borderR);
+            text = PText(g, "Label", Vector2.zero, fontSize, size, TextAlignmentOptions.Center);
+            text.enableWordWrapping = false;
+            text.color = textColor;
+            text.text = label;
+            PadCollider(g, size);
+            return g;
+        }
+
+        /// <summary>色の組(PB_*)で決まる、ひとつだけのボタン</summary>
+        static GameObject Btn(GameObject parent, string name, string label, Vector2 at, Vector2 size, float fontSize, int kind)
+        {
+            Material f = kind == PB_CYAN ? mbCyan : kind == PB_RED ? mbRedDark : kind == PB_ORANGE ? mbOraDark : mbFill;
+            Material b = kind == PB_CYAN ? mbCyanLine : kind == PB_RED ? mbRedLine : kind == PB_ORANGE ? mbOraLine : mbLine;
+            Color c = kind == PB_CYAN ? P_DARK : kind == PB_RED ? P_RED : kind == PB_ORANGE ? P_ORA : P_TEXT;
+            return HexBtn(parent, name, label, at, size, fontSize, f, b, c, true, true, out _, out _, out _);
+        }
+
+        /// <summary>四角い板(中心と大きさで)</summary>
+        static MeshRenderer RectQ(GameObject parent, string name, Vector2 c, Vector2 size, Material mat)
+        {
+            var q = Prim(PrimitiveType.Quad, parent, name, mat);
+            q.transform.localPosition = new Vector3(c.x, c.y, -0.002f);
+            q.transform.localScale = new Vector3(size.x, size.y, 1);
+            return q.GetComponent<MeshRenderer>();
+        }
+
+        /// <summary>四角い枠(縁 + 下地。左上と右下の角で)</summary>
+        static void Frame(GameObject parent, string name, float x0, float y0, float x1, float y1, Material fill, Material line)
+        {
+            var c = new Vector2((x0 + x1) / 2, (y0 + y1) / 2);
+            var size = new Vector2(x1 - x0, y0 - y1);
+            RectQ(parent, name + "Line", c, size + new Vector2(0.0016f, 0.0016f), line);
+            RectQ(parent, name, c, size, fill);
+        }
+
+        /// <summary>見出し付きの枠(設定・Debug)</summary>
+        static void Card(GameObject parent, string name, float x0, float y0, float x1, float y1, string title, Color titleColor, Material line)
+        {
+            Frame(parent, name, x0, y0, x1, y1, mpSurf, line);
+            var t = PText(parent, name + "Title", new Vector2(x0 + 0.081f, y0 - 0.0095f), 0.05f, new Vector2(0.15f, 0.016f), TextAlignmentOptions.Left);
+            t.text = title;
+            t.color = titleColor;
+        }
+
+        /// <summary>値を出す枠(◀ ▶ のあいだ)</summary>
+        static void ValueBox(GameObject parent, string name, Vector2 c, Vector2 size)
+        {
+            RectQ(parent, name + "Line", c, size + new Vector2(0.0014f, 0.0014f), mbLine);
+            RectQ(parent, name, c, size, mbScreen);
+        }
+
+        /// <summary>スイッチ(六角形の溝 + つまみ + ON/OFF)。見た目は SqmPad.Switch が変える</summary>
+        static GameObject SwitchObj(GameObject parent, string name, Vector2 at, SqmPad pad, int i)
+        {
+            var g = Group(parent, name);
+            g.transform.localPosition = new Vector3(at.x, at.y, 0);
+            pad.switchTrack[i] = MeshObj(g, "Track", HexMesh(0.034f, 0.013f, true, true), mbDeep, new Vector3(0, 0, -0.002f));
+            pad.switchKnobR[i] = MeshObj(g, "Knob", HexMesh(0.014f, 0.01f, true, true), mbKnobOff, new Vector3(-0.009f, 0, -0.0025f));
+            pad.switchKnob[i] = pad.switchKnobR[i].gameObject;
+            pad.switchText[i] = PText(g, "Label", new Vector2(0.006f, 0), 0.035f, new Vector2(0.018f, 0.01f), TextAlignmentOptions.Center);
+            pad.switchText[i].text = "OFF";
+            PadCollider(g, new Vector2(0.04f, 0.016f));
+            return g;
+        }
+
+        /// <summary>パッドの牌の絵(光の影響を受けない)</summary>
+        static MeshRenderer TileQ(GameObject parent, string name, Vector2 at, Vector2 size)
+        {
+            var t = Prim(PrimitiveType.Quad, parent, name, matHoloFaces[0]);
+            t.transform.localPosition = new Vector3(at.x, at.y, -0.003f);
+            t.transform.localScale = new Vector3(size.x, size.y, 1);
+            return t.GetComponent<MeshRenderer>();
         }
 
         const float UI_SCALE = 0.001f;   // UI の 1 単位 = 1mm
@@ -802,9 +1219,9 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var idle = Group(g, "Idle");
             body.idleRoot = idle;
             PText(idle, "Title", new Vector2(0, 0.075f), 0.2f, new Vector2(0.38f, 0.05f), TextAlignmentOptions.Center).text = "平方麻雀";
-            body.joinButton = PadBtn(idle, "join", "JOIN", matPadBtn[0], new Vector2(0, 0.0f), new Vector2(0.16f, 0.045f), 0.16f, out _, out _);
+            body.joinButton = Btn(idle, "join", "JOIN", new Vector2(0, 0.0f), new Vector2(0.16f, 0.045f), 0.16f, PB_CYAN);
             TableKey(body.joinButton, table, "Join" + s);
-            body.newButton = PadBtn(idle, "new_game", "NEW GAME", matPadBtn[0], new Vector2(0, -0.07f), new Vector2(0.16f, 0.045f), 0.14f, out _, out _);
+            body.newButton = Btn(idle, "new_game", "NEW GAME", new Vector2(0, -0.07f), new Vector2(0.16f, 0.045f), 0.14f, PB_NORMAL);
             TableKey(body.newButton, table, "NewMatch");
             body.nameText = PText(g, "Name", Vector2.zero, 0.14f, new Vector2(0.38f, 0.05f), TextAlignmentOptions.Center);
             // 裏に作者とバージョン
@@ -839,42 +1256,20 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var t = Text(parent, name, new Vector3(at.x, at.y, -0.005f), Quaternion.identity, size * 1.12f, rect);
             var pf = holoFont != null ? holoFont : font;
             if (pf != null) { t.font = pf; t.fontSharedMaterial = TextMat(pf, "PadText", 0.18f, -1, 0.25f); }
-            t.color = PAD_TEXT;
+            t.color = P_TEXT;
             t.alignment = align;
             return t;
         }
 
-        static void PadLine(GameObject parent, Vector2 at, Vector2 size)
+        /// <summary>パッドの7セグの数字</summary>
+        static TextMeshPro PSeg(GameObject parent, string name, Vector2 at, float size, Vector2 rect, TextAlignmentOptions align)
         {
-            var l = Prim(PrimitiveType.Quad, parent, "Line", matPadLine);
-            l.transform.localPosition = new Vector3(at.x, at.y, -0.0015f);
-            l.transform.localScale = new Vector3(size.x, size.y, 1);
-        }
-
-        /// <summary>パッドのボタン(色の板 + 文字 + 押せる所)。押したときの動きは PadKey / TableKey で付ける</summary>
-        static GameObject PadBtn(GameObject parent, string name, string label, Material mat, Vector2 at, Vector2 size, float fontSize, out TextMeshPro text, out MeshRenderer back)
-        {
-            var g = Group(parent, name);
-            g.transform.localPosition = new Vector3(at.x, at.y, 0);
-            var b = Prim(PrimitiveType.Quad, g, "Back", mat);
-            b.transform.localPosition = new Vector3(0, 0, -0.0025f);
-            b.transform.localScale = new Vector3(size.x, size.y, 1);
-            back = b.GetComponent<MeshRenderer>();
-            // 縁取りは色の板と同じ面に置く(離すと斜めから見たとき縁取りがずれてはみ出し、箱が浮いたように見える)。
-            // どちらも半透明で、重なりは描く順番(縁取り Q_PART → 色の板 Q_FILL)で決まるので、同じ面でもちらつかない
-            var edge = Prim(PrimitiveType.Quad, g, "Edge", matPadLine);
-            edge.transform.localPosition = new Vector3(0, 0, -0.0025f);
-            edge.transform.localScale = new Vector3(size.x + 0.0015f, size.y + 0.0015f, 1);
-            text = PText(g, "Label", Vector2.zero, fontSize, size, TextAlignmentOptions.Center);
-            text.transform.localPosition = new Vector3(0, 0, -0.006f);
-            text.enableWordWrapping = false;
-            text.text = label;
-            // 押せる所は四角全体(文字より手前に、少し厚めに)
-            var box = g.AddComponent<BoxCollider>();
-            box.center = new Vector3(0, 0, -0.003f);
-            box.size = new Vector3(size.x, size.y, 0.008f);
-            box.isTrigger = true;
-            return g;
+            var t = Text(parent, name, new Vector3(at.x, at.y, -0.005f), Quaternion.identity, size * 1.12f, rect);
+            if (segFont != null) { t.font = segFont; t.fontSharedMaterial = TextMat(segFont, "PadSeg", 0f, -1, 0.25f); }
+            t.alignment = align;
+            t.enableWordWrapping = false;
+            t.color = P_SEG;
+            return t;
         }
 
         static void PadKey(GameObject g, SqmPad pad, int code)
