@@ -1616,6 +1616,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             font = null;
             segFont = null;
             holoFont = null;
+            // 「フォントを作る」のウィンドウで作ったものがあれば、それを使う
+            font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(SqmFontMaker.SavedPath(SqmFontMaker.KIND_TEXT));
+            holoFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(SqmFontMaker.SavedPath(SqmFontMaker.KIND_BOLD));
+            segFont = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(SqmFontMaker.SavedPath(SqmFontMaker.KIND_SEG));
+            if (font != null && holoFont != null && segFont != null) return;
+            // 無いものは、名前で探す
             foreach (var guid in AssetDatabase.FindAssets("t:TMP_FontAsset"))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);

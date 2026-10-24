@@ -10,7 +10,9 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, '..')
-SOURCES = ['Runtime/Scripts/Table/SqmTable.cs', 'Runtime/Scripts/Pad/SqmPad.cs', 'Runtime/Scripts/Engine/SqmEngine.cs', 'Editor/SqmBuilder.cs']
+import glob
+# パッケージのスクリプトすべて(エディタの「フォントを作る」も、作成のときに同じように集め直す)
+SOURCES = [os.path.relpath(f, ROOT) for f in glob.glob(os.path.join(ROOT, 'Runtime', 'Scripts', '**', '*.cs'), recursive=True) + glob.glob(os.path.join(ROOT, 'Editor', '*.cs'))]
 STRING = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
 chars = set(chr(c) for c in range(0x20, 0x7f))
@@ -18,7 +20,7 @@ for f in SOURCES:
     src = open(os.path.join(ROOT, f), encoding='utf8').read()
     for m in STRING.finditer(src):
         chars.update(m.group(1))
-chars.update('、。・「」『』()（）〜ー…！？：%²³▶◀□■●○×＋−')
+chars.update('、。・「」『』()（）〜ー…！？：%²³▶◀□■●○×＋−━')
 chars.update('東南西北白發中風林火山萬筒索算一二三四五六七八九')
 # ユーザー名(VRChat の表示名)のために、ひらがな・カタカナ・全角英数記号はすべて入れる(漢字の名前は入らないことがある)
 chars.update(chr(c) for c in range(0x3041, 0x3097))
