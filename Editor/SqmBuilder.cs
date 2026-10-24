@@ -25,6 +25,192 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         static Material[] matFaces;
         static TMP_FontAsset font, segFont, holoFont;
 
+        // ================================================================ プレイヤーパネル(任意で置く部品)
+        const int PANEL_RT = 1536;   // カメラの絵の大きさ(正方形。壁に大きく置いても粗くならないように)
+
+        [MenuItem("Tools/平方麻雀/プレイヤーパネル(縦型)を置く")]
+        public static void BuildPanelPortrait() { BuildPanel(false); }
+
+        [MenuItem("Tools/平方麻雀/プレイヤーパネル(横型)を置く")]
+        public static void BuildPanelLandscape() { BuildPanel(true); }
+
+        /// <summary>
+        /// プレイヤーパネルを置く。カメラ(SqmPlayerCam)がシーンに無ければ一緒に置く(1台を全部のパネルで使う)。
+        /// 縦型は 0.9 × 1.2m(3:4)、横型は 1.6 × 0.9m(16:9)。カメラの正方形の絵から、真ん中を切り抜いて使う
+        /// </summary>
+        static void BuildPanel(bool landscape)
+        {
+            foreach (var type in new[] { typeof(SqmPlayerCam), typeof(SqmPlayerPanel) })
+            {
+                if (UdonSharpEditorUtility.GetUdonSharpProgramAsset(type) == null)
+                {
+                    EditorUtility.DisplayDialog("平方麻雀", type.Name + " の U# プログラムアセットが見つかりません。\nU# のコンパイルが終わってから、もう一度実行してください。", "OK");
+                    return;
+                }
+            }
+            var table = Object.FindObjectOfType<SqmTable>();
+            if (table == null)
+            {
+                EditorUtility.DisplayDialog("平方麻雀", "シーンに卓がありません。先に「卓をシーンに置く」を実行してください。", "OK");
+                return;
+            }
+            MakeAssets();
+            FindFont();
+            if (holoFont == null) holoFont = font;
+
+            // ---- カメラ(シーンに1台) ----
+            var cam = Object.FindObjectOfType<SqmPlayerCam>();
+            if (cam == null)
+            {
+                var cg = new GameObject("SquareMahjongPlayerCam");
+                Undo.RegisterCreatedObjectUndo(cg, "平方麻雀のプレイヤーパネル");
+                var c = cg.AddComponent<Camera>();
+                c.targetTexture = PanelRenderTexture();
+                c.fieldOfView = 28f;
+                c.nearClipPlane = 0.05f;
+                c.farClipPlane = 30f;
+                c.clearFlags = CameraClearFlags.Skybox;
+                // 鏡と同じレイヤー(自分のアバターは MirrorReflection の方に頭がある)。PlayerLocal・UI は映さない
+                c.cullingMask = (1 << 0) | (1 << 1) | (1 << 4) | (1 << 9) | (1 << 11) | (1 << 13) | (1 << 14) | (1 << 17) | (1 << 18);
+                c.stereoTargetEye = StereoTargetEyeMask.None;
+                c.allowHDR = false;
+                c.depth = -20;
+                c.enabled = false;
+                cam = UdonSharpUndo.AddComponent<SqmPlayerCam>(cg);
+                cam.cam = c;
+                cam.panels = new SqmPlayerPanel[0];
+            }
+            cam.table = table;
+
+            // ---- パネル ----
+            float W = landscape ? 1.6f : 0.9f, H = landscape ? 0.9f : 1.2f;
+            var root = new GameObject(landscape ? "SquareMahjongPanel_Landscape" : "SquareMahjongPanel_Portrait");
+            Undo.RegisterCreatedObjectUndo(root, "平方麻雀のプレイヤーパネル");
+            root.transform.position = table.transform.position + new Vector3(0, 1.6f, 2.5f);
+            var panel = UdonSharpUndo.AddComponent<SqmPlayerPanel>(root);
+            panel.table = table;
+            panel.cam = cam;
+            var view = Group(root, "View");
+            panel.view = view;
+            // 枠
+            var frame = Prim(PrimitiveType.Quad, view, "Frame", HoloMat("PanelFrame", new Color(0.35f, 0.85f, 1f, 1f), Q_BACK));
+            frame.transform.localPosition = new Vector3(0, 0, 0.004f);
+            frame.transform.localScale = new Vector3(W + 0.02f, H + 0.02f, 1);
+            // 映像(正方形の絵の真ん中を、パネルの形に切り抜く)
+            var vmat = ShaderMat(landscape ? "PanelVideoLandscape" : "PanelVideoPortrait", "Unlit/Texture", Color.white, null);
+            vmat.mainTexture = PanelRenderTexture();
+            if (landscape) { vmat.mainTextureScale = new Vector2(1f, 0.5625f); vmat.mainTextureOffset = new Vector2(0f, 0.21875f); }
+            else { vmat.mainTextureScale = new Vector2(0.75f, 1f); vmat.mainTextureOffset = new Vector2(0.125f, 0f); }
+            EditorUtility.SetDirty(vmat);
+            var video = Prim(PrimitiveType.Quad, view, "Video", vmat);
+            video.transform.localPosition = new Vector3(0, 0, 0.002f);
+            video.transform.localScale = new Vector3(W, H, 1);
+            panel.video = video;
+            // NPC の番・試合が無いとき
+            var cover = Group(view, "Cover");
+            var cq = Prim(PrimitiveType.Quad, cover, "Back", Mat("PanelCover", new Color(0.03f, 0.06f, 0.09f), null));
+            cq.transform.localPosition = new Vector3(0, 0, 0.001f);
+            cq.transform.localScale = new Vector3(W, H, 1);
+            panel.coverText = PanelText(cover, "Text", new Vector2(0, 0.02f), landscape ? 1.1f : 0.9f, new Vector2(W - 0.1f, 0.3f), TextAlignmentOptions.Center);
+            panel.coverText.color = new Color(0.45f, 0.85f, 1f);
+            cover.SetActive(false);
+            // 斜めの半透明の帯と文字(どんな映像の上でも読めるように)
+            var band = HoloMat("PanelBand", new Color(0.02f, 0.04f, 0.07f, 0.66f), Q_FILL);
+            var accent = HoloMat("PanelAccent", new Color(0.35f, 0.85f, 1f, 0.95f), Q_FILL + 1);
+            float x0 = -W / 2, x1 = W / 2, y0 = -H / 2, y1 = H / 2;
+            if (landscape)
+            {
+                // 右下にまとめて: 左下から右上へ上がる帯
+                Quad4(view, "Band", new[] { new Vector2(-0.05f, y0), new Vector2(x1, y0), new Vector2(x1, 0.2f), new Vector2(0.1f, -0.15f) }, band, "PanelBandL", -0.001f);
+                Quad4(view, "Accent", new[] { new Vector2(0.1f, -0.15f), new Vector2(x1, 0.2f), new Vector2(x1, 0.212f), new Vector2(0.1f, -0.138f) }, accent, "PanelAccentL", -0.0015f);
+                panel.nameText = PanelText(view, "Name", new Vector2(x1 - 0.36f, 0.02f), 0.75f, new Vector2(0.68f, 0.12f), TextAlignmentOptions.Right);
+                panel.windText = PanelText(view, "Wind", new Vector2(x1 - 0.36f, -0.08f), 0.5f, new Vector2(0.68f, 0.08f), TextAlignmentOptions.Right);
+                panel.line1Text = PanelText(view, "Line1", new Vector2(x1 - 0.36f, -0.22f), 0.55f, new Vector2(0.68f, 0.09f), TextAlignmentOptions.Right);
+                panel.line2Text = PanelText(view, "Line2", new Vector2(x1 - 0.36f, -0.32f), 0.5f, new Vector2(0.68f, 0.08f), TextAlignmentOptions.Right);
+            }
+            else
+            {
+                // 上: 右に名前と席風 / 下: 左にセット情報。帯はどちらも斜めに切る
+                Quad4(view, "BandTop", new[] { new Vector2(x0, y1 - 0.14f), new Vector2(x1, y1 - 0.26f), new Vector2(x1, y1), new Vector2(x0, y1) }, band, "PanelBandPT", -0.001f);
+                Quad4(view, "AccentTop", new[] { new Vector2(x0, y1 - 0.152f), new Vector2(x1, y1 - 0.272f), new Vector2(x1, y1 - 0.26f), new Vector2(x0, y1 - 0.14f) }, accent, "PanelAccentPT", -0.0015f);
+                Quad4(view, "BandBottom", new[] { new Vector2(x0, y0), new Vector2(x1, y0), new Vector2(x1, y0 + 0.16f), new Vector2(x0, y0 + 0.28f) }, band, "PanelBandPB", -0.001f);
+                Quad4(view, "AccentBottom", new[] { new Vector2(x0, y0 + 0.28f), new Vector2(x1, y0 + 0.16f), new Vector2(x1, y0 + 0.172f), new Vector2(x0, y0 + 0.292f) }, accent, "PanelAccentPB", -0.0015f);
+                panel.nameText = PanelText(view, "Name", new Vector2(x1 - 0.42f, y1 - 0.06f), 0.6f, new Vector2(0.8f, 0.1f), TextAlignmentOptions.Right);
+                panel.windText = PanelText(view, "Wind", new Vector2(x1 - 0.42f, y1 - 0.14f), 0.42f, new Vector2(0.8f, 0.07f), TextAlignmentOptions.Right);
+                panel.line1Text = PanelText(view, "Line1", new Vector2(x0 + 0.42f, y0 + 0.15f), 0.55f, new Vector2(0.8f, 0.09f), TextAlignmentOptions.Left);
+                panel.line2Text = PanelText(view, "Line2", new Vector2(x0 + 0.42f, y0 + 0.06f), 0.42f, new Vector2(0.8f, 0.07f), TextAlignmentOptions.Left);
+            }
+            // カメラに、このパネルを足す
+            var list = new System.Collections.Generic.List<SqmPlayerPanel>();
+            if (cam.panels != null) foreach (var p in cam.panels) if (p != null) list.Add(p);
+            list.Add(panel);
+            cam.panels = list.ToArray();
+            UdonSharpEditorUtility.CopyProxyToUdon(cam);
+            UdonSharpEditorUtility.CopyProxyToUdon(panel);
+            Selection.activeGameObject = root;
+            EditorUtility.DisplayDialog("平方麻雀", (landscape ? "横型" : "縦型") + "のプレイヤーパネルを置きました。\n好きな位置・大きさに動かしてください(Transform の Scale で拡大できます)。\n\n自分の画面だけで切るには、パネルの Udon イベント PanelOff / PanelOn / PanelToggle を呼びます(LuraSwitch など)。", "OK");
+        }
+
+        static RenderTexture PanelRenderTexture()
+        {
+            string path = GEN + "/PlayerPanelCam.renderTexture";
+            var rt = AssetDatabase.LoadAssetAtPath<RenderTexture>(path);
+            if (rt != null) return rt;
+            rt = new RenderTexture(PANEL_RT, PANEL_RT, 24, RenderTextureFormat.ARGB32);
+            rt.antiAliasing = 2;
+            rt.useMipMap = false;
+            AssetDatabase.CreateAsset(rt, path);
+            return rt;
+        }
+
+        /// <summary>パネルの文字(太字のホロの字。縁取りで、どんな映像の上でも読めるように)</summary>
+        static TextMeshPro PanelText(GameObject parent, string name, Vector2 at, float size, Vector2 rect, TextAlignmentOptions align)
+        {
+            var t = Text(parent, name, new Vector3(at.x, at.y, -0.003f), Quaternion.identity, size, rect);
+            var pf = holoFont != null ? holoFont : font;
+            if (pf != null)
+            {
+                t.font = pf;
+                var m = TextMat(pf, "PanelText", 0.1f, -1, 0f);
+                if (m != null)
+                {
+                    m.EnableKeyword("OUTLINE_ON");
+                    m.SetFloat("_OutlineWidth", 0.18f);
+                    m.SetColor("_OutlineColor", new Color(0, 0, 0, 0.85f));
+                    EditorUtility.SetDirty(m);
+                }
+                t.fontSharedMaterial = m;
+            }
+            t.color = Color.white;
+            t.alignment = align;
+            t.enableWordWrapping = false;
+            t.overflowMode = TextOverflowModes.Ellipsis;
+            return t;
+        }
+
+        /// <summary>4つの点で囲んだ板(-z 向き。点は反時計回りに並べる)</summary>
+        static GameObject Quad4(GameObject parent, string name, Vector2[] p, Material mat, string meshName, float z)
+        {
+            string path = GEN + "/" + meshName + ".asset";
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            bool isNew = mesh == null;
+            if (isNew) mesh = new Mesh();
+            mesh.Clear();
+            mesh.vertices = new Vector3[] { p[0], p[1], p[2], p[3] };
+            mesh.triangles = new[] { 0, 3, 2, 0, 2, 1 };
+            mesh.uv = new[] { Vector2.zero, Vector2.right, Vector2.one, Vector2.up };
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            if (isNew) AssetDatabase.CreateAsset(mesh, path);
+            else EditorUtility.SetDirty(mesh);
+            var g = new GameObject(name);
+            g.transform.SetParent(parent.transform, false);
+            g.transform.localPosition = new Vector3(0, 0, z);
+            g.AddComponent<MeshFilter>().sharedMesh = mesh;
+            g.AddComponent<MeshRenderer>().sharedMaterial = mat;
+            return g;
+        }
+
         [MenuItem("Tools/平方麻雀/卓をシーンに置く")]
         public static void Build()
         {

@@ -2231,6 +2231,86 @@ namespace MonakaLabo.SquareMahjong
             if (holoLast != null) for (int k = 0; k < holoLast.Length; k++) HoloTile(holoLast[k], LastDiscardTile(k));
         }
 
+        // ---- プレイヤーパネル(SqmPlayerPanel・SqmPlayerCam)から使うもの ----
+        /// <summary>
+        /// パネルに映す卓の席(-1 = いない)。ふだんは手番の人。和了の画面は和了った人、途中流局は原因の人
+        /// (九種九牌・十四種十四牌は宣言した人、それ以外は最後に打牌した人 = 四風連打の4人目・四家立直の4人目など)、
+        /// 荒牌流局は最後に打牌した人、終局はトップ
+        /// </summary>
+        public int SpotlightSeat()
+        {
+            if (lMatch == 0) return -1;
+            int page = CurrentPage();
+            if (Std())
+            {
+                SqmStdEngine e = stdEngine;
+                if (page >= 0 && page < 99) return StdTableSeat(e.winSeat[StdPageWin(page)]);
+                if (page == 99)
+                {
+                    if (e.resType == SqmStdEngine.RES_ABORT && e.resReason == SqmStdEngine.AB_KYUSHU) return StdTableSeat(e.turn);
+                    return StdTableSeat(e.lastDiscSeat);
+                }
+                if (page == 100) return StdTableSeat(e.mrSeat[0]);
+                return StdTableSeat(e.turn);
+            }
+            if (page >= 0 && page < 99) return engine.winSeat[SquarePageWin(page)];
+            if (page == 99)
+            {
+                if (engine.resType == SqmEngine.RES_ABORT && engine.resReason == SqmEngine.REASON_KYUSHU) return engine.resSeat;
+                return engine.lastDiscardSeat;
+            }
+            if (page == 100) return engine.mrSeat[0];
+            return engine.turn;
+        }
+
+        /// <summary>平方麻雀: 和了のページ page に出す和了の番号(親から巡る順。RenderWin と同じ)</summary>
+        private int SquarePageWin(int page)
+        {
+            int n = sEvtWinTo - sEvtWinFrom;
+            int best = -1, bestKey = 1000;
+            int[] used = new int[16];
+            int k = 0;
+            // page 番目に小さい「親からの距離」の和了を探す
+            for (int round = 0; round <= page && round < n; round++)
+            {
+                best = -1; bestKey = 1000;
+                for (int w = sEvtWinFrom; w < sEvtWinTo; w++)
+                {
+                    bool taken = false;
+                    for (int u = 0; u < k; u++) if (used[u] == w) taken = true;
+                    if (taken) continue;
+                    int key = (engine.winSeat[w] - engine.dealer + NP) % NP;
+                    if (key < bestKey) { bestKey = key; best = w; }
+                }
+                if (best < 0) break;
+                used[k++] = best;
+            }
+            return best >= 0 ? best : sEvtWinFrom;
+        }
+
+        /// <summary>パネルの席風「東家」</summary>
+        public string PanelWind(int s)
+        {
+            if (Std()) { int es = StdEngineSeat(s); return es >= 0 ? stdView.WindName(stdEngine.SeatWind(es)) + "家" : ""; }
+            return lMatch > 0 ? WindName(engine.SeatWindOf(s, engine.dealer)) + "家" : "";
+        }
+
+        /// <summary>パネルのセット情報の1行目: 「平方戦」「四麻 東風戦」「三麻 半荘戦」</summary>
+        public string PanelLine1()
+        {
+            if (lMatch == 0) return "";
+            if (Std()) return (lMode == MODE_THREE ? "三麻 " : "四麻 ") + MatchTypeName();
+            return MatchTypeName();
+        }
+
+        /// <summary>パネルのセット情報の2行目: 「東3局 1本場」</summary>
+        public string PanelLine2()
+        {
+            if (lMatch == 0) return "";
+            if (Std()) return stdView.RoundName() + " " + stdEngine.honba + "本場";
+            return "東" + engine.kyoku + "局 " + engine.honba + "本場";
+        }
+
         /// <summary>試合の種類: 平方戦・東風戦・半荘戦</summary>
         public string MatchTypeName()
         {
