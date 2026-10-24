@@ -28,6 +28,30 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         // ================================================================ プレイヤーパネル(任意で置く部品)
         const int PANEL_RT = 1536;   // カメラの絵の大きさ(正方形。壁に大きく置いても粗くならないように)
 
+        /// <summary>
+        /// 平方麻雀の見た目の部品(卓・パッド・牌・ホロ・プレイヤーパネル)のレイヤー。プレイヤーパネルのカメラはこれを映さない。
+        /// VRChat のユーザー用のレイヤー(22〜31)の1つ。ワールドでほかに使っているなら、ここを変える
+        /// </summary>
+        public const int SQM_LAYER = 22;
+
+        /// <summary>
+        /// root の下の見た目の部品(Renderer を持ち、当たり判定を持たないもの)を SQM_LAYER にする。
+        /// 押せる所(当たり判定・ビームで押す UI)は、VRChat の Interact やビームが効くよう今のレイヤーのまま。
+        /// 縁の文字の写し場(LabelStudio)は、写すカメラがそのレイヤーを見ているので移さない
+        /// </summary>
+        static void SetVisualLayer(GameObject root)
+        {
+            foreach (var r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                var g = r.gameObject;
+                if (g.GetComponent<Collider>() != null) continue;
+                bool studio = false;
+                for (var t = g.transform; t != null && t != root.transform; t = t.parent) if (t.name == "LabelStudio") { studio = true; break; }
+                if (studio) continue;
+                g.layer = SQM_LAYER;
+            }
+        }
+
         [MenuItem("Tools/平方麻雀/プレイヤーパネル(縦型)を置く")]
         public static void BuildPanelPortrait() { BuildPanel(false); }
 
@@ -140,6 +164,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 panel.line1Text = PanelText(view, "Line1", new Vector2(x0 + 0.42f, y0 + 0.15f), 0.55f, new Vector2(0.8f, 0.09f), TextAlignmentOptions.Left);
                 panel.line2Text = PanelText(view, "Line2", new Vector2(x0 + 0.42f, y0 + 0.06f), 0.42f, new Vector2(0.8f, 0.07f), TextAlignmentOptions.Left);
             }
+            SetVisualLayer(root);   // パネル自身もカメラに映さない(合わせ鏡にならないように)
             // カメラに、このパネルを足す
             var list = new System.Collections.Generic.List<SqmPlayerPanel>();
             if (cam.panels != null) foreach (var p in cam.panels) if (p != null) list.Add(p);
@@ -384,6 +409,9 @@ namespace MonakaLabo.SquareMahjong.EditorTools
 
             // ---- 手元のパッド(席ごとの板 + 中身1組)。席に着く・試合を始める・打つ・鳴く・確認はパッドで ----
             BuildPads(root, table);
+
+            // 見た目の部品は、プレイヤーパネルのカメラに映さないレイヤーへ(VRChat のカメラ・ふつうの視点には映る)
+            SetVisualLayer(root);
 
             // U# の部品に入れた値を、裏の UdonBehaviour に写す
             foreach (var b in root.GetComponentsInChildren<UdonSharp.UdonSharpBehaviour>(true)) { UdonSharpEditorUtility.CopyProxyToUdon(b); EditorUtility.SetDirty(b); }
