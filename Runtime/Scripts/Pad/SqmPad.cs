@@ -123,7 +123,7 @@ namespace MonakaLabo.SquareMahjong
         public GameObject debugRoot;
         public TextMeshPro dbgSpeed, dbgRig, dbgRigNote;
 
-        public const string VERSION = "0.6.0";
+        public const string VERSION = "0.7.0";
         public const string CREDIT = "Made by SavannaMonaka with Claude";
         public const int TAB_GAME = 0, TAB_SCORE = 1, TAB_RULE = 2, TAB_SETTING = 3, TAB_DEBUG = 4;
         public const int ROWS = 7;
