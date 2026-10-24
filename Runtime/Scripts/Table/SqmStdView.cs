@@ -656,24 +656,29 @@ namespace MonakaLabo.SquareMahjong
             return null;
         }
 
-        /// <summary>役を3列に並べる(役満でないとき)</summary>
+        /// <summary>役を2列に並べる(役満でないとき。名前は左、翻は右)</summary>
         private void RenderYakuCols(int w, int yn)
         {
             SqmTable t = table;
-            int per = (yn + 2) / 3;
+            int per = (yn + 1) / 2;
             if (per < 1) per = 1;
-            string c0 = "", c1 = "", c2 = "";
+            string n0 = "", h0 = "", n1 = "", h1 = "";
             for (int k = 0; k < yn; k++)
             {
                 int id = engine.winYakuId[w * SqmStdEngine.MAXYAKU + k];
                 int han = engine.winYakuHan[w * SqmStdEngine.MAXYAKU + k];
                 // 役満がここに来るのは、卓を置き直す前(役満の欄が無い)ときだけ
                 string v = id >= 40 ? (han >= 2 ? "ダブル役満" : "役満") : han + "翻";
-                string line = engine.YakuName(id) + "<pos=78%>" + v + "\n";
-                if (k < per) c0 += line; else if (k < per * 2) c1 += line; else c2 += line;
+                if (k < per) { n0 += engine.YakuName(id) + "\n"; h0 += v + "\n"; }
+                else { n1 += engine.YakuName(id) + "\n"; h1 += v + "\n"; }
             }
-            t.resYaku0.text = c0; t.resYaku1.text = c1; t.resYaku2.text = c2;
+            t.resYaku0.text = n0; t.resYakuH0.text = h0; t.resYaku1.text = n1; t.resYakuH1.text = h1;
         }
+
+        private string InfoText() { return "供託 " + engine.kyotaku + "本　残り " + engine.LiveLeft() + "枚"; }
+
+        /// <summary>表の行(親から順): 席風・名前</summary>
+        private string RowName(int es) { return WindName(engine.SeatWind(es)) + "<pos=12%>" + table.ResName(TS(es)); }
 
         /// <summary>和了の画面(w = engine.win* の番号)</summary>
         public void RenderWin(int w)
@@ -681,24 +686,28 @@ namespace MonakaLabo.SquareMahjong
             SqmTable t = table;
             int es = engine.winSeat[w];
             bool nagashi = engine.winTile[w] < 0;
-            t.resTitle.text = (nagashi ? "流し満貫　" : "和了　") + RoundName();
+            t.resTitle.text = (nagashi ? "流し満貫　" : "和了　") + t.ResSub(RoundName() + "　" + engine.honba + "本場");
+            t.resInfo.text = InfoText();
             string kind = engine.winFrom[w] < 0 ? "ツモ" : "ロン";
             string head = SeatNameEs(es) + (nagashi ? "" : " <color=#ff5a48>" + kind + "</color>");
-            if (engine.winFrom[w] >= 0) head += "  <size=55%>放銃：" + SeatNameEs(engine.winFrom[w]) + "</size>";
-            if (engine.winPao[w] >= 0) head += "  <size=55%>責任払い：" + SeatNameEs(engine.winPao[w]) + "</size>";
+            if (engine.winFrom[w] >= 0) head += "  <size=72%>放銃：" + SeatNameEs(engine.winFrom[w]) + "</size>";
+            if (engine.winPao[w] >= 0) head += "  <size=72%>責任払い：" + SeatNameEs(engine.winPao[w]) + "</size>";
             t.resHead.text = head;
             ShowHand(es, nagashi ? -1 : engine.winTile[w], engine.winFrom[w] >= 0);
             t.resDoraLabel.text = "ドラ";
             for (int i = 0; i < t.resDora.Length && i < engine.doraN; i++) t.HoloTile(t.resDora[i], Face(engine.DoraIndicator(i)));
+            int nUra = 0;
             if (engine.riichiOn[es])
             {
                 t.resUraLabel.text = "裏ドラ";
                 for (int i = 0; i < t.resUra.Length && i < engine.doraN; i++) t.HoloTile(t.resUra[i], Face(engine.UraIndicator(i)));
+                nUra = engine.doraN;
             }
+            t.ResDoraLayout(engine.doraN, nUra);
             int yn = engine.winYakuN[w];
             if (engine.winYakuman[w] > 0 && t.resYakuman != null)
             {
-                // 役満は、3列を使わず横いっぱいに大きく(「ダブル役満」が折り返さないように)
+                // 役満は、2列を使わず左の幅いっぱいに大きく(「ダブル役満」が折り返さないように)
                 string ym = "";
                 for (int k = 0; k < yn; k++)
                 {
@@ -707,32 +716,63 @@ namespace MonakaLabo.SquareMahjong
                     ym += engine.YakuName(id) + "<pos=58%>" + (han >= 2 ? "ダブル役満" : "役満") + "\n";
                 }
                 t.resYakuman.text = ym;
-                t.resYaku0.text = ""; t.resYaku1.text = ""; t.resYaku2.text = "";
             }
             else RenderYakuCols(w, yn);
             int lim = engine.winLimit[w];
             string ln = LimitName(lim, engine.winYakuman[w]);
-            if (lim == SqmStdEngine.LIM_YAKUMAN) t.resHan.text = ln;
-            else t.resHan.text = engine.winHan[w] + "<size=60%>翻</size>" + (engine.winFu[w] > 0 && lim == SqmStdEngine.LIM_NONE ? " " + engine.winFu[w] + "<size=60%>符</size>" : "") + " " + ln;
+            string hs = lim == SqmStdEngine.LIM_YAKUMAN ? ln
+                : engine.winHan[w] + "<size=60%>翻</size>" + (engine.winFu[w] > 0 && lim == SqmStdEngine.LIM_NONE ? " " + engine.winFu[w] + "<size=60%>符</size>" : "") + " " + ln;
+            t.resPoints.text = hs + "　" + engine.winPoints[w].ToString("N0") + "<size=60%>点</size>";
             t.resCalc.text = (es == engine.dealer ? "親" : "子") + (engine.winFrom[w] >= 0 ? " ロン" : " ツモ");
-            t.resPoints.text = engine.winPoints[w].ToString("N0") + "<size=60%>点</size>";
+            // 右の表: 親から順に、この和了での増減と、そのあとの点数(後ろの和了の分を引いて求める)
+            int hi = -1;
+            for (int k = 0; k < engine.NP; k++)
+            {
+                int p = (engine.dealer + k) % engine.NP;
+                int after = engine.score[p];
+                for (int v = w + 1; v < engine.winsN; v++) after -= engine.winDelta[v * SqmStdEngine.MAXP + p];
+                t.rbL[k] = RowName(p);
+                t.rbR[k] = t.DeltaFmt(engine.winDelta[w * SqmStdEngine.MAXP + p]);
+                t.rbR[8 + k] = t.ScoreFmt(after);
+                if (p == es) hi = k;
+            }
+            t.ResSideTable(engine.NP, hi);
         }
 
         public void RenderDraw()
         {
             SqmTable t = table;
+            t.resInfo.text = InfoText();
+            for (int k = 0; k < engine.NP; k++)
+            {
+                int p = (engine.dealer + k) % engine.NP;
+                t.rbL[k] = RowName(p);
+                t.rbR[k] = t.DeltaFmt(engine.resDelta[p]);
+                t.rbR[8 + k] = t.ScoreFmt(engine.score[p]);
+            }
             if (engine.resType == SqmStdEngine.RES_ABORT)
             {
-                t.resTitle.text = "途中流局";
                 int r = engine.resReason;
                 string name = r == SqmStdEngine.AB_KYUSHU ? "九種九牌" : r == SqmStdEngine.AB_SUUFUU ? "四風連打" : r == SqmStdEngine.AB_SUUCHA ? "四家立直"
                     : r == SqmStdEngine.AB_SUUKAN ? "四槓散了" : "三家和";
-                t.resHead.text = name;
-                if (r == SqmStdEngine.AB_KYUSHU) { ShowHand(engine.turn, -1, false); t.resHead.text = SeatNameEs(engine.turn) + " 九種九牌"; }
-                t.resBody.text = "\n\nこの局は流局となります(親は続けて、本場が1つ増えます)。";
+                t.resTitle.text = "途中流局　" + t.ResSub(RoundName() + "　" + name);
+                if (r == SqmStdEngine.AB_KYUSHU)
+                {
+                    t.resHead.text = SeatNameEs(engine.turn);
+                    int kinds = ShowHandYaochu(engine.turn);
+                    t.resPoints.text = "么九牌 <size=130%>" + kinds + "</size>種";
+                    t.resBody.text = "九種以上の么九牌がそろったため、この局は流局となります。";
+                }
+                else
+                {
+                    t.ResBodyAtHand();
+                    t.resBody.text = "この局は流局となります。";
+                }
+                t.ResTwoColTable(engine.NP, false);
                 return;
             }
-            t.resTitle.text = "流局";
+            t.resTitle.text = "流局　" + t.ResSub(RoundName());
+            t.ResBodyAtHand();
             int tn = 0;
             string list = "";
             for (int es = 0; es < engine.NP; es++)
@@ -742,23 +782,51 @@ namespace MonakaLabo.SquareMahjong
                 tn++;
             }
             t.resHead.text = tn == 0 ? "全員ノーテン" : tn == engine.NP ? "全員聴牌" : "聴牌 " + tn + "名";
-            string body = tn > 0 ? "\n聴牌: " + list : "";
-            if (engine.resReason == SqmStdEngine.EX_NAGASHI) body += "\n流し満貫があったため、聴牌料の支払いはありません。";
-            else if (tn > 0 && tn < engine.NP) body += "\n聴牌料 " + engine.rNotenTotal.ToString("N0") + "点";
+            string body = tn > 0 ? "聴牌：" + list : "";
+            if (engine.resReason == SqmStdEngine.EX_NAGASHI) body = "流し満貫があったため、聴牌料の支払いはありません。";
+            else if (tn > 0 && tn < engine.NP) t.resPoints.text = "聴牌料 " + engine.rNotenTotal.ToString("N0") + "<size=60%>点</size>";
             t.resBody.text = body;
+            t.ResTwoColTable(engine.NP, true);
         }
 
         public void RenderFinal()
         {
             SqmTable t = table;
-            t.resTitle.text = "終局　" + t.MatchTypeName();
-            t.CenterRanks(true);
-            string l = "";
-            string[] ord = new string[] { "1st.", "2nd.", "3rd.", "4th." };
+            t.resTitle.text = "終局　" + t.ResSub(t.MatchTypeName());
+            t.resInfo.text = "セット " + t.SetClock();
             for (int i = 0; i < engine.NP; i++)
-                l += ord[i] + "<pos=16%>" + table.SeatNameOf(TS(engine.mrSeat[i])) + "<pos=66%>" + engine.mrScore[i].ToString("N0") + "\n";
-            t.resRankL.text = l;
-            t.resRankR.text = "";
+            {
+                int es = engine.mrSeat[i];
+                t.rbL[i] = t.RankName(i) + "<pos=33%>" + t.ResName(TS(es));
+                t.rbR[i] = t.ScoreFmt(engine.mrScore[i]);
+                t.rbR[8 + i] = t.UmaFmt(engine.rUma[i]);
+                t.rbR[16 + i] = t.Final10Fmt(engine.mrFinal10[i]);
+                t.rbR[24 + i] = t.WinCount(es);
+                t.rbR[32 + i] = t.DealCount(es);
+            }
+            t.ResFinalTable(engine.NP);
+        }
+
+        /// <summary>九種九牌の手牌: 么九牌は種類ごとに1枚目へ黄色の枠。么九牌の種類の数を返す</summary>
+        private int ShowHandYaochu(int es)
+        {
+            SqmTable t = table;
+            int n = 0, kinds = 0;
+            for (int k = 0; k < SqmStdEngine.NK; k++)
+            {
+                bool yk = engine.IsYaochuK(k);
+                bool marked = false;
+                for (int v = 0; v < 2; v++)
+                {
+                    int code = v == 0 ? k : (k >= 9 && k < 27 && k % 9 == 4 ? SqmStdEngine.RED0 + k / 9 : -1);
+                    if (code < 0) continue;
+                    int cnt = engine.handC[es * NC + code];
+                    for (int c = 0; c < cnt; c++) { t.ResTileC(n++, Face(code), yk && !marked, true); marked = true; }
+                }
+                if (yk && marked) kinds++;
+            }
+            t.ResHandCenter(n);
+            return kinds;
         }
 
         /// <summary>結果の手牌: 門前を並べ、和了牌は右に離して赤枠、副露は後ろに</summary>
@@ -787,6 +855,7 @@ namespace MonakaLabo.SquareMahjong
                 int cnt = (ty == SqmStdEngine.M_CHI || ty == SqmStdEngine.M_PON) ? 3 : 4;
                 for (int j = 0; j < cnt; j++) t.ResTile(n++, Face(MeldTile(mi, j, -1)), false);
             }
+            t.ResHandCenter(n);
         }
 
         // ================================================================ ホロ

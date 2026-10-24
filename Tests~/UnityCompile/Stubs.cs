@@ -52,7 +52,7 @@ namespace TMPro
         public System.Collections.Generic.List<TMP_Character> characterTable;
         public System.Collections.Generic.List<TMP_FontAsset> fallbackFontAssetTable;
     }
-    public enum TextAlignmentOptions { Center, Right, Left, TopLeft }
+    public enum TextAlignmentOptions { Center, Right, Left, TopLeft, TopRight }
     public enum TextOverflowModes { Overflow, Ellipsis }
     public class TextMeshPro : UnityEngine.MonoBehaviour
     {

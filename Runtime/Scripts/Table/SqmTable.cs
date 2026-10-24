@@ -72,6 +72,10 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro holoRound, holoLeft, holoSticks, holoSetTime, holoKyokuTime, holoCenter;
         public TextMeshPro holoMatchType;    // 試合の種類(平方戦・東風戦・半荘戦)
         public GameObject holoRonLabel;      // 「ロン牌」の見出し(普通の麻雀では隠す)
+        public GameObject holoMid;           // 真ん中の列(普通の麻雀では半行下げる)
+        public GameObject holoTurnRoot;      // 手番(見出し・席風・名前・秒)
+        public TextMeshPro holoTurnText;
+        public GameObject holoTimers;        // セット・現局の時間(普通の麻雀では1行上げる)
         public GameObject holoLastRoot;      // 直前の打牌(見出し・席風・牌)。平方はロン牌の下、普通の麻雀はドラ表示牌の下
         public TextMeshPro holoLastWind;
         public MeshRenderer[] holoLast;      // 2(平方は2枚、普通の麻雀は1枚)
@@ -89,11 +93,17 @@ namespace MonakaLabo.SquareMahjong
         public Material holoMatLine, holoMatRed, holoMatYellow, holoMatFill, holoMatTurn;
         // 結果の画面(和了・流局・終局)。出ているあいだは holoPlay を隠す
         public GameObject resultRoot;
-        public TextMeshPro resTitle, resHead, resYaku0, resYaku1, resYaku2, resHan, resCalc, resPoints, resBody, resRankL, resRankR, resFoot, resDoraLabel, resUraLabel;
-        public TextMeshPro resYakuman;       // 役満の役(3列を使わず、横いっぱいに大きく)
+        public TextMeshPro resTitle, resInfo, resHead, resPoints, resCalc, resBody, resFoot, resDoraLabel, resUraLabel;
+        public TextMeshPro resYaku0, resYaku1, resYakuH0, resYakuH1;   // 役の2列(名前・翻)
+        public TextMeshPro resYakuman;       // 役満の役(2列を使わず、左の幅いっぱいに大きく)
         public MeshRenderer[] resHand;       // 手牌 36
-        public GameObject[] resHandMark;     // 和了牌の赤枠 36
+        public GameObject[] resHandMark;     // 和了牌の赤枠・么九牌の黄色の枠 36
+        public MeshRenderer[] resHandMarkR;  // その枠の色を変える所
         public MeshRenderer[] resDora, resUra;   // 18 ずつ
+        public GameObject resUraRoot;        // 裏ドラ(見出しと牌)。ドラの枚数で置き場所を変える
+        public GameObject resSubLine, resTableLine, resRowHi;   // 手牌の下の区切り・和了の表の左の線・明るくする行
+        public TextMeshPro[] resCellL;       // 席ごとの表の左揃えのマス [行]
+        public TextMeshPro[] resCellR;       // 席ごとの表の右揃えのマス [行 * RES_RC + 列]
         public GameObject confirmButton;     // 「確認」
         public AudioSource sfx;              // 効果音
         public AudioClip[] sfxClips;         // SFX_* の順
@@ -692,7 +702,7 @@ namespace MonakaLabo.SquareMahjong
             DebugAutoPlay();
             if (dirty) { dirty = false; Refresh(); CheckKyokuBanner(); }
             clockWait -= Time.deltaTime;
-            if (clockWait <= 0) { clockWait = 0.1f; RefreshHoloTime(); }
+            if (clockWait <= 0) { clockWait = 0.1f; RefreshHoloTime(); RefreshHoloTurn(); }
         }
 
         private float clockWait;
@@ -1834,6 +1844,9 @@ namespace MonakaLabo.SquareMahjong
             sEvtTail = over && engine.resType != SqmEngine.RES_WIN;
             sWinsSeen = engine.winsN;
             sWinsKyoku = engine.kyokuSeq;
+            if (scoreLog != null)
+                for (int w = sEvtWinFrom; w < sEvtWinTo; w++)
+                    scoreLog.HostCount(lMatch, engine.winSeat[w], engine.winType[w] == SqmEngine.WT_TSUMO ? -1 : engine.winFrom[w]);
             if (over) { sKyokuOverSeen = engine.kyokuSeq; HostLogScores(); }
             else if (newWin) HostLogScores();   // 平方戦: 先発の和了(点数はその場で払われる)も1点にする
             sPageN = (sEvtWinTo - sEvtWinFrom) + (sEvtTail ? 1 : 0);
@@ -1851,6 +1864,7 @@ namespace MonakaLabo.SquareMahjong
             SqmStdEngine e = stdEngine;
             if (e.phase != SqmStdEngine.PH_KYOKU_OVER || sKyokuOverSeen == e.kyokuSeq) return false;
             sKyokuOverSeen = e.kyokuSeq;
+            if (scoreLog != null) for (int w = 0; w < e.winsN; w++) scoreLog.HostCount(lMatch, e.winSeat[w], e.winFrom[w]);
             HostLogScores();
             sWinsKyoku = e.kyokuSeq;
             sEvtWinFrom = 0;
@@ -2049,9 +2063,14 @@ namespace MonakaLabo.SquareMahjong
             for (int i = 0; i < resHand.Length; i++) ResTile(i, -1, false);
             for (int i = 0; i < resDora.Length; i++) HoloTile(resDora[i], -1);
             for (int i = 0; i < resUra.Length; i++) HoloTile(resUra[i], -1);
-            resHead.text = ""; resYaku0.text = ""; resYaku1.text = ""; resYaku2.text = ""; resHan.text = ""; resCalc.text = ""; resPoints.text = "";
+            resInfo.text = ""; resHead.text = ""; resPoints.text = ""; resCalc.text = ""; resBody.text = "";
+            resYaku0.text = ""; resYaku1.text = ""; resYakuH0.text = ""; resYakuH1.text = "";
             if (resYakuman != null) resYakuman.text = "";
-            resBody.text = ""; resRankL.text = ""; resRankR.text = ""; resDoraLabel.text = ""; resUraLabel.text = "";
+            resDoraLabel.text = ""; resUraLabel.text = "";
+            ResClearCells();
+            ResSetXY(resSubLine, 0, RES_SUB_Y);
+            ResSetXY(resBody.gameObject, 0, RES_BODY_Y);
+            ResDoraLayout(0, 0);
             string foot = "";
             if (Std())
             {
@@ -2091,43 +2110,60 @@ namespace MonakaLabo.SquareMahjong
             int w = pageOrder[page];
             int s = engine.winSeat[w];
             string role = engine.winRole[w] == SqmEngine.ROLE_FIRST ? "先発" : "後発";
-            resTitle.text = role + "和了　東" + engine.kyoku + "局";
+            resTitle.text = role + "和了　" + ResSub("東" + engine.kyoku + "局　" + engine.honba + "本場");
+            resInfo.text = ResInfoSquare();
             int wt = engine.winType[w];
             string kind = wt == SqmEngine.WT_TSUMO ? "ツモ" : wt == SqmEngine.WT_RON2 ? "2枚ロン" : "片ロン";
             string head = SeatName(s) + " <color=#ff5a48>" + kind + "</color>";
-            if (wt != SqmEngine.WT_TSUMO && engine.winFrom[w] >= 0) head += "  <size=55%>放銃：" + SeatName(engine.winFrom[w]) + "</size>";
+            if (wt != SqmEngine.WT_TSUMO && engine.winFrom[w] >= 0) head += "  <size=72%>放銃：" + SeatName(engine.winFrom[w]) + "</size>";
             resHead.text = head;
             ShowHand(s, engine.winTileA[w], engine.winTileB[w]);
             // ドラ・裏ドラ
             resDoraLabel.text = "ドラ";
             for (int i = 0; i < resDora.Length && i < engine.doraIndN; i++) HoloTile(resDora[i], engine.doraInd[i]);
+            int nUra = 0;
             if (engine.winRiichi[w] && engine.rUseUra)
             {
                 resUraLabel.text = "裏ドラ";
                 for (int i = 0; i < resUra.Length && i < engine.uraIndN; i++) HoloTile(resUra[i], engine.uraInd[i]);
+                nUra = engine.uraIndN;
             }
-            // 役(3列。多いときは文字が小さくなる)
+            ResDoraLayout(engine.doraIndN, nUra);
+            // 役(2列。名前は左、翻は右)
             int yn = engine.winYakuN[w];
-            int per = (yn + 2) / 3;
+            int per = (yn + 1) / 2;
             if (per < 1) per = 1;
-            string c0 = "", c1 = "", c2 = "";
+            string n0 = "", h0 = "", n1 = "", h1 = "";
             for (int k = 0; k < yn; k++)
             {
                 int id = engine.winYakuId[w * SqmEngine.MAXYAKU + k];
                 int han = engine.winYakuHan[w * SqmEngine.MAXYAKU + k];
-                string line = yakuJa[id] + "<pos=78%>" + (engine.winYakuman[w] && id >= 40 ? "役満" : han + "翻") + "\n";
-                if (k < per) c0 += line; else if (k < per * 2) c1 += line; else c2 += line;
+                string hs = engine.winYakuman[w] && id >= 40 ? "役満" : han + "翻";
+                if (k < per) { n0 += yakuJa[id] + "\n"; h0 += hs + "\n"; }
+                else { n1 += yakuJa[id] + "\n"; h1 += hs + "\n"; }
             }
-            resYaku0.text = c0; resYaku1.text = c1; resYaku2.text = c2;
+            resYaku0.text = n0; resYakuH0.text = h0; resYaku1.text = n1; resYakuH1.text = h1;
             // 翻・点数
             int hanAll = engine.winHan[w];
-            resHan.text = engine.winYakuman[w] ? "立方満" : hanAll + "<size=60%>翻</size> " + LimitName(hanAll);
+            resPoints.text = (engine.winYakuman[w] ? "立方満" : hanAll + "<size=60%>翻</size> " + LimitName(hanAll)) + "　" + engine.winTotal[w].ToString("N0") + "<size=60%>点</size>";
             int m10 = engine.winM10[w];
             string calc = engine.winBase[w].ToString("N0") + " ×" + (m10 / 10) + "." + (m10 % 10);
-            if (engine.winHonba[w] > 0) calc += "  " + engine.winHonba[w] + "本場";
-            if (engine.winStick[w] > 0) calc += "  供託 +" + engine.winStick[w].ToString("N0");
+            if (engine.winHonba[w] > 0) calc += "　" + engine.winHonba[w] + "本場";
+            if (engine.winStick[w] > 0) calc += "　供託 +" + engine.winStick[w].ToString("N0");
             resCalc.text = calc;
-            resPoints.text = engine.winTotal[w].ToString("N0") + "<size=60%>点</size>";
+            // 右の表: 親から順に、この和了での増減と、払ったあとの点数(同時の和了は、後ろの和了の分を引いて求める)
+            int hi = -1;
+            for (int k = 0; k < NP; k++)
+            {
+                int q = (engine.dealer + k) % NP;
+                int after = engine.score[q];
+                for (int v = w + 1; v < sEvtWinTo; v++) after -= engine.winDeltas[v * NP + q];
+                rbL[k] = WindName(engine.SeatWindOf(q, engine.dealer)) + "<pos=12%>" + ResName(q);
+                rbR[k] = DeltaFmt(engine.winDeltas[w * NP + q]);
+                rbR[8 + k] = ScoreText(after);
+                if (q == s) hi = k;
+            }
+            ResSideTable(NP, hi);
         }
 
         private string LimitName(int han)
@@ -2146,51 +2182,67 @@ namespace MonakaLabo.SquareMahjong
 
         private void RenderDraw()
         {
+            string kk = "東" + engine.kyoku + "局";
+            resInfo.text = ResInfoSquare();
+            for (int k = 0; k < NP; k++)
+            {
+                int q = (engine.dealer + k) % NP;
+                rbL[k] = WindName(engine.SeatWindOf(q, engine.dealer)) + "<pos=12%>" + ResName(q);
+                rbR[k] = DeltaFmt(engine.resDeltas[q]);
+                rbR[8 + k] = ScoreText(engine.score[q]);
+            }
             if (engine.resType == SqmEngine.RES_ABORT)
             {
-                resTitle.text = "流局";
                 int r = engine.resReason;
+                string nm = r == SqmEngine.REASON_KYUSHU ? "十四種十四牌" : r == SqmEngine.REASON_HACHIFUU ? "八風連打" : "八家立直";
+                resTitle.text = "流局　" + ResSub(kk + "　" + nm);
                 if (r == SqmEngine.REASON_KYUSHU)
                 {
-                    resHead.text = SeatName(engine.resSeat) + " 十四種十四牌";
-                    ShowHand(engine.resSeat, -1, -1);
-                    resBody.text = "\n\n\n十四種以上の么九牌がそろったため、この局は流局となります。";
-                }
-                else if (r == SqmEngine.REASON_HACHIFUU)
-                {
-                    resHead.text = "八風連打";
-                    resBody.text = "\n八家すべてが最初に同じ風牌を切ったため、この局は流局となります。";
+                    resHead.text = SeatName(engine.resSeat);
+                    int kinds = ShowHandYaochu(engine.resSeat);
+                    resPoints.text = "么九牌 <size=130%>" + kinds + "</size>種";
+                    resBody.text = "十四種以上の么九牌がそろったため、この局は流局となります。";
                 }
                 else
                 {
-                    resHead.text = "八家立直";
-                    resBody.text = "\n八家すべてが立直を宣言したため、この局は流局となります。";
+                    ResSetXY(resBody.gameObject, 0, RES_HAND_Y);
+                    resBody.text = r == SqmEngine.REASON_HACHIFUU ? "八家すべてが最初に同じ風牌を切ったため、この局は流局となります。"
+                        : "八家すべてが立直を宣言したため、この局は流局となります。";
                 }
+                ResTwoColTable(NP, false);
                 return;
             }
-            resTitle.text = "荒牌流局";
+            resTitle.text = "荒牌流局　" + ResSub(kk);
+            ResSetXY(resBody.gameObject, 0, RES_HAND_Y);
             int active = 0;
             for (int s = 0; s < NP; s++) if (engine.outRole[s] == SqmEngine.ROLE_NONE) active++;
             int tn = engine.resTenpaiN;
-            if (engine.resHadWin) { resBody.text = "\n先発の和了があったため、不聴罰符の支払いはありません。"; return; }
-            if (tn == 0) { resBody.text = "\n全員が不聴のため、不聴罰符の支払いはありません。"; return; }
-            if (tn >= active) { resBody.text = "\n全員が聴牌のため、不聴罰符の支払いはありません。"; return; }
-            resHead.text = "聴牌 " + tn + "名  不聴罰符 " + engine.rNotenTotal.ToString("N0") + "点";
-            string list = "\n";
-            for (int k = 0; k < tn; k++)
+            if (engine.resHadWin) resBody.text = "先発の和了があったため、不聴罰符の支払いはありません。";
+            else if (tn == 0) resBody.text = "全員が不聴のため、不聴罰符の支払いはありません。";
+            else if (tn >= active) resBody.text = "全員が聴牌のため、不聴罰符の支払いはありません。";
+            else
             {
-                int s = engine.resTenpai[k];
-                list += (k > 0 ? ", " : "") + WindName(engine.SeatWindOf(s, engine.dealer)) + " " + NameOf(s);
+                resHead.text = "聴牌 " + tn + "名";
+                resPoints.text = "不聴罰符 " + engine.rNotenTotal.ToString("N0") + "<size=60%>点</size>";
+                string list = "聴牌：";
+                for (int k = 0; k < tn; k++)
+                {
+                    int s = engine.resTenpai[k];
+                    list += (k > 0 ? "、" : "") + WindName(engine.SeatWindOf(s, engine.dealer)) + " " + NameOf(s);
+                }
+                resBody.text = list;
             }
-            resBody.text = list;
+            ResTwoColTable(NP, true);
         }
 
         // ---- 直前の打牌(ホロ・パッド) ----
-        public const float LAST_Y_SQUARE = 0.014f, LAST_Y_STD = HOLO_RON_Y;   // ホロでの高さ(平方: ロン牌の下 / 普通の麻雀: ロン牌の行)
-
-        // ---- ホロの真ん中の牌(ドラ表示牌・ロン牌) ----
+        // ---- ホロの真ん中の列: 上から ドラ表示牌・ロン牌・打牌・手番・セット・現局(平方)。普通の麻雀はロン牌が無いので1行ずつ詰める ----
+        public const float HOLO_ROW = 0.076f;                         // 行の間隔
         public const float HOLO_TILE_X = -0.132f;                     // 牌とタイマーの左端
-        public const float HOLO_DORA_Y = 0.19f, HOLO_RON_Y = 0.102f;  // 行の高さ
+        public const float HOLO_DORA_Y = 0.19f, HOLO_RON_Y = HOLO_DORA_Y - HOLO_ROW;
+        public const float LAST_Y_SQUARE = HOLO_RON_Y - HOLO_ROW, LAST_Y_STD = HOLO_RON_Y;   // 打牌(平方: ロン牌の下 / 普通の麻雀: ロン牌の行)
+        public const float TURN_Y_SQUARE = LAST_Y_SQUARE - HOLO_ROW, TURN_Y_STD = LAST_Y_SQUARE;
+        public const float HOLO_SET_Y = TURN_Y_SQUARE - HOLO_ROW, HOLO_KYOKU_Y = HOLO_SET_Y - HOLO_ROW;
         public const int HOLO_ROW_BIG = 6;                            // 普通の大きさで1段に並べる枚数(右の見取り図にかからない幅)
 
         /// <summary>
@@ -2246,16 +2298,48 @@ namespace MonakaLabo.SquareMahjong
 
         private void RefreshHoloLast()
         {
+            // 普通の麻雀は、ロン牌の行が無い分だけ詰めて、全体を半行下げる
+            bool std = Std();
+            ResSetXY(holoMid, 0, std ? -HOLO_ROW / 2 : 0);
+            ResSetXY(holoTurnRoot, 0, std ? TURN_Y_STD : TURN_Y_SQUARE);
+            ResSetXY(holoTimers, 0, std ? HOLO_ROW : 0);
+            RefreshHoloTurn();
             if (holoLastRoot == null) return;
             bool show = LastDiscardSeat() >= 0;
             if (holoLastRoot.activeSelf != show) holoLastRoot.SetActive(show);
             if (!show) return;
-            Transform tr = holoLastRoot.transform;
-            Vector3 p = tr.localPosition;
-            float y = Std() ? LAST_Y_STD : LAST_Y_SQUARE;
-            if (p.y != y) tr.localPosition = new Vector3(p.x, y, p.z);
+            ResSetXY(holoLastRoot, 0, Std() ? LAST_Y_STD : LAST_Y_SQUARE);
             if (holoLastWind != null) holoLastWind.text = LastDiscardWind();
             if (holoLast != null) for (int k = 0; k < holoLast.Length; k++) HoloTile(holoLast[k], LastDiscardTile(k));
+        }
+
+        // ---- 手番(ホロ) ----
+        private int turnShownSeat = -2, turnShownSec = -1;
+        private float turnSince;
+
+        /// <summary>打牌を考えている人の卓の席(-1 = いない: 鳴きの返事待ち・局の合間など)</summary>
+        private int TurnSeat()
+        {
+            if (!Running()) return -1;
+            if (Std()) return stdEngine.phase == SqmStdEngine.PH_TURN ? StdTableSeat(stdEngine.turn) : -1;
+            return engine.pendKind == SqmEngine.PEND_TURN ? engine.turn : -1;
+        }
+
+        /// <summary>手番の行: 席風・名前と、その人の番になってからの秒(秒は各自の画面で数える)</summary>
+        private void RefreshHoloTurn()
+        {
+            if (holoTurnRoot == null) return;
+            int s = TurnSeat();
+            bool show = s >= 0;
+            if (holoTurnRoot.activeSelf != show) holoTurnRoot.SetActive(show);
+            if (!show) { turnShownSeat = -1; return; }
+            if (s != turnShownSeat) { turnShownSeat = s; turnSince = Time.time; turnShownSec = -1; }
+            int sec = (int)(Time.time - turnSince);
+            if (sec == turnShownSec || holoTurnText == null) return;
+            turnShownSec = sec;
+            string w = Std() ? stdView.WindName(stdEngine.SeatWind(stdEngine.turn)) : WindName(engine.SeatWindOf(s, engine.dealer));
+            string nm = s == humanSeat ? "<color=#ffd070>あなた</color>" : NameOf(s);
+            holoTurnText.text = "<color=#a0ebff>" + w + "</color> " + nm + "　<size=70%><color=#8fb8cc>" + sec + "秒</color></size>";
         }
 
         // ---- プレイヤーパネル(SqmPlayerPanel・SqmPlayerCam)から使うもの ----
@@ -2345,33 +2429,238 @@ namespace MonakaLabo.SquareMahjong
             return stdEngine.rRounds == 2 ? "半荘戦" : "東風戦";
         }
 
-        private float rankLX;
-        private bool rankLXSet;   // U# で float.IsNaN が使えるか分からないので、覚えたかどうかを別に持つ
 
         /// <summary>終局の順位の表を、真ん中に寄せる(普通の麻雀。4人まで1列) / 左に戻す(平方麻雀。8人を2列)</summary>
-        public void CenterRanks(bool center)
-        {
-            if (resRankL == null) return;
-            Transform tr = resRankL.gameObject.transform;   // U# は TextMeshPro の .transform を使えない(GameObject を通す)
-            Vector3 p = tr.localPosition;
-            if (!rankLXSet) { rankLXSet = true; rankLX = p.x; }
-            float x = center ? 0f : rankLX;
-            if (p.x != x) tr.localPosition = new Vector3(x, p.y, p.z);
-        }
-
         private void RenderFinal()
         {
-            CenterRanks(false);
-            resTitle.text = "終局　" + MatchTypeName();
-            string l = "", r = "";
-            string[] ord = new string[] { "1st.", "2nd.", "3rd.", "4th.", "5th.", "6th.", "7th.", "8th." };
+            resTitle.text = "終局　" + ResSub(MatchTypeName());
+            resInfo.text = "セット " + SetClock();
             for (int i = 0; i < NP; i++)
             {
-                string line = ord[i] + "<pos=16%>" + NameOf(engine.mrSeat[i]) + "<pos=66%>" + ScoreText(engine.mrScore[i]) + "\n";
-                if (i < 4) l += line; else r += line;
+                int s = engine.mrSeat[i];
+                rbL[i] = RankName(i) + "<pos=33%>" + ResName(s);
+                rbR[i] = ScoreText(engine.mrScore[i]);
+                rbR[8 + i] = UmaFmt(engine.mrUma[i]);
+                rbR[16 + i] = Final10Fmt(engine.mrFinal10[i]);
+                rbR[24 + i] = WinCount(s);
+                rbR[32 + i] = DealCount(s);
             }
-            resRankL.text = l;
-            resRankR.text = r;
+            ResFinalTable(NP);
+        }
+
+        // ================================================================ 結果の画面の部品
+        public const int RES_ROWS = 9, RES_RC = 5;                 // 表の行(終局の見出し + 8人)・行ごとの右揃えのマス
+        public const float RES_CELL_W = 0.6f;                      // マスの幅(左揃えは左端から、右揃えは右端から使う)
+        public const float RES_L = -1.09f, RES_R = 1.09f;          // 結果の画面の左右の端
+        public const float RES_STEP = 0.059f, RES_HAND_Y = 0.135f; // 手牌の間隔・高さ
+        public const float RES_SUB_Y = 0.075f, RES_BODY_Y = 0.05f; // 手牌の下の区切り・説明の行
+        public const float RES_YAKU_Y = -0.155f;                   // 役の欄の真ん中(上端 -0.005)
+        public const float RES_DORA_X = 0.043f;                    // ドラの牌の間隔
+        // 表に入れる文字(画面を作る所が入れて、ResSideTable などが並べる)。rbR は [列 * 8 + 行]
+        [System.NonSerialized] public string[] rbL = new string[8];
+        [System.NonSerialized] public string[] rbR = new string[RES_RC * 8];
+
+        public string ResSub(string s) { return "<size=64%><color=#e0f5ff>" + s + "</color></size>"; }
+
+        /// <summary>結果の表の名前(自分は「あなた」)</summary>
+        public string ResName(int seat) { return seat == humanSeat ? "<color=#ffd070>あなた</color>" : NameOf(seat); }
+
+        public string RankName(int i)
+        {
+            if (i == 0) return "1st.";
+            if (i == 1) return "2nd.";
+            if (i == 2) return "3rd.";
+            return (i + 1) + "th.";
+        }
+
+        /// <summary>点の増減(増えたら緑、減ったら赤、無ければ薄く ±0)</summary>
+        public string DeltaFmt(int d)
+        {
+            if (d > 0) return "<color=#7dffa0>+" + d.ToString("N0") + "</color>";
+            if (d < 0) return "<color=#ff5a48>" + d.ToString("N0") + "</color>";
+            return "<color=#4a5a66>±0</color>";
+        }
+
+        /// <summary>点数(平方: 7桁の頭の 0 を薄く / 普通の麻雀: そのまま)。負は赤</summary>
+        public string ScoreFmt(int v)
+        {
+            if (!Std()) return ScoreText(v);
+            if (v < 0) return "<color=#ff5a48>" + v.ToString("N0") + "</color>";
+            return v.ToString("N0");
+        }
+
+        public string UmaFmt(int u) { return u > 0 ? "+" + u : u.ToString(); }
+
+        /// <summary>合計(千点単位・小数1桁。v10 = 100点単位)</summary>
+        public string Final10Fmt(int v10)
+        {
+            int a = v10 < 0 ? -v10 : v10;
+            string t = (a / 10) + "." + (a % 10);
+            if (v10 > 0) return "<color=#7dffa0>+" + t + "</color>";
+            if (v10 < 0) return "<color=#ff5a48>-" + t + "</color>";
+            return t;
+        }
+
+        /// <summary>この試合の和了・放銃の回数(線 = 平方は卓の席、普通の麻雀はエンジンの席)。記録が無ければ「-」</summary>
+        public string WinCount(int line) { return scoreLog != null && scoreLog.lgMatch == lMatch ? scoreLog.WinsOf(line).ToString() : "-"; }
+        public string DealCount(int line) { return scoreLog != null && scoreLog.lgMatch == lMatch ? scoreLog.DealsOf(line).ToString() : "-"; }
+
+        /// <summary>セットの時間(終わっていれば終わったときまで)</summary>
+        public string SetClock()
+        {
+            if (sStartMs == 0) return Clock(0);
+            int now = Networking.GetServerTimeInMilliseconds();
+            return Clock(Sec((sEndMs != 0 ? sEndMs : now) - sStartMs));
+        }
+
+        private string ResInfoSquare()
+        {
+            int sticks = engine.rRiichiStick > 0 ? engine.kyotaku / engine.rRiichiStick : 0;
+            return "供託 " + sticks + "本　残り " + engine.LiveLeft().ToString("N0") + "枚";
+        }
+
+        /// <summary>説明を手牌の行に出す(手牌を出さない画面)</summary>
+        public void ResBodyAtHand() { ResSetXY(resBody.gameObject, 0, RES_HAND_Y); }
+
+        private void ResShow(GameObject g, bool on) { if (g != null && g.activeSelf != on) g.SetActive(on); }
+
+        private void ResSetXY(GameObject g, float x, float y)
+        {
+            if (g == null) return;
+            Transform tr = g.transform;
+            Vector3 p = tr.localPosition;
+            if (p.x != x || p.y != y) tr.localPosition = new Vector3(x, y, p.z);
+        }
+
+        private void ResClearCells()
+        {
+            if (resCellL != null) for (int i = 0; i < resCellL.Length; i++) if (resCellL[i] != null) resCellL[i].text = "";
+            if (resCellR != null) for (int i = 0; i < resCellR.Length; i++) if (resCellR[i] != null) resCellR[i].text = "";
+            ResShow(resRowHi, false);
+            ResShow(resTableLine, false);
+        }
+
+        public const float RES_CELL_SIZE = 0.34f;   // マスの文字の大きさ(組み立てのとき)。U# では fontSize を変えられないので、<size=%> で変える
+
+        private string ResSize(float size) { return "<size=" + Mathf.RoundToInt(size / RES_CELL_SIZE * 100f) + "%>"; }
+
+        /// <summary>行 r の左揃えのマス(左端 x)</summary>
+        private void ResCellL(int r, float x, float y, float size, string s)
+        {
+            if (resCellL == null || r >= resCellL.Length || resCellL[r] == null) return;
+            TextMeshPro t = resCellL[r];
+            ResSetXY(t.gameObject, x + RES_CELL_W / 2, y);
+            t.text = ResSize(size) + s;
+        }
+
+        /// <summary>行 r・列 c の右揃えのマス(右端 xr)</summary>
+        private void ResCellR(int r, int c, float xr, float y, float size, string s)
+        {
+            int i = r * RES_RC + c;
+            if (resCellR == null || i >= resCellR.Length || resCellR[i] == null) return;
+            TextMeshPro t = resCellR[i];
+            ResSetXY(t.gameObject, xr - RES_CELL_W / 2, y);
+            t.text = ResSize(size) + s;
+        }
+
+        private void ResHi(float x0, float x1, float y, float h)
+        {
+            if (resRowHi == null) return;
+            ResShow(resRowHi, true);
+            Transform tr = resRowHi.transform;
+            tr.localPosition = new Vector3((x0 + x1) / 2, y, tr.localPosition.z);
+            tr.localScale = new Vector3(x1 - x0, h, 1);
+        }
+
+        /// <summary>和了: 右側の表(席風・名前 | 増減 | 点数)。hi = 明るくする行(和了った人)</summary>
+        public void ResSideTable(int n, int hi)
+        {
+            ResShow(resTableLine, true);
+            const float x0 = 0.08f, y0 = 0.035f, step = 0.0455f, size = 0.34f;
+            float w = RES_R - x0;
+            for (int i = 0; i < n && i < 8; i++)
+            {
+                float y = y0 - i * step;
+                ResCellL(i, x0, y, size, rbL[i]);
+                ResCellR(i, 0, x0 + w * 0.66f, y, size, rbR[i]);
+                ResCellR(i, 1, RES_R, y, size, rbR[8 + i]);
+            }
+            if (hi >= 0) ResHi(x0 - 0.01f, RES_R + 0.01f, y0 - hi * step, step);
+        }
+
+        /// <summary>流局: 下の左右2列の表(席風・名前 | 増減 | 点数)。delta = 増減の列を出すか</summary>
+        public void ResTwoColTable(int n, bool delta)
+        {
+            const float y0 = -0.06f, step = 0.055f, size = 0.38f;
+            float w = delta ? 0.84f : 0.62f, gap = delta ? 0.06f : 0.08f;
+            int half = (n + 1) / 2;
+            for (int i = 0; i < n && i < 8; i++)
+            {
+                int col = i < half ? 0 : 1;
+                float x0 = col == 0 ? -gap - w : gap;
+                float y = y0 - (i - col * half) * step;
+                ResCellL(i, x0, y, size, rbL[i]);
+                if (delta) ResCellR(i, 0, x0 + w * 0.69f, y, size, rbR[i]);
+                ResCellR(i, 1, x0 + w, y, size, rbR[8 + i]);
+            }
+        }
+
+        /// <summary>終局: 全体の表(順位・名前 | 素点 | ウマ | 合計 | 和了 | 放銃)。1位の行を明るく</summary>
+        public void ResFinalTable(int n)
+        {
+            ResSetXY(resSubLine, 0, 0.243f);
+            const float hy = 0.27f, hs = 0.32f, y0 = 0.2f, step = 0.055f, size = 0.42f;
+            float w = RES_R - RES_L;
+            string hc = "<color=#8fb8cc>";
+            ResCellL(0, RES_L, hy, hs, hc + "順位<pos=33%>名前</color>");
+            ResCellR(0, 0, RES_L + w * 0.46f, hy, hs, hc + "素点</color>");
+            ResCellR(0, 1, RES_L + w * 0.6f, hy, hs, hc + "ウマ</color>");
+            ResCellR(0, 2, RES_L + w * 0.74f, hy, hs, hc + "合計</color>");
+            ResCellR(0, 3, RES_L + w * 0.86f, hy, hs, hc + "和了</color>");
+            ResCellR(0, 4, RES_R, hy, hs, hc + "放銃</color>");
+            for (int i = 0; i < n && i < 8; i++)
+            {
+                float y = y0 - i * step;
+                ResCellL(i + 1, RES_L, y, size, rbL[i]);
+                ResCellR(i + 1, 0, RES_L + w * 0.46f, y, size, rbR[i]);
+                ResCellR(i + 1, 1, RES_L + w * 0.6f, y, size, rbR[8 + i]);
+                ResCellR(i + 1, 2, RES_L + w * 0.74f, y, size, rbR[16 + i]);
+                ResCellR(i + 1, 3, RES_L + w * 0.86f, y, size, rbR[24 + i]);
+                ResCellR(i + 1, 4, RES_R, y, size, rbR[32 + i]);
+            }
+            ResHi(RES_L - 0.01f, RES_R + 0.01f, y0, step);
+        }
+
+        /// <summary>
+        /// ドラ・裏ドラの置き場所。裏ドラはドラのすぐ後ろ。入りきらないときは2段目にして、役の欄を1段下げる
+        /// </summary>
+        public void ResDoraLayout(int nDora, int nUra)
+        {
+            float doraEnd = RES_L + 0.16f + nDora * RES_DORA_X;
+            float ux = doraEnd + 0.03f - (RES_L + 0.35f);
+            if (ux < 0) ux = 0;
+            float uy = 0;
+            if (nUra > 0 && RES_L + 0.54f + ux + nUra * RES_DORA_X > -0.03f) { ux = -0.35f; uy = -0.06f; }
+            ResSetXY(resUraRoot, ux, uy);
+            float yy = RES_YAKU_Y + uy;
+            if (resYaku0 != null) ResSetXY(resYaku0.gameObject, RES_L + 0.25f, yy);
+            if (resYakuH0 != null) ResSetXY(resYakuH0.gameObject, RES_L + 0.25f, yy);
+            if (resYaku1 != null) ResSetXY(resYaku1.gameObject, RES_L + 0.81f, yy);
+            if (resYakuH1 != null) ResSetXY(resYakuH1.gameObject, RES_L + 0.81f, yy);
+            if (resYakuman != null) ResSetXY(resYakuman.gameObject, RES_L + 0.53f, yy);
+        }
+
+        /// <summary>結果の手牌を、使った n 枚(空けた所も数える)が真ん中に来るように並べ直す</summary>
+        public void ResHandCenter(int n)
+        {
+            if (resHand == null) return;
+            float x0 = -(n - 1) * RES_STEP / 2;
+            for (int i = 0; i < resHand.Length; i++)
+            {
+                float x = x0 + i * RES_STEP;
+                if (resHand[i] != null) ResSetXY(resHand[i].gameObject, x, RES_HAND_Y);
+                if (resHandMark != null && i < resHandMark.Length) ResSetXY(resHandMark[i], x, RES_HAND_Y);
+            }
         }
 
         /// <summary>
@@ -2427,9 +2716,28 @@ namespace MonakaLabo.SquareMahjong
                     ResTile(n++, t, false);
                 }
             }
+            ResHandCenter(n);
         }
 
-        public void ResTile(int i, int tile, bool mark)
+        /// <summary>十四種十四牌の手牌: 么九牌は種類ごとに1枚目へ黄色の枠。么九牌の種類の数を返す</summary>
+        private int ShowHandYaochu(int s)
+        {
+            int n = 0, kinds = 0;
+            for (int t = 0; t < NT; t++)
+            {
+                int c = engine.handC[s * NT + t];
+                bool y = c > 0 && engine.IsYaochu(t);
+                if (y) kinds++;
+                for (int k = 0; k < c && n < resHand.Length; k++) ResTileC(n++, t, y && k == 0, true);
+            }
+            ResHandCenter(n);
+            return kinds;
+        }
+
+        public void ResTile(int i, int tile, bool mark) { ResTileC(i, tile, mark, false); }
+
+        /// <summary>結果の手牌の i 枚目。mark = 枠を付ける(yellow = 黄色の枠、でなければ赤)</summary>
+        public void ResTileC(int i, int tile, bool mark, bool yellow)
         {
             if (i >= resHand.Length) return;
             HoloTile(resHand[i], tile);
@@ -2437,6 +2745,11 @@ namespace MonakaLabo.SquareMahjong
             {
                 bool m = mark && tile >= 0;
                 if (resHandMark[i].activeSelf != m) resHandMark[i].SetActive(m);
+                if (m && resHandMarkR != null && i < resHandMarkR.Length && resHandMarkR[i] != null)
+                {
+                    Material mt = yellow ? holoMatYellow : holoMatRed;
+                    if (mt != null && resHandMarkR[i].sharedMaterial != mt) resHandMarkR[i].sharedMaterial = mt;
+                }
             }
         }
 

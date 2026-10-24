@@ -24,12 +24,16 @@ namespace MonakaLabo.SquareMahjong
         [UdonSynced] public int lgN;          // 点の数(0 = まだ無い)
         [UdonSynced] public int[] lgScore = new int[MAXL * MAX_POINTS];   // [点 * MAXL + 線]
         [UdonSynced] public int[] lgKyoku = new int[MAX_POINTS];          // 点ごとの局(場 * 1000 + 局 * 100 + 本場。平方戦は 先発1・後発2 を 100000 の位に。開始の点は -1)
+        [UdonSynced] public int[] lgWin = new int[MAXL];                  // 線ごとの和了の回数(終局の表に出す)
+        [UdonSynced] public int[] lgDeal = new int[MAXL];                 // 線ごとの放銃の回数
 
         private void Own()
         {
             if (!Networking.IsOwner(gameObject)) Networking.SetOwner(Networking.LocalPlayer, gameObject);
             if (lgScore == null || lgScore.Length != MAXL * MAX_POINTS) lgScore = new int[MAXL * MAX_POINTS];
             if (lgKyoku == null || lgKyoku.Length != MAX_POINTS) lgKyoku = new int[MAX_POINTS];
+            if (lgWin == null || lgWin.Length != MAXL) lgWin = new int[MAXL];
+            if (lgDeal == null || lgDeal.Length != MAXL) lgDeal = new int[MAXL];
         }
 
         /// <summary>ホスト: 試合の始め。最初の点(開始の点数)を入れる</summary>
@@ -39,6 +43,7 @@ namespace MonakaLabo.SquareMahjong
             lgMatch = match;
             lgLines = lines > MAXL ? MAXL : lines;
             lgN = 0;
+            for (int l = 0; l < MAXL; l++) { lgWin[l] = 0; lgDeal[l] = 0; }
             Add(score, -1);
         }
 
@@ -49,6 +54,19 @@ namespace MonakaLabo.SquareMahjong
             Own();
             Add(score, kyoku);
         }
+
+        /// <summary>ホスト: 和了が1つあった(win = 和了った線、from = 放銃した線。ツモ・流し満貫は -1)。送るのは局の終わりの HostAppend といっしょ</summary>
+        public void HostCount(int match, int win, int from)
+        {
+            if (match != lgMatch || lgN == 0) return;
+            Own();
+            if (win >= 0 && win < MAXL) lgWin[win]++;
+            if (from >= 0 && from < MAXL) lgDeal[from]++;
+            RequestSerialization();
+        }
+
+        public int WinsOf(int line) { return lgWin != null && line >= 0 && line < lgWin.Length ? lgWin[line] : 0; }
+        public int DealsOf(int line) { return lgDeal != null && line >= 0 && line < lgDeal.Length ? lgDeal[line] : 0; }
 
         /// <summary>ホスト: 試合が無くなった</summary>
         public void HostClear(int match)

@@ -949,17 +949,20 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holoSticks = HText(play, "Sticks", c + new Vector2(0.115f, -0.135f), 0.48f, new Vector2(0.13f, 0.15f), TextAlignmentOptions.Left);
             table.holoSticks.lineSpacing = -10f;
 
-            // ---- 中: ドラ表示牌・ロン牌・打牌・時間 ----
-            // 見出しは右揃え(右端 LABEL_R)、牌とタイマーは左揃え(左端 SqmTable.HOLO_TILE_X)。行は詰めて並べる
+            // ---- 中: ドラ表示牌・ロン牌・打牌・手番・時間 ----
+            // 見出しは右揃え(右端 LABEL_R)、牌とタイマーは左揃え(左端 SqmTable.HOLO_TILE_X)。行は HOLO_ROW 間隔で詰めて並べる。
+            // 普通の麻雀(ロン牌が無い)では、SqmTable が打牌・手番・時間を1行ずつ上げ、全体を半行下げて上下の真ん中にそろえる
             const float LABEL_R = -0.177f, LW = 0.3f;
-            HText(play, "DoraLabel", new Vector2(LABEL_R - LW / 2, SqmTable.HOLO_DORA_Y), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "ドラ表示牌";
-            var ronLabel = HText(play, "RonLabel", new Vector2(LABEL_R - LW / 2, SqmTable.HOLO_RON_Y), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right);
+            var mid = Group(play, "Mid");
+            table.holoMid = mid;
+            HText(mid, "DoraLabel", new Vector2(LABEL_R - LW / 2, SqmTable.HOLO_DORA_Y), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "ドラ表示牌";
+            var ronLabel = HText(mid, "RonLabel", new Vector2(LABEL_R - LW / 2, SqmTable.HOLO_RON_Y), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right);
             ronLabel.text = "ロン牌";
             table.holoRonLabel = ronLabel.gameObject;   // 普通の麻雀(ロン牌が無い)では隠す
-            table.holoDora = HoloTiles(play, "Dora", SqmTable.N_DORA, SqmTable.HOLO_DORA_Y);
-            table.holoRon = HoloTiles(play, "Ron", SqmTable.N_RON, SqmTable.HOLO_RON_Y);
-            // 直前の打牌(見出し・席風・牌2枚)。高さは SqmTable が試合の種類で変える(平方: ロン牌の下 / 普通の麻雀: ロン牌の行)
-            var last = Group(play, "LastDiscard");
+            table.holoDora = HoloTiles(mid, "Dora", SqmTable.N_DORA, SqmTable.HOLO_DORA_Y);
+            table.holoRon = HoloTiles(mid, "Ron", SqmTable.N_RON, SqmTable.HOLO_RON_Y);
+            // 直前の打牌(見出し・席風・牌2枚)
+            var last = Group(mid, "LastDiscard");
             last.transform.localPosition = new Vector3(0, SqmTable.LAST_Y_SQUARE, 0);
             table.holoLastRoot = last;
             HText(last, "Label", new Vector2(LABEL_R - LW / 2, 0), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "打牌";
@@ -974,11 +977,22 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 q.SetActive(false);
             }
             last.SetActive(false);
-            const float SET_Y = -0.074f, KYOKU_Y = -0.162f, TW = 0.32f;
-            HText(play, "SetLabel", new Vector2(LABEL_R - LW / 2, SET_Y), 0.44f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "セット";
-            HText(play, "KyokuLabel", new Vector2(LABEL_R - LW / 2, KYOKU_Y), 0.44f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "現局";
-            table.holoSetTime = SegText(play, "SetTime", new Vector2(SqmTable.HOLO_TILE_X + TW / 2, SET_Y), 0.44f, new Vector2(TW, 0.075f), true);
-            table.holoKyokuTime = SegText(play, "KyokuTime", new Vector2(SqmTable.HOLO_TILE_X + TW / 2, KYOKU_Y), 0.44f, new Vector2(TW, 0.075f), true);
+            // 手番(席風・名前・考えている秒)
+            var turn = Group(mid, "Turn");
+            turn.transform.localPosition = new Vector3(0, SqmTable.TURN_Y_SQUARE, 0);
+            table.holoTurnRoot = turn;
+            HText(turn, "Label", new Vector2(LABEL_R - LW / 2, 0), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "手番";
+            table.holoTurnText = HText(turn, "Text", new Vector2(SqmTable.HOLO_TILE_X + 0.2f, 0), 0.42f, new Vector2(0.4f, 0.07f), TextAlignmentOptions.Left);
+            table.holoTurnText.enableWordWrapping = false;
+            turn.SetActive(false);
+            // セット・現局の時間
+            var timers = Group(mid, "Timers");
+            table.holoTimers = timers;
+            const float TW = 0.32f;
+            HText(timers, "SetLabel", new Vector2(LABEL_R - LW / 2, SqmTable.HOLO_SET_Y), 0.44f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "セット";
+            HText(timers, "KyokuLabel", new Vector2(LABEL_R - LW / 2, SqmTable.HOLO_KYOKU_Y), 0.44f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "現局";
+            table.holoSetTime = SegText(timers, "SetTime", new Vector2(SqmTable.HOLO_TILE_X + TW / 2, SqmTable.HOLO_SET_Y), 0.42f, new Vector2(TW, 0.066f), true);
+            table.holoKyokuTime = SegText(timers, "KyokuTime", new Vector2(SqmTable.HOLO_TILE_X + TW / 2, SqmTable.HOLO_KYOKU_Y), 0.42f, new Vector2(TW, 0.066f), true);
 
             // ---- 右: 8席の見取り図 ----
             var g = new Vector2(0.72f, -0.01f);
@@ -1073,71 +1087,114 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             banner.SetActive(false);
         }
 
-        /// <summary>結果の画面(和了・流局・終局)。ホロの板の中に重ねる</summary>
+        /// <summary>
+        /// 結果の画面(和了・流局・終局)。ホロの板の中に重ねる。
+        /// 上: 見出し(左: 種類と局 / 右: 供託・残り) / 人と翻・点数 / 手牌 / 下: 左にドラ・役、右に席ごとの表。
+        /// 席ごとの表のマス(resCellL・resCellR)は、置き場所と大きさを SqmTable が画面ごとに決める
+        /// </summary>
         static void BuildResult(GameObject holo, SqmTable table)
         {
             var g = Group(holo, "Result");
             table.resultRoot = g;
             var yellow = new Color(1f, 0.82f, 0.44f);
-            table.resTitle = HText(g, "Title", new Vector2(0, 0.355f), 0.6f, new Vector2(HW - 0.2f, 0.11f), TextAlignmentOptions.Center);
+            const float L = SqmTable.RES_L, R = SqmTable.RES_R;
+            var dim = HoloMat("HoloLineDim", new Color(0.45f, 0.85f, 1f, 0.35f));
+            table.resTitle = HText(g, "Title", new Vector2(L + 0.7f, 0.372f), 0.5f, new Vector2(1.4f, 0.09f), TextAlignmentOptions.Left);
             table.resTitle.color = yellow;
+            table.resTitle.enableWordWrapping = false;
+            table.resInfo = HText(g, "Info", new Vector2(R - 0.5f, 0.372f), 0.36f, new Vector2(1.0f, 0.09f), TextAlignmentOptions.Right);
+            table.resInfo.enableWordWrapping = false;
             var line = Prim(PrimitiveType.Quad, g, "Divider", matHoloLine);
-            line.transform.localPosition = new Vector3(0, 0.29f, 0);
-            line.transform.localScale = new Vector3(HW - 0.12f, 0.003f, 1);
-            table.resHead = HText(g, "Head", new Vector2(0, 0.225f), 0.5f, new Vector2(HW - 0.14f, 0.1f), TextAlignmentOptions.Left);
+            line.transform.localPosition = new Vector3(0, 0.322f, 0);
+            line.transform.localScale = new Vector3(R - L, 0.003f, 1);
+            // 人(左)と、翻・点数(右)
+            table.resHead = HText(g, "Head", new Vector2(L + 0.6f, 0.262f), 0.46f, new Vector2(1.2f, 0.08f), TextAlignmentOptions.Left);
             table.resHead.enableWordWrapping = false;
+            table.resPoints = HText(g, "Points", new Vector2(R - 0.6f, 0.262f), 0.56f, new Vector2(1.2f, 0.09f), TextAlignmentOptions.Right);
+            table.resPoints.color = yellow;
+            table.resPoints.enableWordWrapping = false;
+            table.resCalc = HText(g, "Calc", new Vector2(R - 0.6f, 0.2f), 0.32f, new Vector2(1.2f, 0.05f), TextAlignmentOptions.Right);
+            table.resCalc.color = yellow;
+            table.resCalc.enableWordWrapping = false;
 
-            // 手牌(36枚。和了牌には赤枠)
+            // 手牌(36枚。和了牌には赤枠、么九牌には黄色の枠)。横の位置は SqmTable が枚数に合わせて真ん中にそろえる
             const int HAND = 36;
             table.resHand = new MeshRenderer[HAND];
             table.resHandMark = new GameObject[HAND];
+            table.resHandMarkR = new MeshRenderer[HAND];
             var hand = Group(g, "Hand");
-            const float TWH = 0.055f, THH = 0.073f, STEP = 0.059f;
+            const float TWH = 0.055f, THH = 0.073f;
             for (int i = 0; i < HAND; i++)
             {
-                float x = -(HAND - 1) * STEP / 2 + i * STEP;
+                float x = -(HAND - 1) * SqmTable.RES_STEP / 2 + i * SqmTable.RES_STEP;
                 var q = Prim(PrimitiveType.Quad, hand, "tile_" + i.ToString("00"), matHoloFaces[0]);
-                q.transform.localPosition = new Vector3(x, 0.105f, 0);
+                q.transform.localPosition = new Vector3(x, SqmTable.RES_HAND_Y, 0);
                 q.transform.localScale = new Vector3(TWH, THH, 1);
                 q.SetActive(false);
                 table.resHand[i] = q.GetComponent<MeshRenderer>();
                 var m = Prim(PrimitiveType.Quad, hand, "mark_" + i.ToString("00"), matHoloRed);
-                m.transform.localPosition = new Vector3(x, 0.105f, 0.004f);
+                m.transform.localPosition = new Vector3(x, SqmTable.RES_HAND_Y, 0.004f);
                 m.transform.localScale = new Vector3(TWH + 0.01f, THH + 0.01f, 1);
                 m.SetActive(false);
                 table.resHandMark[i] = m;
+                table.resHandMarkR[i] = m.GetComponent<MeshRenderer>();
             }
+            // 手牌の下の区切り(終局は、表の見出しの下に動かす)
+            var sub = Prim(PrimitiveType.Quad, g, "SubDivider", dim);
+            sub.transform.localPosition = new Vector3(0, 0.075f, 0);
+            sub.transform.localScale = new Vector3(R - L, 0.003f, 1);
+            table.resSubLine = sub;
 
-            // ドラ・裏ドラ(小さめ。18枚ずつ)
-            table.resDoraLabel = HText(g, "DoraLabel", new Vector2(-0.98f, 0.0f), 0.36f, new Vector2(0.14f, 0.07f), TextAlignmentOptions.Right);
-            table.resUraLabel = HText(g, "UraLabel", new Vector2(-0.1f, 0.0f), 0.36f, new Vector2(0.18f, 0.07f), TextAlignmentOptions.Right);
-            table.resDora = SmallTiles(g, "Dora", -0.88f, 0.0f);
-            table.resUra = SmallTiles(g, "Ura", 0.02f, 0.0f);
+            // ドラ・裏ドラ(小さめ。18枚ずつ)。裏ドラは、ドラが多いと SqmTable が後ろか2段目へ動かす
+            table.resDoraLabel = HText(g, "DoraLabel", new Vector2(L + 0.07f, 0.035f), 0.36f, new Vector2(0.14f, 0.06f), TextAlignmentOptions.Left);
+            table.resDora = SmallTiles(g, "Dora", L + 0.16f, 0.035f);
+            var ura = Group(g, "UraDora");
+            table.resUraRoot = ura;
+            table.resUraLabel = HText(ura, "Label", new Vector2(L + 0.42f, 0.035f), 0.36f, new Vector2(0.14f, 0.06f), TextAlignmentOptions.Left);
+            table.resUra = SmallTiles(ura, "Tiles", L + 0.54f, 0.035f);
 
-            // 役(3列)
-            table.resYaku0 = YakuCol(g, "Yaku0", -0.82f);
-            table.resYaku1 = YakuCol(g, "Yaku1", -0.3f);
-            table.resYaku2 = YakuCol(g, "Yaku2", 0.22f);
-            // 役満は3列を使わず、3列ぶんの幅に大きく(折り返さず、入らなければ文字を小さく)
-            table.resYakuman = HText(g, "Yakuman", new Vector2(-0.3f, -0.21f), 0.5f, new Vector2(1.54f, 0.25f), TextAlignmentOptions.TopLeft);
+            // 役(左の2列。役の名前は左揃え、翻は右揃え)
+            table.resYaku0 = YakuCol(g, "Yaku0", L + 0.25f, TextAlignmentOptions.TopLeft);
+            table.resYakuH0 = YakuCol(g, "YakuHan0", L + 0.25f, TextAlignmentOptions.TopRight);
+            table.resYaku1 = YakuCol(g, "Yaku1", L + 0.81f, TextAlignmentOptions.TopLeft);
+            table.resYakuH1 = YakuCol(g, "YakuHan1", L + 0.81f, TextAlignmentOptions.TopRight);
+            // 役満は2列を使わず、左の幅いっぱいに大きく(折り返さず、入らなければ文字を小さく)
+            table.resYakuman = HText(g, "Yakuman", new Vector2(L + 0.53f, SqmTable.RES_YAKU_Y), 0.5f, new Vector2(1.06f, 0.3f), TextAlignmentOptions.TopLeft);
             table.resYakuman.enableWordWrapping = false;
             table.resYakuman.enableAutoSizing = true;
             table.resYakuman.fontSizeMin = 0.16f;
             table.resYakuman.fontSizeMax = 0.5f;
 
-            // 翻・点数(右)
-            table.resHan = HText(g, "Han", new Vector2(0.84f, -0.1f), 0.62f, new Vector2(0.56f, 0.1f), TextAlignmentOptions.Right);
-            table.resHan.color = yellow;
-            table.resCalc = HText(g, "Calc", new Vector2(0.84f, -0.18f), 0.28f, new Vector2(0.56f, 0.05f), TextAlignmentOptions.Right);
-            table.resCalc.color = yellow;
-            table.resPoints = HText(g, "Points", new Vector2(0.84f, -0.275f), 0.72f, new Vector2(0.56f, 0.11f), TextAlignmentOptions.Right);
-            table.resPoints.color = yellow;
+            // 席ごとの表(和了は右、流局は下の2列、終局は全体)
+            var tl = Prim(PrimitiveType.Quad, g, "TableLine", dim);
+            tl.transform.localPosition = new Vector3(0.0325f, -0.135f, 0);
+            tl.transform.localScale = new Vector3(0.005f, 0.39f, 1);
+            tl.SetActive(false);
+            table.resTableLine = tl;
+            var hi = Prim(PrimitiveType.Quad, g, "RowHighlight", HoloMat("HoloRowHi", new Color(1f, 0.82f, 0.44f, 0.13f), Q_FILL));
+            hi.transform.localPosition = new Vector3(0, 0, 0.003f);
+            hi.SetActive(false);
+            table.resRowHi = hi;
+            var cells = Group(g, "Cells");
+            table.resCellL = new TextMeshPro[SqmTable.RES_ROWS];
+            table.resCellR = new TextMeshPro[SqmTable.RES_ROWS * SqmTable.RES_RC];
+            for (int r = 0; r < SqmTable.RES_ROWS; r++)
+            {
+                var cl = HText(cells, "L_" + r, Vector2.zero, SqmTable.RES_CELL_SIZE, new Vector2(SqmTable.RES_CELL_W, 0.06f), TextAlignmentOptions.Left);
+                cl.enableWordWrapping = false;
+                table.resCellL[r] = cl;
+                for (int c = 0; c < SqmTable.RES_RC; c++)
+                {
+                    var cr = HText(cells, "R_" + r + "_" + c, Vector2.zero, SqmTable.RES_CELL_SIZE, new Vector2(SqmTable.RES_CELL_W, 0.06f), TextAlignmentOptions.Right);
+                    cr.enableWordWrapping = false;
+                    table.resCellR[r * SqmTable.RES_RC + c] = cr;
+                }
+            }
 
-            // 流局の説明・終局の順位
-            table.resBody = HText(g, "Body", new Vector2(0, -0.04f), 0.44f, new Vector2(HW - 0.18f, 0.5f), TextAlignmentOptions.Left);
-            table.resRankL = HText(g, "RankL", new Vector2(-0.56f, -0.04f), 0.56f, new Vector2(1.08f, 0.56f), TextAlignmentOptions.Left);
-            table.resRankR = HText(g, "RankR", new Vector2(0.58f, -0.04f), 0.56f, new Vector2(1.06f, 0.56f), TextAlignmentOptions.Left);
-            table.resFoot = HText(g, "Foot", new Vector2(0, -0.385f), 0.3f, new Vector2(HW - 0.14f, 0.06f), TextAlignmentOptions.Center);
+            // 流局の説明など(1行)
+            table.resBody = HText(g, "Body", new Vector2(0, 0.05f), 0.38f, new Vector2(HW - 0.2f, 0.07f), TextAlignmentOptions.Center);
+            table.resBody.enableWordWrapping = false;
+            table.resFoot = HText(g, "Foot", new Vector2(0, -0.392f), 0.32f, new Vector2(HW - 0.14f, 0.055f), TextAlignmentOptions.Center);
             g.SetActive(false);
         }
 
@@ -1156,12 +1213,10 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             return rs;
         }
 
-        static TextMeshPro YakuCol(GameObject parent, string name, float x)
+        static TextMeshPro YakuCol(GameObject parent, string name, float x, TextAlignmentOptions align)
         {
-            var t = HText(parent, name, new Vector2(x, -0.21f), 0.32f, new Vector2(0.5f, 0.25f), TextAlignmentOptions.TopLeft);
-            t.enableAutoSizing = true;
-            t.fontSizeMin = 0.12f;
-            t.fontSizeMax = 0.32f;
+            var t = HText(parent, name, new Vector2(x, SqmTable.RES_YAKU_Y), 0.34f, new Vector2(0.5f, 0.3f), align);
+            t.enableWordWrapping = false;
             return t;
         }
 
