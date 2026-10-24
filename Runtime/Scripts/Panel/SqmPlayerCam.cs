@@ -11,9 +11,10 @@ namespace MonakaLabo.SquareMahjong
     /// 置き方(アバターの大きさ・姿勢によらず、同じように収まるように。長さはどれもアバターの目の高さ h を単位にする):
     ///   高さ   = 頭の高さを、床から 0.5h〜0.8h に収めたもの(座っていれば真横から、立てば下から見上げ、寝転がれば上から見下ろす)
     ///   水平   = 体の正面から、アバターから見て右へ 20° の向きに、頭から水平に 0.3h
-    ///   向き   = 頭の少し下(あご〜首)を向く
-    ///   画角   = 頭から胸まで(0.4h)がちょうど入るように、カメラと頭の距離から決める
-    /// 位置・向き・画角はなめらかにならす(手や頭の揺れでガタつかないように)。映す人が変わったときは、ならさずに切り替える。
+    ///   向き   = 頭の真ん中が、正方形の絵の左上(左から 32%・上から 42%)に来るように向く(縦型・横型どちらの切り抜きでも左上)
+    ///   画角   = 0.55h 四方が写るように、カメラと頭の距離から決める(頭が絵の縦の 1/4 くらい)
+    /// なめらかにするのは、高さ(カメラと見る点)と画角だけ。前後左右はその場で合わせる(ならすと頭が絵の外へ出やすい)。
+    /// 映す人が変わったときは、ならさずに切り替える。
     ///
     /// 映すレイヤーは鏡と同じ(MirrorReflection・Player など)。自分の画面では自分のアバターの頭が消されている(PlayerLocal)ので、
     /// MirrorReflection の方を映す。そうしないと、自分の番に首なしで映る。卓・パッド・牌・ホロ・パネル(レイヤー 22)は映さない。
@@ -30,14 +31,17 @@ namespace MonakaLabo.SquareMahjong
         public const float Y_MIN = 0.5f, Y_MAX = 0.8f;   // カメラの高さ(床から)の範囲
         public const float DIST = 0.3f;                  // 頭からの水平の距離
         public const float YAW = 20f;                    // 体の正面から、アバターから見て右へ(度)
-        public const float AIM_DOWN = 0.06f;             // 見る所(頭から少し下)
-        public const float FRAME = 0.4f;                 // 縦に入れる範囲(頭から胸まで)
+        public const float HEAD_UP = 0.05f;              // 頭の骨から、頭の真ん中まで
+        public const float VIEW = 0.55f;                 // 写す範囲(正方形の絵の縦横。頭が絵の縦の 1/4 くらい)
+        // 頭の真ん中を置く所(正方形の絵の左から・上からの割合)。縦型(真ん中の 3:4)でも横型(真ん中の 16:9)でも左上に来る所
+        public const float HEAD_U = 0.32f, HEAD_V = 0.42f;
         public const float SMOOTH = 4f;                  // なめらかさ(大きいほど早く追いつく)
 
         [System.NonSerialized] public int seat = -1;   // 映している卓の席(-1 = いない)
         [System.NonSerialized] public bool human;      // 映しているのが人か(NPC なら映像を出さない)
         private int shownPid;
         private bool placed;
+        private float camY, aimY;   // なめらかにしている、カメラと見る点の高さ
         private float checkWait;
 
         private void Start()
@@ -72,10 +76,11 @@ namespace MonakaLabo.SquareMahjong
             VRCPlayerApi p = VRCPlayerApi.GetPlayerById(shownPid);
             if (!Utilities.IsValid(p)) return;
             Vector3 feet = p.GetPosition();
-            Vector3 head = p.GetBonePosition(HumanBodyBones.Head);
+            Vector3 bone = p.GetBonePosition(HumanBodyBones.Head);
             float h = p.GetAvatarEyeHeightAsMeters();
-            if (head == Vector3.zero) head = feet + Vector3.up * (h > 0.1f ? h : 1.5f);   // 人型でないアバター
-            if (h < 0.1f) h = Mathf.Max(0.3f, head.y - feet.y);
+            if (bone == Vector3.zero) bone = feet + Vector3.up * ((h > 0.1f ? h : 1.5f) - HEAD_UP * 1.5f);   // 人型でないアバター
+            if (h < 0.1f) h = Mathf.Max(0.3f, bone.y - feet.y);
+            Vector3 head = bone + Vector3.up * (HEAD_UP * h);   // 頭の骨は首の付け根寄りなので、少し上を頭の真ん中とみなす
             // 体の正面から右へ YAW 度の向きに、頭から水平に DIST * h。高さは頭の高さを Y_MIN〜Y_MAX に収める
             Vector3 dir = Quaternion.AngleAxis(YAW, Vector3.up) * (p.GetRotation() * Vector3.forward);
             dir.y = 0;
@@ -83,25 +88,32 @@ namespace MonakaLabo.SquareMahjong
             dir = dir.normalized;   // U# は構造体を書き換えるメソッドが効かないことがあるので、代入にする
             float y = Mathf.Clamp(head.y, feet.y + Y_MIN * h, feet.y + Y_MAX * h);
             Vector3 pos = new Vector3(head.x, y, head.z) + dir * (DIST * h);
-            Vector3 aim = head - Vector3.up * (AIM_DOWN * h);
-            Vector3 look = aim - pos;
-            if (look.sqrMagnitude < 0.0001f) look = -dir;
-            Quaternion rot = Quaternion.LookRotation(look, Vector3.up);
-            // 画角: 頭から胸まで(FRAME * h)が、カメラと頭の距離でちょうど入るように
-            float fov = 2f * Mathf.Atan(FRAME * h * 0.5f / look.magnitude) * Mathf.Rad2Deg;
-            fov = Mathf.Clamp(fov, 15f, 90f);
-            Transform tr = cam.gameObject.transform;   // U# で使えるか確かな GameObject を通す
+            // 写す範囲(正方形の絵の縦横 = VIEW * h)と、頭を絵の左上(HEAD_U, HEAD_V)に置くための、見る点のずらし
+            Vector3 toHead = head - pos;
+            if (toHead.sqrMagnitude < 0.0001f) toHead = -dir;
+            Quaternion r0 = Quaternion.LookRotation(toHead, Vector3.up);
+            float view = VIEW * h;
+            Vector3 aim = head + (r0 * Vector3.right) * ((0.5f - HEAD_U) * view) - (r0 * Vector3.up) * ((0.5f - HEAD_V) * view);
+            float fov = Mathf.Clamp(2f * Mathf.Atan(view * 0.5f / toHead.magnitude) * Mathf.Rad2Deg, 15f, 100f);
+            // なめらかにするのは、高さ(カメラ・見る点)と画角だけ。前後左右はその場で合わせる(ならすと頭が絵の外へ出やすい)
             if (!placed)
             {
-                // 映す人が変わったときは、ならさずに切り替える
-                tr.SetPositionAndRotation(pos, rot);
+                camY = pos.y; aimY = aim.y;
                 cam.fieldOfView = fov;
                 placed = true;
-                return;
             }
-            float k = 1f - Mathf.Exp(-SMOOTH * Time.deltaTime);
-            tr.SetPositionAndRotation(Vector3.Lerp(tr.position, pos, k), Quaternion.Slerp(tr.rotation, rot, k));
-            cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, fov, k);
+            else
+            {
+                float k = 1f - Mathf.Exp(-SMOOTH * Time.deltaTime);
+                camY = Mathf.Lerp(camY, pos.y, k);
+                aimY = Mathf.Lerp(aimY, aim.y, k);
+                cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, fov, k);
+            }
+            Vector3 cp = new Vector3(pos.x, camY, pos.z);
+            Vector3 ap = new Vector3(aim.x, aimY, aim.z);
+            Vector3 look = ap - cp;
+            if (look.sqrMagnitude < 0.0001f) look = -dir;
+            cam.gameObject.transform.SetPositionAndRotation(cp, Quaternion.LookRotation(look, Vector3.up));   // U# で使えるか確かな GameObject を通す
         }
     }
 }
