@@ -19,6 +19,7 @@ namespace MonakaLabo.SquareMahjong
     /// 映すレイヤーは鏡と同じ(MirrorReflection・Player など)。自分の画面では自分のアバターの頭が消されている(PlayerLocal)ので、
     /// MirrorReflection の方を映す。そうしないと、自分の番に首なしで映る。卓・パッド・牌・ホロ・パネル(レイヤー 22)は映さない。
     /// 自分の画面でパネルが全部切られている(PanelOff・非表示)か、映す人が NPC・いないときは、カメラを止める。
+    /// PanelOn / PanelOff / PanelToggle で、シーンのパネルを全部まとめて自分の画面だけで切り替えられる(スイッチから1つの送り先で済む)。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class SqmPlayerCam : UdonSharpBehaviour
@@ -47,6 +48,28 @@ namespace MonakaLabo.SquareMahjong
         private void Start()
         {
             if (cam != null) cam.enabled = false;
+        }
+
+        // ---- パネルを全部まとめて切り替える(LuraSwitch などの Udon イベントから呼ぶ) ----
+        public void PanelOn() { SetAll(true); }
+        public void PanelOff() { SetAll(false); }
+        /// <summary>どれかが出ていれば全部切り、全部切られていれば全部出す</summary>
+        public void PanelToggle()
+        {
+            bool any = false;
+            if (panels != null) for (int i = 0; i < panels.Length; i++) if (panels[i] != null && panels[i].on) any = true;
+            SetAll(!any);
+        }
+
+        private void SetAll(bool v)
+        {
+            if (panels == null) return;
+            for (int i = 0; i < panels.Length; i++)
+            {
+                if (panels[i] == null) continue;
+                if (v) panels[i].PanelOn();
+                else panels[i].PanelOff();
+            }
         }
 
         /// <summary>自分の画面で、どれかのパネルが出ているか</summary>
