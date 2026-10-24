@@ -116,8 +116,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             panel.cam = cam;
             var view = Group(root, "View");
             panel.view = view;
-            // 枠
-            var frame = Prim(PrimitiveType.Quad, view, "Frame", HoloMat("PanelFrame", new Color(0.35f, 0.85f, 1f, 1f), Q_BACK));
+            // 枠(黒の縁取り)
+            var frame = Prim(PrimitiveType.Quad, view, "Frame", HoloMat("PanelFrame", new Color(0f, 0f, 0f, 1f), Q_BACK));
             frame.transform.localPosition = new Vector3(0, 0, 0.004f);
             frame.transform.localScale = new Vector3(W + 0.02f, H + 0.02f, 1);
             // 映像(正方形の絵の真ん中を、パネルの形に切り抜く)
@@ -140,13 +140,11 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             cover.SetActive(false);
             // 斜めの半透明の帯と文字(どんな映像の上でも読めるように)
             var band = HoloMat("PanelBand", new Color(0.02f, 0.04f, 0.07f, 0.66f), Q_FILL);
-            var accent = HoloMat("PanelAccent", new Color(0.35f, 0.85f, 1f, 0.95f), Q_FILL + 1);
             float x0 = -W / 2, x1 = W / 2, y0 = -H / 2, y1 = H / 2;
             if (landscape)
             {
                 // 右下にまとめて: 左下から右上へ上がる帯
                 Quad4(view, "Band", new[] { new Vector2(-0.05f, y0), new Vector2(x1, y0), new Vector2(x1, 0.2f), new Vector2(0.1f, -0.15f) }, band, "PanelBandL", -0.001f);
-                Quad4(view, "Accent", new[] { new Vector2(0.1f, -0.15f), new Vector2(x1, 0.2f), new Vector2(x1, 0.212f), new Vector2(0.1f, -0.138f) }, accent, "PanelAccentL", -0.0015f);
                 panel.nameText = PanelText(view, "Name", new Vector2(x1 - 0.36f, 0.02f), 0.75f, new Vector2(0.68f, 0.12f), TextAlignmentOptions.Right);
                 panel.windText = PanelText(view, "Wind", new Vector2(x1 - 0.36f, -0.08f), 0.5f, new Vector2(0.68f, 0.08f), TextAlignmentOptions.Right);
                 panel.line1Text = PanelText(view, "Line1", new Vector2(x1 - 0.36f, -0.22f), 0.55f, new Vector2(0.68f, 0.09f), TextAlignmentOptions.Right);
@@ -156,9 +154,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 // 上: 右に名前と席風 / 下: 左にセット情報。帯はどちらも斜めに切る
                 Quad4(view, "BandTop", new[] { new Vector2(x0, y1 - 0.14f), new Vector2(x1, y1 - 0.26f), new Vector2(x1, y1), new Vector2(x0, y1) }, band, "PanelBandPT", -0.001f);
-                Quad4(view, "AccentTop", new[] { new Vector2(x0, y1 - 0.152f), new Vector2(x1, y1 - 0.272f), new Vector2(x1, y1 - 0.26f), new Vector2(x0, y1 - 0.14f) }, accent, "PanelAccentPT", -0.0015f);
                 Quad4(view, "BandBottom", new[] { new Vector2(x0, y0), new Vector2(x1, y0), new Vector2(x1, y0 + 0.16f), new Vector2(x0, y0 + 0.28f) }, band, "PanelBandPB", -0.001f);
-                Quad4(view, "AccentBottom", new[] { new Vector2(x0, y0 + 0.28f), new Vector2(x1, y0 + 0.16f), new Vector2(x1, y0 + 0.172f), new Vector2(x0, y0 + 0.292f) }, accent, "PanelAccentPB", -0.0015f);
                 panel.nameText = PanelText(view, "Name", new Vector2(x1 - 0.42f, y1 - 0.06f), 0.6f, new Vector2(0.8f, 0.1f), TextAlignmentOptions.Right);
                 panel.windText = PanelText(view, "Wind", new Vector2(x1 - 0.42f, y1 - 0.14f), 0.42f, new Vector2(0.8f, 0.07f), TextAlignmentOptions.Right);
                 panel.line1Text = PanelText(view, "Line1", new Vector2(x0 + 0.42f, y0 + 0.15f), 0.55f, new Vector2(0.8f, 0.09f), TextAlignmentOptions.Left);
