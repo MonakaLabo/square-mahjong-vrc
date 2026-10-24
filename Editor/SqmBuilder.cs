@@ -724,14 +724,15 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             confirm.SetActive(false);
             pad.confirmRoot = confirm;
 
-            // ゲーム前設定(試合が無いとき): 人数(平方・四人・三人)・局数(東風戦・半荘)・NEW GAME
+            // ゲーム前設定(試合が無いとき): 人数(平方・四人・三人)・局数(東風戦・半荘)・NEW GAME。2段は、後ろの帯(手牌の下地)の上下の真ん中に
+            const float SETUP_Y1 = 0.011f + 0.0175f, SETUP_Y2 = 0.011f - 0.0175f;
             var setup = Group(game, "Setup");
             pad.setupRoot = setup;
             PText(setup, "Title", new Vector2(-0.066f, 0.075f), 0.07f, new Vector2(0.26f, 0.02f), TextAlignmentOptions.Left).text = "ゲーム前設定";
-            var ml = PText(setup, "ModeLabel", new Vector2(-0.172f, 0.035f), 0.062f, new Vector2(0.05f, 0.024f), TextAlignmentOptions.Left);
+            var ml = PText(setup, "ModeLabel", new Vector2(-0.172f, SETUP_Y1), 0.062f, new Vector2(0.05f, 0.024f), TextAlignmentOptions.Left);
             ml.text = "人数";
             ml.color = P_MUTED;
-            var rl = PText(setup, "RoundLabel", new Vector2(-0.172f, 0.0f), 0.062f, new Vector2(0.05f, 0.024f), TextAlignmentOptions.Left);
+            var rl = PText(setup, "RoundLabel", new Vector2(-0.172f, SETUP_Y2), 0.062f, new Vector2(0.05f, 0.024f), TextAlignmentOptions.Left);
             rl.text = "局数";
             rl.color = P_MUTED;
             string[] setupLabels = { "平方", "四人", "三人", "東風戦", "半荘" };
@@ -742,7 +743,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             {
                 // 人数の3つ・局数の2つは、それぞれつなげる
                 int j = i < 3 ? i : i - 3, n = i < 3 ? 3 : 2;
-                var at = new Vector2(-0.112f + j * 0.0605f, i < 3 ? 0.035f : 0.0f);
+                var at = new Vector2(-0.112f + j * 0.0605f, i < 3 ? SETUP_Y1 : SETUP_Y2);
                 var g = HexBtn(setup, "setup_" + i, setupLabels[i], at, new Vector2(0.06f, 0.026f), 0.075f,
                     mbFill, mbLine, P_TEXT, j == 0, j == n - 1, out pad.setupLabels[i], out pad.setupFills[i], out pad.setupBorders[i]);
                 PadKey(g, pad, 400 + i);
