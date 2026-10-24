@@ -27,6 +27,9 @@ namespace MonakaLabo.SquareMahjong
         public GameObject gameRoot;
         public TextMeshPro gameMessage;
         public TextMeshPro waitText;         // 待ち(和了れる2枚の組み合わせ・役なし・フリテン)
+        public GameObject lastRoot;          // 直前の打牌(右上に小さく: 席風・牌)
+        public TextMeshPro lastWind;
+        public MeshRenderer[] lastTiles;     // 2
         public MeshRenderer[] handTiles;     // 30(門前 28 + ツモ 2)
         public GameObject[] handLift;        // 選んだ牌の印 30
         public GameObject[] handDim;         // リーチで切れない牌を暗くする 30
@@ -203,6 +206,14 @@ namespace MonakaLabo.SquareMahjong
             bool live = table.IsLive();
             gameMessage.text = table.PadGuide();
             if (waitText != null) waitText.text = live ? table.PadWaitText() : "";
+            // 直前の打牌
+            bool lastOn = live && table.LastDiscardSeat() >= 0;
+            SetActive(lastRoot, lastOn);
+            if (lastOn)
+            {
+                if (lastWind != null) lastWind.text = table.LastDiscardWind();
+                for (int k = 0; k < lastTiles.Length; k++) Tile(lastTiles[k], table.LastDiscardTile(k));
+            }
             // デバッグ: 切るべき牌(強い NPC の判断)。手牌の枠のうち、その牌のものに印をつける
             bool hintOn = debugHint && table.debugEnabled && live;
             int hintSlotA = -1, hintSlotB = -1;

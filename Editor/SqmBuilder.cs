@@ -294,7 +294,21 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             // ---- 対局 ----
             var game = Group(content, "Game");
             pad.gameRoot = game;
-            pad.gameMessage = PText(game, "Message", new Vector2(0, 0.07f), 0.075f, new Vector2(0.38f, 0.026f), TextAlignmentOptions.Center);
+            // 案内の文は、右上の「直前の打牌」のぶん左に寄せる
+            pad.gameMessage = PText(game, "Message", new Vector2(-0.03f, 0.07f), 0.075f, new Vector2(0.32f, 0.026f), TextAlignmentOptions.Center);
+            var lastP = Group(game, "LastDiscard");
+            pad.lastRoot = lastP;
+            pad.lastWind = PText(lastP, "Wind", new Vector2(0.142f, 0.07f), 0.06f, new Vector2(0.016f, 0.02f), TextAlignmentOptions.Center);
+            pad.lastTiles = new MeshRenderer[2];
+            for (int i = 0; i < 2; i++)
+            {
+                var t = Prim(PrimitiveType.Quad, lastP, "tile_" + i, matHoloFaces[0]);
+                t.transform.localPosition = new Vector3(0.16f + i * 0.0165f, 0.07f, -0.003f);
+                t.transform.localScale = new Vector3(0.015f, 0.021f, 1);
+                pad.lastTiles[i] = t.GetComponent<MeshRenderer>();
+                t.SetActive(false);
+            }
+            lastP.SetActive(false);
             pad.waitText = PText(game, "Waits", new Vector2(0, -0.048f), 0.048f, new Vector2(0.38f, 0.014f), TextAlignmentOptions.Center);
             pad.waitText.enableWordWrapping = false;
             pad.waitText.overflowMode = TextOverflowModes.Ellipsis;
@@ -732,6 +746,22 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holoRonLabel = ronLabel.gameObject;   // 普通の麻雀(ロン牌が無い)では隠す
             table.holoDora = HoloTiles(play, "Dora", SqmTable.N_DORA, 0.3f);
             table.holoRon = HoloTiles(play, "Ron", SqmTable.N_RON, 0.05f);
+            // 直前の打牌(見出し・席風・牌2枚)。高さは SqmTable が試合の種類で変える(平方: ロン牌の下 / 普通の麻雀: ドラ表示牌の下)
+            var last = Group(play, "LastDiscard");
+            last.transform.localPosition = new Vector3(0, SqmTable.LAST_Y_SQUARE, 0);
+            table.holoLastRoot = last;
+            HText(last, "Label", new Vector2(-0.31f, 0), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left).text = "直前の打牌";
+            table.holoLastWind = HText(last, "Wind", new Vector2(-0.12f, 0), 0.5f, new Vector2(0.06f, 0.08f), TextAlignmentOptions.Center);
+            table.holoLast = new MeshRenderer[2];
+            for (int i = 0; i < 2; i++)
+            {
+                var q = Prim(PrimitiveType.Quad, last, "tile_" + i, matHoloFaces[0]);
+                q.transform.localPosition = new Vector3(-0.07f + i * 0.05f, 0, 0);
+                q.transform.localScale = new Vector3(0.045f, 0.06f, 1);
+                table.holoLast[i] = q.GetComponent<MeshRenderer>();
+                q.SetActive(false);
+            }
+            last.SetActive(false);
             HText(play, "SetLabel", new Vector2(-0.3f, -0.21f), 0.44f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "セット";
             HText(play, "KyokuLabel", new Vector2(-0.3f, -0.31f), 0.44f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "現局";
             table.holoSetTime = SegText(play, "SetTime", new Vector2(0.0f, -0.21f), 0.44f, new Vector2(0.34f, 0.075f), true);

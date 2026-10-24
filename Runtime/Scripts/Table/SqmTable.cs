@@ -72,6 +72,9 @@ namespace MonakaLabo.SquareMahjong
         public TextMeshPro holoRound, holoLeft, holoSticks, holoSetTime, holoKyokuTime, holoCenter;
         public TextMeshPro holoMatchType;    // 試合の種類(平方戦・東風戦・半荘戦)
         public GameObject holoRonLabel;      // 「ロン牌」の見出し(普通の麻雀では隠す)
+        public GameObject holoLastRoot;      // 直前の打牌(見出し・席風・牌)。平方はロン牌の下、普通の麻雀はドラ表示牌の下
+        public TextMeshPro holoLastWind;
+        public MeshRenderer[] holoLast;      // 2(平方は2枚、普通の麻雀は1枚)
         public GameObject[] holoGauge;       // 残り枚数の円のゲージ(上から時計回り)
         public MeshRenderer[] holoDora;      // ドラ表示牌 18
         public MeshRenderer[] holoRon;       // ロン牌 12
@@ -2182,6 +2185,52 @@ namespace MonakaLabo.SquareMahjong
             resBody.text = list;
         }
 
+        // ---- 直前の打牌(ホロ・パッド) ----
+        public const float LAST_Y_SQUARE = -0.1f, LAST_Y_STD = 0.15f;   // ホロでの高さ(平方: ロン牌の下 / 普通の麻雀: ドラ表示牌の下)
+
+        /// <summary>直前に打牌した卓の席(-1 = まだ無い)</summary>
+        public int LastDiscardSeat()
+        {
+            if (lMatch == 0) return -1;
+            if (Std()) return stdEngine.phase == SqmStdEngine.PH_DEAL || stdEngine.lastDiscSeat < 0 ? -1 : StdTableSeat(stdEngine.lastDiscSeat);
+            return engine.phase == SqmEngine.PH_DEAL ? -1 : engine.lastDiscardSeat;
+        }
+
+        /// <summary>直前の打牌の k 枚目(牌の絵の番号。無ければ -1)</summary>
+        public int LastDiscardTile(int k)
+        {
+            int s = LastDiscardSeat();
+            if (s < 0) return -1;
+            if (Std()) return k == 0 ? stdView.Face(stdEngine.lastDiscCode) : -1;
+            int ri = s * SqmEngine.MAXRIVER + engine.lastDiscardIdx;
+            if (engine.lastDiscardIdx < 0) return -1;
+            if (k == 0) return engine.rvT0[ri];
+            return engine.rvN[ri] == 2 ? engine.rvT1[ri] : -1;
+        }
+
+        /// <summary>直前に打牌した人の席風</summary>
+        public string LastDiscardWind()
+        {
+            int s = LastDiscardSeat();
+            if (s < 0) return "";
+            if (Std()) return stdView.WindName(stdEngine.SeatWind(stdEngine.lastDiscSeat));
+            return WindName(engine.SeatWindOf(s, engine.dealer));
+        }
+
+        private void RefreshHoloLast()
+        {
+            if (holoLastRoot == null) return;
+            bool show = LastDiscardSeat() >= 0;
+            if (holoLastRoot.activeSelf != show) holoLastRoot.SetActive(show);
+            if (!show) return;
+            Transform tr = holoLastRoot.transform;
+            Vector3 p = tr.localPosition;
+            float y = Std() ? LAST_Y_STD : LAST_Y_SQUARE;
+            if (p.y != y) tr.localPosition = new Vector3(p.x, y, p.z);
+            if (holoLastWind != null) holoLastWind.text = LastDiscardWind();
+            if (holoLast != null) for (int k = 0; k < holoLast.Length; k++) HoloTile(holoLast[k], LastDiscardTile(k));
+        }
+
         /// <summary>試合の種類: 平方戦・東風戦・半荘戦</summary>
         public string MatchTypeName()
         {
@@ -2948,6 +2997,7 @@ namespace MonakaLabo.SquareMahjong
             if (message.Length > 0) top += "<color=#ff8080>" + message + "</color>";
             holo.text = top;
             if (holoMatchType != null) holoMatchType.text = MatchTypeName();
+            RefreshHoloLast();
             if (holoRonLabel != null && holoRonLabel.activeSelf == Std()) holoRonLabel.SetActive(!Std());
             if (Std()) { RefreshHoloStd(); return; }
 

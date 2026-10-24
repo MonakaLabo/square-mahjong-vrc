@@ -99,6 +99,8 @@ namespace MonakaLabo.SquareMahjong
         [System.NonSerialized] public int[] kitaN;
         [System.NonSerialized] public bool[] riichiOn, ippatsu, doubleRiichi, furitenTemp, furitenRiichi, firstTurn;
         [System.NonSerialized] public int riichiDeclaring;
+        /// <summary>直前の打牌(鳴かれても次の打牌まで残す。局の始めは -1)</summary>
+        [System.NonSerialized] public int lastDiscSeat, lastDiscCode;
         private bool riichiDeclDouble;
         [System.NonSerialized] public int[] kanBy; [System.NonSerialized] public int kanTotal;
         /// <summary>責任払い: paoSeat[和了者] が払う(paoYaku の役満のとき)</summary>
@@ -541,6 +543,7 @@ namespace MonakaLabo.SquareMahjong
             wallN = 0; wallPos = 0; liveEnd = 0; replN = 0; doraN = 0; pendingDora = 0;
             kanTotal = 0; noCalls = true; afterCall = false; afterRinshan = false; nextRinshan = false;
             riichiDeclaring = -1; riichiDeclDouble = false;
+            lastDiscSeat = -1; lastDiscCode = -1;
             fdN = 0; fdKind = -1; fdSame = true;
             dcType = 0; dcSeat = -1; dcCode = -1;
             winsN = 0; resType = RES_NONE; resReason = 0; resRenchan = false; uraShown = false;
@@ -946,6 +949,7 @@ namespace MonakaLabo.SquareMahjong
             if (i >= MAXRV) { riverN[s] = MAXRV; i = MAXRV - 1; }
             rvC[s * MAXRV + i] = code;
             rvF[s * MAXRV + i] = (riichi ? RV_RIICHI : 0) | (code == drawnCode[s] && !afterCall ? RV_TSUMOGIRI : 0);
+            lastDiscSeat = s; lastDiscCode = code;
             FlipPendingDora();
             if (riichi) { riichiDeclaring = s; riichiDeclDouble = firstTurn[s] && noCalls; }
             ippatsu[s] = false;
