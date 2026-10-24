@@ -796,6 +796,7 @@ namespace MonakaLabo.SquareMahjong
             if (t.holoRound != null) t.holoRound.text = RoundName();
             if (t.holoSticks != null) t.holoSticks.text = "×" + engine.kyotaku + "\n×" + engine.honba;
             bool dealt = engine.phase != SqmStdEngine.PH_DEAL;
+            if (t.holoDora != null) t.HoloTileLayout(t.holoDora, dealt ? engine.doraN : 0, SqmTable.HOLO_DORA_Y);
             if (t.holoDora != null)
                 for (int i = 0; i < t.holoDora.Length; i++) t.HoloTile(t.holoDora[i], dealt && i < engine.doraN ? Face(engine.DoraIndicator(i)) : -1);
             if (t.holoRon != null) for (int i = 0; i < t.holoRon.Length; i++) t.HoloTile(t.holoRon[i], -1);

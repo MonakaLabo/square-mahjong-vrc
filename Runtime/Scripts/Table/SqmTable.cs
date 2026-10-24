@@ -2186,7 +2186,34 @@ namespace MonakaLabo.SquareMahjong
         }
 
         // ---- 直前の打牌(ホロ・パッド) ----
-        public const float LAST_Y_SQUARE = -0.1f, LAST_Y_STD = 0.15f;   // ホロでの高さ(平方: ロン牌の下 / 普通の麻雀: ドラ表示牌の下)
+        public const float LAST_Y_SQUARE = 0.014f, LAST_Y_STD = HOLO_RON_Y;   // ホロでの高さ(平方: ロン牌の下 / 普通の麻雀: ロン牌の行)
+
+        // ---- ホロの真ん中の牌(ドラ表示牌・ロン牌) ----
+        public const float HOLO_TILE_X = -0.132f;                     // 牌とタイマーの左端
+        public const float HOLO_DORA_Y = 0.19f, HOLO_RON_Y = 0.102f;  // 行の高さ
+        public const int HOLO_ROW_BIG = 6;                            // 普通の大きさで1段に並べる枚数(右の見取り図にかからない幅)
+
+        /// <summary>
+        /// ホロの牌を n 枚ぶん並べる。HOLO_ROW_BIG 枚までは普通の大きさで1段、それより多いときは小さくして2段(行の高さの中に収める)
+        /// </summary>
+        public void HoloTileLayout(MeshRenderer[] rs, int n, float y)
+        {
+            if (rs == null) return;
+            bool small = n > HOLO_ROW_BIG;
+            int per = small ? (n + 1) / 2 : HOLO_ROW_BIG;
+            float w = small ? 0.03f : 0.045f, hh = small ? 0.04f : 0.06f, pitch = small ? 0.034f : 0.05f;
+            Vector3 sc = new Vector3(w, hh, 1);
+            for (int i = 0; i < rs.Length && i < n; i++)
+            {
+                if (rs[i] == null) continue;
+                int row = small ? i / per : 0;
+                int col = small ? i - row * per : i;
+                Vector3 p = new Vector3(HOLO_TILE_X + w * 0.5f + col * pitch, small ? y + 0.022f - row * 0.044f : y, 0);
+                Transform tr = rs[i].gameObject.transform;
+                if (tr.localPosition != p) tr.localPosition = p;
+                if (tr.localScale != sc) tr.localScale = sc;
+            }
+        }
 
         /// <summary>直前に打牌した卓の席(-1 = まだ無い)</summary>
         public int LastDiscardSeat()
@@ -3102,9 +3129,15 @@ namespace MonakaLabo.SquareMahjong
             // ---- 中: ドラ表示牌・ロン牌 ----
             bool dealt = engine.phase != SqmEngine.PH_DEAL;
             if (holoDora != null)
+            {
+                HoloTileLayout(holoDora, dealt ? engine.doraIndN : 0, HOLO_DORA_Y);
                 for (int i = 0; i < holoDora.Length; i++) HoloTile(holoDora[i], dealt && i < engine.doraIndN ? engine.doraInd[i] : -1);
+            }
             if (holoRon != null)
+            {
+                HoloTileLayout(holoRon, dealt ? engine.ronTilesLen : 0, HOLO_RON_Y);
                 for (int i = 0; i < holoRon.Length; i++) HoloTile(holoRon[i], dealt && i < engine.ronTilesLen ? engine.ronTiles[i] : -1);
+            }
             RefreshHoloTime();
 
             // ---- 右: 見取り図 ----

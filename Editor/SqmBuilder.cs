@@ -916,7 +916,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holoPlay = play;
 
             // ---- 左: 局・残り枚数(円のゲージ)・点棒 ----
-            var c = new Vector2(-0.8f, 0f);
+            var c = new Vector2(-0.765f, 0f);   // 円がホロの左端に寄りすぎないように
             var ring = Prim(PrimitiveType.Quad, play, "Ring", matHoloLine);
             ring.GetComponent<MeshFilter>().sharedMesh = RingMesh();
             ring.transform.localPosition = new Vector3(c.x, c.y, 0);
@@ -949,33 +949,36 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             table.holoSticks = HText(play, "Sticks", c + new Vector2(0.115f, -0.135f), 0.48f, new Vector2(0.13f, 0.15f), TextAlignmentOptions.Left);
             table.holoSticks.lineSpacing = -10f;
 
-            // ---- 中: ドラ表示牌・ロン牌・時間 ----
-            HText(play, "DoraLabel", new Vector2(-0.31f, 0.3f), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left).text = "ドラ表示牌";
-            var ronLabel = HText(play, "RonLabel", new Vector2(-0.31f, 0.05f), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left);
+            // ---- 中: ドラ表示牌・ロン牌・打牌・時間 ----
+            // 見出しは右揃え(右端 LABEL_R)、牌とタイマーは左揃え(左端 SqmTable.HOLO_TILE_X)。行は詰めて並べる
+            const float LABEL_R = -0.177f, LW = 0.3f;
+            HText(play, "DoraLabel", new Vector2(LABEL_R - LW / 2, SqmTable.HOLO_DORA_Y), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "ドラ表示牌";
+            var ronLabel = HText(play, "RonLabel", new Vector2(LABEL_R - LW / 2, SqmTable.HOLO_RON_Y), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right);
             ronLabel.text = "ロン牌";
             table.holoRonLabel = ronLabel.gameObject;   // 普通の麻雀(ロン牌が無い)では隠す
-            table.holoDora = HoloTiles(play, "Dora", SqmTable.N_DORA, 0.3f);
-            table.holoRon = HoloTiles(play, "Ron", SqmTable.N_RON, 0.05f);
-            // 直前の打牌(見出し・席風・牌2枚)。高さは SqmTable が試合の種類で変える(平方: ロン牌の下 / 普通の麻雀: ドラ表示牌の下)
+            table.holoDora = HoloTiles(play, "Dora", SqmTable.N_DORA, SqmTable.HOLO_DORA_Y);
+            table.holoRon = HoloTiles(play, "Ron", SqmTable.N_RON, SqmTable.HOLO_RON_Y);
+            // 直前の打牌(見出し・席風・牌2枚)。高さは SqmTable が試合の種類で変える(平方: ロン牌の下 / 普通の麻雀: ロン牌の行)
             var last = Group(play, "LastDiscard");
             last.transform.localPosition = new Vector3(0, SqmTable.LAST_Y_SQUARE, 0);
             table.holoLastRoot = last;
-            HText(last, "Label", new Vector2(-0.31f, 0), 0.46f, new Vector2(0.3f, 0.08f), TextAlignmentOptions.Left).text = "直前の打牌";
-            table.holoLastWind = HText(last, "Wind", new Vector2(-0.12f, 0), 0.5f, new Vector2(0.06f, 0.08f), TextAlignmentOptions.Center);
+            HText(last, "Label", new Vector2(LABEL_R - LW / 2, 0), 0.46f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "打牌";
+            table.holoLastWind = HText(last, "Wind", new Vector2(SqmTable.HOLO_TILE_X + 0.025f, 0), 0.5f, new Vector2(0.05f, 0.08f), TextAlignmentOptions.Center);
             table.holoLast = new MeshRenderer[2];
             for (int i = 0; i < 2; i++)
             {
                 var q = Prim(PrimitiveType.Quad, last, "tile_" + i, matHoloFaces[0]);
-                q.transform.localPosition = new Vector3(-0.07f + i * 0.05f, 0, 0);
+                q.transform.localPosition = new Vector3(SqmTable.HOLO_TILE_X + 0.0725f + i * 0.05f, 0, 0);   // 席風のあと
                 q.transform.localScale = new Vector3(0.045f, 0.06f, 1);
                 table.holoLast[i] = q.GetComponent<MeshRenderer>();
                 q.SetActive(false);
             }
             last.SetActive(false);
-            HText(play, "SetLabel", new Vector2(-0.3f, -0.21f), 0.44f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "セット";
-            HText(play, "KyokuLabel", new Vector2(-0.3f, -0.31f), 0.44f, new Vector2(0.2f, 0.08f), TextAlignmentOptions.Right).text = "現局";
-            table.holoSetTime = SegText(play, "SetTime", new Vector2(0.0f, -0.21f), 0.44f, new Vector2(0.34f, 0.075f), true);
-            table.holoKyokuTime = SegText(play, "KyokuTime", new Vector2(0.0f, -0.31f), 0.44f, new Vector2(0.34f, 0.075f), true);
+            const float SET_Y = -0.074f, KYOKU_Y = -0.162f, TW = 0.32f;
+            HText(play, "SetLabel", new Vector2(LABEL_R - LW / 2, SET_Y), 0.44f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "セット";
+            HText(play, "KyokuLabel", new Vector2(LABEL_R - LW / 2, KYOKU_Y), 0.44f, new Vector2(LW, 0.08f), TextAlignmentOptions.Right).text = "現局";
+            table.holoSetTime = SegText(play, "SetTime", new Vector2(SqmTable.HOLO_TILE_X + TW / 2, SET_Y), 0.44f, new Vector2(TW, 0.075f), true);
+            table.holoKyokuTime = SegText(play, "KyokuTime", new Vector2(SqmTable.HOLO_TILE_X + TW / 2, KYOKU_Y), 0.44f, new Vector2(TW, 0.075f), true);
 
             // ---- 右: 8席の見取り図 ----
             var g = new Vector2(0.72f, -0.01f);
@@ -1268,7 +1271,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             return t;
         }
 
-        /// <summary>ホロの牌(9枚で折り返す)</summary>
+        /// <summary>ホロの牌(左端 SqmTable.HOLO_TILE_X から。枚数に合わせた並べ方は SqmTable.HoloTileLayout が決める)</summary>
         static MeshRenderer[] HoloTiles(GameObject parent, string name, int n, float y)
         {
             var g = Group(parent, name);
@@ -1276,7 +1279,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             for (int i = 0; i < n; i++)
             {
                 var q = Prim(PrimitiveType.Quad, g, name + "_" + i.ToString("00"), matHoloFaces[0]);
-                q.transform.localPosition = new Vector3(-0.14f + (i % 9) * 0.05f, y - (i / 9) * 0.07f, 0);
+                q.transform.localPosition = new Vector3(SqmTable.HOLO_TILE_X + 0.0225f + i * 0.05f, y, 0);
                 q.transform.localScale = new Vector3(0.045f, 0.06f, 1);
                 rs[i] = q.GetComponent<MeshRenderer>();
                 q.SetActive(false);
