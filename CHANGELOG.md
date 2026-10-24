@@ -1,6 +1,6 @@
 # 変更履歴
 
-## 未リリース
+## 0.7.1
 
 - プレイヤーパネルを全部まとめて切り替えられるように: カメラ(SquareMahjongPlayerCam)の Udon イベント PanelOn / PanelOff / PanelToggle が、シーンのパネル全部に効く(PanelToggle は、どれかが出ていれば全部切り、全部切られていれば全部出す)
 
