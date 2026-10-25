@@ -79,6 +79,21 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] setupFills, setupBorders;
         public TextMeshPro[] setupLabels;
 
+        // ---- 対局タブの「手牌 | 河」(左下) ----
+        // 河: 平方麻雀は縦8行(自分から手番の順)で、左が最新、右へ遡る。普通の麻雀は4区画(左下 自分・右下 下家・右上 対面・左上 上家)に 6 枚 × 3 段
+        public GameObject handView, riverView;   // 手牌まわり / 河(どちらかを出す)
+        public GameObject viewToggle;
+        public MeshRenderer[] viewFills, viewBorders;   // 2(0 手牌 1 河)
+        public TextMeshPro[] viewLabels;
+        public MeshRenderer[] riverTiles;    // RIVER_POOL(置く所は SqmPad が決める)
+        public TextMeshPro[] riverNames;     // 平方麻雀の行の見出し 8(席風と名前)
+        public TextMeshPro[] quadNames;      // 普通の麻雀の区画の見出し 4
+        public GameObject quadLines;         // 普通の麻雀の区画の仕切り
+        public const int RIVER_POOL = 240;
+        public const float RV_TOP = 0.051f, RV_BOTTOM = -0.061f;            // 河を出す範囲(上下)
+        public const float RV_ROW = 0.014f, RV_TW = 0.0093f, RV_TH = 0.0125f, RV_X0 = -0.146f;   // 平方麻雀: 行の高さ・牌・牌を置き始める所
+        public const float RQ_H = 0.055f, RQ_W = 0.194f, RQ_LABEL = 0.036f, RQ_TW = 0.0128f, RQ_TH = 0.0172f;   // 普通の麻雀: 区画・見出しの幅・牌
+
         // ---- 卓の上の空中ボタン(自分の席の前。パッドと同じ操作を、卓を見たまま押せるように) ----
         // いちばん右(縁の上の今までの「確定」の真上)に 確定/スキップ/確認、その左に鳴き・和了・リーチなどを右から並べる
         public Transform deskRoot;           // 卓の子。自分の席の前へ動かす
@@ -158,6 +173,8 @@ namespace MonakaLabo.SquareMahjong
         private int[] deskSlot;              // 空中ボタン → 操作ボタンの番号
         private const int DESK_NONE = 0, DESK_DISCARD = 1, DESK_PASS = 2, DESK_CONFIRM = 3;
         private int deskMainAct, deskPassK = -1;
+        private bool showRiver, prevAct;     // 河を出しているか / 前のフレームで自分の番・鳴きの選択肢があったか
+        private int[] rvTiles, rvFlags;
         private int tab;
         private int candGroup = -1, candPage;   // 候補を出している鳴きの種類と、その何ページ目か
         private int listTop;
@@ -178,6 +195,7 @@ namespace MonakaLabo.SquareMahjong
             ready = true;
             slotAct = new int[6]; slotArg = new int[6]; slotStyle = new int[6];
             deskSlot = new int[5];
+            rvTiles = new int[400]; rvFlags = new int[400];
             legendOrder = new int[8];
         }
 
@@ -195,6 +213,7 @@ namespace MonakaLabo.SquareMahjong
             if (code == 320) { listTop = Mathf.Max(0, listTop - ROWS); Refresh(); return; }
             if (code == 321) { listTop += ROWS; Refresh(); return; }
             if (code == 331 || code == 332) { showGraph = code == 332; Refresh(); return; }
+            if (code == 335 || code == 336) { showRiver = code == 336; Refresh(); return; }
             if (code == 333) { table.autoTsumogiri = !table.autoTsumogiri; Refresh(); return; }
             if (code == 334) { table.autoNoCall = !table.autoNoCall; Refresh(); return; }
             if (code >= 400 && code < 405) { PressSetup(code - 400); return; }
@@ -419,6 +438,17 @@ namespace MonakaLabo.SquareMahjong
             SetActive(confirmRoot, confirm);
             RefreshSetup(!live);
             int s = slotN;
+            // 手牌 | 河: 自分の番が来たとき・鳴けるようになったときは手牌に戻す。操作ボタンが左端まで並ぶときは切り替えを隠す
+            bool act = table.padMyTurn || table.optN > 0;
+            if (act && !prevAct) showRiver = false;
+            prevAct = act;
+            bool river = live && showRiver;
+            SetActive(handView, !river);
+            SetActive(riverView, river);
+            SetActive(viewToggle, live && s < 5);
+            Paint(viewFills[0], viewBorders[0], viewLabels[0], !river);
+            Paint(viewFills[1], viewBorders[1], viewLabels[1], river);
+            if (river) RefreshRiverView();
             // 右下に右寄せで並べる(ボタンはひとつずつ独立した六角形)
             for (int i = 0; i < 6; i++)
             {
@@ -693,6 +723,93 @@ namespace MonakaLabo.SquareMahjong
             if (g == 5) return BTN_KAN;
             if (g == 8) return BTN_PASS;
             return BTN_OTHER;
+        }
+
+        // ---------------------------------------------------------------- 河
+        private void RefreshRiverView()
+        {
+            int me = table.humanSeat, used = 0;
+            bool std = table.StdLive();
+            SetActive(quadLines, std);
+            if (std)
+            {
+                for (int k = 0; k < riverNames.Length; k++) riverNames[k].text = "";
+                int np = table.stdEngine.NP, myEs = table.StdEngineSeat(me);
+                for (int rel = 0; rel < 4; rel++)
+                {
+                    // 左下 = 自分、右下 = 下家、右上 = 対面、左上 = 上家(qx, qy = 区画の左下)
+                    float qx = rel == 0 || rel == 3 ? -0.196f : 0.002f;
+                    float qy = rel <= 1 ? RV_BOTTOM : RV_BOTTOM + RQ_H + 0.002f;
+                    int ts = rel < np && myEs >= 0 ? table.StdTableSeat((myEs + rel) % np) : -1;
+                    quadNames[rel].text = ts >= 0 ? RiverHead(ts, true) : "";
+                    if (ts < 0) continue;
+                    int n = table.PadRiver(ts, rvTiles, rvFlags);
+                    // 6 枚ずつ 3 段(3 段目は、はみ出したら右へ続ける)
+                    float x = 0;
+                    int col = 0, row = 0;
+                    for (int i = 0; i < n && used < riverTiles.Length; i++)
+                    {
+                        if (col == 6 && row < 2) { col = 0; row++; x = 0; }
+                        bool side = (rvFlags[i] & 1) != 0;
+                        float w = side ? RQ_TH : RQ_TW;
+                        if (RQ_LABEL + x + w > RQ_W) break;
+                        PlaceRiver(used++, rvTiles[i], qx + RQ_LABEL + x + w / 2, qy + RQ_H - (row + 0.5f) * (RQ_TH + 0.001f), side, RQ_TW, RQ_TH);
+                        x += w + 0.0008f;
+                        col++;
+                    }
+                }
+            }
+            else
+            {
+                for (int k = 0; k < quadNames.Length; k++) quadNames[k].text = "";
+                for (int k = 0; k < 8; k++)
+                {
+                    int ts = (me + k) % 8;
+                    float cy = RV_TOP - (k + 0.5f) * RV_ROW;
+                    riverNames[k].text = RiverHead(ts, false);
+                    int n = table.PadRiver(ts, rvTiles, rvFlags);
+                    // 新しい打牌から1回分(平方麻雀は2枚)ずつ、左から右へ。入りきらなくなったら、そこまで
+                    float x = RV_X0;
+                    int end = n;
+                    while (end > 0)
+                    {
+                        int st = end - 1;
+                        while (st > 0 && (rvFlags[st] & 2) == 0) st--;
+                        float gw = 0;
+                        for (int i = st; i < end; i++) gw += ((rvFlags[i] & 1) != 0 ? RV_TH : RV_TW) + 0.0006f;
+                        if (x + gw > 0.196f || used + (end - st) > riverTiles.Length) break;
+                        for (int i = st; i < end; i++)
+                        {
+                            bool side = (rvFlags[i] & 1) != 0;
+                            float w = side ? RV_TH : RV_TW;
+                            PlaceRiver(used++, rvTiles[i], x + w / 2, cy, side, RV_TW, RV_TH);
+                            x += w + 0.0006f;
+                        }
+                        x += 0.003f;
+                        end = st;
+                    }
+                }
+            }
+            for (int i = used; i < riverTiles.Length; i++) SetActive(riverTiles[i].gameObject, false);
+        }
+
+        /// <summary>河の見出し: 席風(水色、リーチ中は赤)と名前(自分は黄色)</summary>
+        private string RiverHead(int ts, bool twoLines)
+        {
+            string wc = table.PadRiichi(ts) ? "#ff6a5a" : "#5fd4f5";
+            string nc = ts == table.humanSeat ? "#ffd170" : "#8fb8cc";
+            return "<color=" + wc + ">" + table.PadRiverWind(ts) + "</color>" + (twoLines ? "\n" : " ") + "<color=" + nc + ">" + table.SeatDisplayName(ts) + "</color>";
+        }
+
+        /// <summary>河の牌を置く(side = リーチの牌。横にする)</summary>
+        private void PlaceRiver(int i, int t, float x, float y, bool side, float w, float h)
+        {
+            MeshRenderer r = riverTiles[i];
+            Tile(r, t);
+            Transform tr = r.transform;
+            tr.localPosition = new Vector3(x, y, -0.003f);
+            tr.localRotation = side ? Quaternion.Euler(0, 0, 90) : Quaternion.identity;
+            tr.localScale = new Vector3(w, h, 1);
         }
 
         // ---------------------------------------------------------------- 卓の上の空中ボタン

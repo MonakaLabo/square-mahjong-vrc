@@ -2936,6 +2936,64 @@ namespace MonakaLabo.SquareMahjong
         public int OptMode(int k) { return optBuf[k * SqmEngine.OPT + SqmEngine.O_MODE]; }
         public void PadOption(int k) { ClickOption(k); }
 
+        // ================================================================ パッドの河(対局タブの「河」)
+        /// <summary>
+        /// 卓の席 ts の河(鳴かれた牌を除く)を、古い順に tiles(牌の絵の番号)へ入れて数を返す。
+        /// flags: 1 = リーチの牌(横にする)、2 = 1回の打牌の始まり(平方麻雀は2枚で1回)
+        /// </summary>
+        public int PadRiver(int ts, int[] tiles, int[] flags)
+        {
+            int n = 0, max = tiles.Length;
+            if (lMatch == 0 || ts < 0) return 0;
+            if (Std())
+            {
+                int es = StdEngineSeat(ts);
+                if (es < 0 || stdEngine.phase == SqmStdEngine.PH_DEAL) return 0;
+                for (int i = 0; i < stdEngine.riverN[es] && n < max; i++)
+                {
+                    int o = es * SqmStdEngine.MAXRV + i;
+                    int f = stdEngine.rvF[o];
+                    if ((f & SqmStdEngine.RV_CALLED) != 0) continue;
+                    tiles[n] = stdView.Face(stdEngine.rvC[o]);
+                    flags[n] = 2 | ((f & SqmStdEngine.RV_RIICHI) != 0 ? 1 : 0);
+                    n++;
+                }
+                return n;
+            }
+            for (int g = 0; g < engine.riverLen[ts]; g++)
+            {
+                int ri = ts * SqmEngine.MAXRIVER + g;
+                bool first = true;
+                for (int k = 0; k < engine.rvN[ri]; k++)
+                {
+                    bool taken = k == 0 ? engine.rvTaken0[ri] : engine.rvTaken1[ri];
+                    if (taken) continue;
+                    if (n >= max) return n;
+                    tiles[n] = k == 0 ? engine.rvT0[ri] : engine.rvT1[ri];
+                    flags[n] = (first ? 2 : 0) | (engine.rvRiichi[ri] && k == 0 ? 1 : 0);
+                    first = false;
+                    n++;
+                }
+            }
+            return n;
+        }
+
+        /// <summary>パッドの河の見出しに出す、卓の席 ts の席風(1文字)</summary>
+        public string PadRiverWind(int ts)
+        {
+            if (lMatch == 0 || ts < 0) return "";
+            if (Std()) { int es = StdEngineSeat(ts); return es >= 0 ? stdView.WindName(stdEngine.SeatWind(es)) : ""; }
+            return WindName(engine.SeatWindOf(ts, engine.dealer));
+        }
+
+        /// <summary>卓の席 ts がリーチしているか</summary>
+        public bool PadRiichi(int ts)
+        {
+            if (lMatch == 0 || ts < 0) return false;
+            if (Std()) { int es = StdEngineSeat(ts); return es >= 0 && stdEngine.riichiOn[es]; }
+            return engine.riichiOn[ts];
+        }
+
         /// <summary>自分がリーチしているか</summary>
         public bool MyRiichi()
         {

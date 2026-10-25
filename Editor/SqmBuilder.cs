@@ -672,8 +672,11 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.lastName.enableWordWrapping = false;
             pad.lastName.overflowMode = TextOverflowModes.Ellipsis;
             lastP.SetActive(false);
+            // 手牌まわり(「河」を出している間は隠す)
+            var hv = Group(game, "HandView");
+            pad.handView = hv;
             // 手牌の下地
-            RectQ(game, "HandBg", new Vector2(0, 0.011f), new Vector2(0.396f, 0.078f), mpHandBg);
+            RectQ(hv, "HandBg", new Vector2(0, 0.011f), new Vector2(0.396f, 0.078f), mpHandBg);
             // 手牌(位置は SqmPad.PlaceHand が決める)
             pad.handTiles = new MeshRenderer[30];
             pad.handLift = new GameObject[30];
@@ -683,11 +686,11 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             var dimMat = HoloMat("PadDim", new Color(0.03f, 0.06f, 0.1f, 0.6f), 2999);
             for (int i = 0; i < 30; i++)
             {
-                var lift = Prim(PrimitiveType.Quad, game, "lift_" + i.ToString("00"), matPadLift);
+                var lift = Prim(PrimitiveType.Quad, hv, "lift_" + i.ToString("00"), matPadLift);
                 lift.transform.localScale = new Vector3(0.0258f, 0.034f, 1);
                 lift.SetActive(false);
                 pad.handLift[i] = lift;
-                var t = Prim(PrimitiveType.Quad, game, "tile_" + i.ToString("00"), matHoloFaces[0]);
+                var t = Prim(PrimitiveType.Quad, hv, "tile_" + i.ToString("00"), matHoloFaces[0]);
                 t.transform.localPosition = new Vector3(0, 0, -0.003f);
                 t.transform.localScale = new Vector3(0.0228f, 0.031f, 1);
                 var box = t.AddComponent<BoxCollider>();
@@ -696,25 +699,25 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 box.size = new Vector3(1, 1, 0.008f);
                 PadKey(t, pad, i);
                 t.SetActive(false);
-                var dim = Prim(PrimitiveType.Quad, game, "dim_" + i.ToString("00"), dimMat);
+                var dim = Prim(PrimitiveType.Quad, hv, "dim_" + i.ToString("00"), dimMat);
                 dim.transform.localScale = new Vector3(0.0228f, 0.031f, 1);
                 dim.SetActive(false);
                 pad.handDim[i] = dim;
                 // デバッグ: 切るべき牌の印(牌の上に細い橙の線)
-                var hint = Prim(PrimitiveType.Quad, game, "hint_" + i.ToString("00"), hintMat);
+                var hint = Prim(PrimitiveType.Quad, hv, "hint_" + i.ToString("00"), hintMat);
                 hint.transform.localScale = new Vector3(0.02f, 0.004f, 1);
                 hint.SetActive(false);
                 pad.handHint[i] = hint;
                 pad.handTiles[i] = t.GetComponent<MeshRenderer>();
             }
             pad.meldTiles = new MeshRenderer[24];
-            for (int i = 0; i < 24; i++) { pad.meldTiles[i] = TileQ(game, "meld_" + i.ToString("00"), Vector2.zero, new Vector2(0.0115f, 0.0156f)); pad.meldTiles[i].gameObject.SetActive(false); }
+            for (int i = 0; i < 24; i++) { pad.meldTiles[i] = TileQ(hv, "meld_" + i.ToString("00"), Vector2.zero, new Vector2(0.0115f, 0.0156f)); pad.meldTiles[i].gameObject.SetActive(false); }
             // ツモ牌・鳴ける牌の見出し(ツモ牌の列の上)
             var labelAt = new Vector2(SqmPad.DRAW_X + SqmPad.HAND_ST / 2, SqmPad.DRAW_Y + 0.029f);
-            pad.drawLabel = PText(game, "DrawLabel", labelAt, 0.042f, new Vector2(0.05f, 0.01f), TextAlignmentOptions.Center);
+            pad.drawLabel = PText(hv, "DrawLabel", labelAt, 0.042f, new Vector2(0.05f, 0.01f), TextAlignmentOptions.Center);
             pad.drawLabel.text = "ツモ";
             pad.drawLabel.color = P_CYAN;
-            var callLabel = PText(game, "CallLabel", labelAt, 0.042f, new Vector2(0.05f, 0.01f), TextAlignmentOptions.Center);
+            var callLabel = PText(hv, "CallLabel", labelAt, 0.042f, new Vector2(0.05f, 0.01f), TextAlignmentOptions.Center);
             callLabel.text = "鳴ける牌";
             callLabel.color = P_CYAN;
             callLabel.gameObject.SetActive(false);
@@ -722,20 +725,20 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.callTiles = new MeshRenderer[2];
             for (int i = 0; i < 2; i++)
             {
-                pad.callTiles[i] = TileQ(game, "call_" + i, new Vector2(SqmPad.DRAW_X + i * SqmPad.HAND_ST, SqmPad.DRAW_Y), new Vector2(0.0228f, 0.031f));
+                pad.callTiles[i] = TileQ(hv, "call_" + i, new Vector2(SqmPad.DRAW_X + i * SqmPad.HAND_ST, SqmPad.DRAW_Y), new Vector2(0.0228f, 0.031f));
                 pad.callTiles[i].gameObject.SetActive(false);
             }
             // 待ち(小さい牌。位置は SqmPad.RefreshWaits が決める)
-            pad.waitLabel = PText(game, "WaitLabel", new Vector2(-0.181f, SqmPad.WAIT_Y), 0.055f, new Vector2(0.03f, 0.02f), TextAlignmentOptions.Left);
+            pad.waitLabel = PText(hv, "WaitLabel", new Vector2(-0.181f, SqmPad.WAIT_Y), 0.055f, new Vector2(0.03f, 0.02f), TextAlignmentOptions.Left);
             pad.waitLabel.text = "待ち";
             pad.waitLabel.color = P_MUTED;
             pad.waitTiles = new MeshRenderer[16];
             pad.waitDim = new GameObject[16];
             for (int i = 0; i < 16; i++)
             {
-                pad.waitTiles[i] = TileQ(game, "wait_" + i.ToString("00"), Vector2.zero, new Vector2(0.0115f, 0.0155f));
+                pad.waitTiles[i] = TileQ(hv, "wait_" + i.ToString("00"), Vector2.zero, new Vector2(0.0115f, 0.0155f));
                 pad.waitTiles[i].gameObject.SetActive(false);
-                var d = Prim(PrimitiveType.Quad, game, "waitDim_" + i.ToString("00"), dimMat);
+                var d = Prim(PrimitiveType.Quad, hv, "waitDim_" + i.ToString("00"), dimMat);
                 d.transform.localScale = new Vector3(0.0115f, 0.0155f, 1);
                 d.SetActive(false);
                 pad.waitDim[i] = d;
@@ -743,13 +746,60 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             pad.waitPlus = new TextMeshPro[8];
             for (int i = 0; i < 8; i++)
             {
-                pad.waitPlus[i] = PText(game, "plus_" + i, Vector2.zero, 0.045f, new Vector2(0.008f, 0.015f), TextAlignmentOptions.Center);
+                pad.waitPlus[i] = PText(hv, "plus_" + i, Vector2.zero, 0.045f, new Vector2(0.008f, 0.015f), TextAlignmentOptions.Center);
                 pad.waitPlus[i].text = "+";
                 pad.waitPlus[i].color = P_MUTED;
             }
-            pad.waitNote = PText(game, "WaitNote", Vector2.zero, 0.05f, new Vector2(0.15f, 0.02f), TextAlignmentOptions.Left);
+            pad.waitNote = PText(hv, "WaitNote", Vector2.zero, 0.05f, new Vector2(0.15f, 0.02f), TextAlignmentOptions.Left);
             pad.waitNote.color = P_MUTED;
             pad.waitNote.enableWordWrapping = false;
+            // 河(「手牌 | 河」で河を選んだとき。牌の置き場所は SqmPad.RefreshRiverView が決める)
+            var rv = Group(game, "RiverView");
+            pad.riverView = rv;
+            RectQ(rv, "RiverBg", new Vector2(0, (SqmPad.RV_TOP + SqmPad.RV_BOTTOM) / 2), new Vector2(0.396f, SqmPad.RV_TOP - SqmPad.RV_BOTTOM + 0.004f), mpHandBg);
+            pad.riverTiles = new MeshRenderer[SqmPad.RIVER_POOL];
+            for (int i = 0; i < SqmPad.RIVER_POOL; i++)
+            {
+                pad.riverTiles[i] = TileQ(rv, "river_" + i.ToString("000"), Vector2.zero, new Vector2(SqmPad.RV_TW, SqmPad.RV_TH));
+                pad.riverTiles[i].gameObject.SetActive(false);
+            }
+            pad.riverNames = new TextMeshPro[8];
+            for (int k = 0; k < 8; k++)
+            {
+                var t = PText(rv, "rowName_" + k, new Vector2(-0.196f + 0.0235f, SqmPad.RV_TOP - (k + 0.5f) * SqmPad.RV_ROW), 0.042f, new Vector2(0.045f, SqmPad.RV_ROW), TextAlignmentOptions.Left);
+                t.enableWordWrapping = false;
+                t.overflowMode = TextOverflowModes.Ellipsis;
+                pad.riverNames[k] = t;
+            }
+            pad.quadNames = new TextMeshPro[4];
+            for (int q = 0; q < 4; q++)
+            {
+                float qx = q == 0 || q == 3 ? -0.196f : 0.002f;
+                float qy = q <= 1 ? SqmPad.RV_BOTTOM : SqmPad.RV_BOTTOM + SqmPad.RQ_H + 0.002f;
+                var t = PText(rv, "quadName_" + q, new Vector2(qx + SqmPad.RQ_LABEL / 2, qy + SqmPad.RQ_H / 2), 0.045f, new Vector2(SqmPad.RQ_LABEL - 0.002f, SqmPad.RQ_H), TextAlignmentOptions.Center);
+                t.enableWordWrapping = false;
+                t.overflowMode = TextOverflowModes.Ellipsis;
+                pad.quadNames[q] = t;
+            }
+            var ql = Group(rv, "QuadLines");
+            pad.quadLines = ql;
+            RectQ(ql, "LineV", new Vector2(0, (SqmPad.RV_TOP + SqmPad.RV_BOTTOM) / 2), new Vector2(0.0006f, SqmPad.RV_TOP - SqmPad.RV_BOTTOM), mbLine);
+            RectQ(ql, "LineH", new Vector2(0, SqmPad.RV_BOTTOM + SqmPad.RQ_H + 0.001f), new Vector2(0.392f, 0.0006f), mbLine);
+            rv.SetActive(false);
+            // 「手牌 | 河」の切り替え(左下。つなげた2つ)
+            var vt = Group(game, "ViewToggle");
+            pad.viewToggle = vt;
+            pad.viewFills = new MeshRenderer[2];
+            pad.viewBorders = new MeshRenderer[2];
+            pad.viewLabels = new TextMeshPro[2];
+            string[] vl = { "手牌", "河" };
+            for (int i = 0; i < 2; i++)
+            {
+                var b = HexBtn(vt, "view_" + i, vl[i], new Vector2(-0.179f + i * 0.0335f, SqmPad.BTN_Y), new Vector2(0.034f, 0.022f), 0.058f,
+                    mbFill, mbLine, P_MUTED, i == 0, i == 1, out pad.viewLabels[i], out pad.viewFills[i], out pad.viewBorders[i]);
+                PadKey(b, pad, 335 + i);
+            }
+            vt.SetActive(false);
             // 操作ボタン(右下に右寄せ。位置は SqmPad が決める。ひとつずつ独立した六角形)
             pad.btnRoots = new GameObject[6];
             pad.btnFillR = new MeshRenderer[6];
