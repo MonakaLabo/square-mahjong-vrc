@@ -7,7 +7,7 @@ namespace MonakaLabo.SquareMahjong
     /// <summary>
     /// 手元のパッドの中身(1組だけ)。座った人の手元で、その人の席のパッド(SqmPadBody)に付けて表示する。ほかの人には見えない。
     /// 見た目はホロと同じ紺と水色。ボタンは上下の辺が水平な六角形で、並んだボタン(タブなど)は両端だけとがらせてつなげる。
-    /// 上の帯 = タブ(対局・点数・ルール・設定、デバッグモードなら Debug も)と局・残り枚数、下の帯 = ・INFO・ とお知らせ。
+    /// 上の帯 = タブ(対局・点数・ルール・設定、デバッグモードなら Debug も)と局・残り枚数、下の帯 = ・INFO・ とお知らせ(対局タブでは右端にツモ切り・鳴き無しの切り替え)。
     /// 対局: 手牌(平方麻雀は 13 + 13 の2段、普通の麻雀は1段)・ツモ牌(右、2段の間の高さ)・副露(下の段の右)・待ち(小さい牌)、
     ///       操作ボタン(右下。候補が複数ある鳴きは、押すと候補に切り替わる)、和了・流局の「確認」。試合が無いときはゲーム前設定。
     /// 点数: 自分が下の真ん中になるよう8席を並べる(表)か、点数の推移(グラフ)。終局したら自動でこのタブになり、結果の表を出す。
@@ -33,6 +33,9 @@ namespace MonakaLabo.SquareMahjong
         public GameObject toggleRoot;
         public MeshRenderer[] toggleFills, toggleBorders;   // 2(0 表 1 グラフ)
         public TextMeshPro[] toggleLabels;
+        public GameObject autoRoot;          // 対局タブの「ツモ切り | 鳴き無し」(つなげた2つ。それぞれ ON/OFF)
+        public MeshRenderer[] autoFills, autoBorders;   // 2(0 ツモ切り 1 鳴き無し)
+        public TextMeshPro[] autoLabels;
 
         // ---- 色(SqmBuilder が入れる) ----
         public Material matOnFill, matOnBorder, matOffFill, matOffBorder;   // 選んでいるボタン(水色)・選んでいないボタン
@@ -175,6 +178,8 @@ namespace MonakaLabo.SquareMahjong
             if (code == 320) { listTop = Mathf.Max(0, listTop - ROWS); Refresh(); return; }
             if (code == 321) { listTop += ROWS; Refresh(); return; }
             if (code == 331 || code == 332) { showGraph = code == 332; Refresh(); return; }
+            if (code == 333) { table.autoTsumogiri = !table.autoTsumogiri; Refresh(); return; }
+            if (code == 334) { table.autoNoCall = !table.autoNoCall; Refresh(); return; }
             if (code >= 400 && code < 405) { PressSetup(code - 400); return; }
             if (code == 405) { table.NewMatch(); return; }
             if (code >= 500 && code < 530) { PressSetting(code); Refresh(); return; }
@@ -266,6 +271,12 @@ namespace MonakaLabo.SquareMahjong
             RefreshTabs(dbg);
             RefreshBars();
             SetActive(toggleRoot, tab == TAB_SCORE && table.IsLive());
+            SetActive(autoRoot, tab == TAB_GAME && table.IsLive());
+            if (autoRoot != null)
+            {
+                Paint(autoFills[0], autoBorders[0], autoLabels[0], table.autoTsumogiri);
+                Paint(autoFills[1], autoBorders[1], autoLabels[1], table.autoNoCall);
+            }
             SetActive(gameRoot, tab == TAB_GAME);
             SetActive(scoreRoot, tab == TAB_SCORE);
             SetActive(listRoot, tab == TAB_RULE);

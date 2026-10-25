@@ -599,6 +599,20 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 PadKey(b, pad, 331 + i);
             }
             tg.SetActive(false);
+            // 対局タブの「ツモ切り | 鳴き無し」(同じ所。それぞれ ON/OFF)
+            var ag = Group(content, "AutoToggle");
+            pad.autoRoot = ag;
+            pad.autoFills = new MeshRenderer[2];
+            pad.autoBorders = new MeshRenderer[2];
+            pad.autoLabels = new TextMeshPro[2];
+            string[] al = { "ツモ切り", "鳴き無し" };
+            for (int i = 0; i < 2; i++)
+            {
+                var b = HexBtn(ag, "auto_" + i, al[i], new Vector2(0.1275f + i * 0.0445f, -0.112f), new Vector2(0.044f, 0.018f), 0.05f,
+                    mbFill, mbLine, P_MUTED, i == 0, i == 1, out pad.autoLabels[i], out pad.autoFills[i], out pad.autoBorders[i]);
+                PadKey(b, pad, 333 + i);
+            }
+            ag.SetActive(false);
         }
 
         // ---- 対局 ----

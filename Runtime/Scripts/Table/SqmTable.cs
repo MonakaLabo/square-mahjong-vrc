@@ -700,6 +700,7 @@ namespace MonakaLabo.SquareMahjong
                 if (archiveAskWait <= 0 && lMatch == sMatch && lCount < sCount && replayTo == 0) AskArchive();
             }
             DebugAutoPlay();
+            AutoPlay();
             if (dirty) { dirty = false; Refresh(); CheckKyokuBanner(); }
             clockWait -= Time.deltaTime;
             if (clockWait <= 0) { clockWait = 0.1f; RefreshHoloTime(); RefreshHoloTurn(); }
@@ -3255,6 +3256,103 @@ namespace MonakaLabo.SquareMahjong
             engine.rAgariYame = RuleIdx(arr, 9) == 0;
             engine.rTobiEnd = RuleIdx(arr, 10) == 0;
             engine.rUseUma = RuleIdx(arr, 11) == 0;
+        }
+
+        // ================================================================ ツモ切り・鳴き無し
+        // 手元だけの設定(パッドの対局タブの下の帯で切り替える)。自分の席の操作を、手元から送る。
+        // ツモ切り: ツモった牌をそのまま切る(ツモ和了できるとき・鳴いたあと・嶺上牌を引いたときは自分で選ぶ。リーチ中は前から自動)。
+        // 鳴き無し: 鳴ける牌が出てもパスする(ロンできるときは自分で選ぶ)
+        [System.NonSerialized] public bool autoTsumogiri, autoNoCall;
+        private const float AUTO_DELAY = 0.4f;     // 番が来てから送るまで(すぐ切ると何が起きたか見えない)
+        private int autoSeenAt = -1, autoSeenMatch = -1, autoDoneAt = -1, autoDoneMatch = -1;
+        private float autoDelay;
+
+        private void AutoPlay()
+        {
+            if (!autoTsumogiri && !autoNoCall) return;
+            if (humanSeat < 0 || lMatch == 0 || !CaughtUp() || sentAt >= 0 || sPageN > 0 || !Running() || bannerT > 0) return;
+            if (debugEnabled && debugAutoPlay) return;
+            if (autoDoneAt == lCount && autoDoneMatch == lMatch) return;   // この手番ではもう送った(送れなかった)
+            if (autoSeenAt != lCount || autoSeenMatch != lMatch) { autoSeenAt = lCount; autoSeenMatch = lMatch; autoDelay = AUTO_DELAY; }
+            if (autoDelay > 0) { autoDelay -= Time.deltaTime; return; }
+            int code = Std() ? AutoCodeStd() : AutoCode();
+            if (code < 0) return;
+            autoDoneAt = lCount; autoDoneMatch = lMatch;
+            SendCode(code);
+        }
+
+        /// <summary>平方麻雀: ツモ切り・鳴き無しで送る操作(無ければ -1)</summary>
+        private int AutoCode()
+        {
+            int me = humanSeat;
+            if (engine.pendKind == SqmEngine.PEND_TURN && engine.turn == me)
+            {
+                if (!autoTsumogiri || engine.riichiOn[me] || engine.afterCall || engine.isRinshan) return -1;
+                int need = engine.mustDiscard;
+                if (engine.drawnLen[me] != need) return -1;
+                int n = engine.BuildLegal(me);
+                for (int i = 0; i < n; i++) if (engine.legal[i * SqmEngine.OPT + SqmEngine.O_TYPE] == SqmEngine.A_TSUMO) return -1;
+                ClearAct(me);
+                act[SqmEngine.O_TYPE] = SqmEngine.A_DISCARD; act[SqmEngine.O_MODE] = 0;
+                act[SqmEngine.O_TAKEN] = need;
+                for (int k = 0; k < need; k++) act[SqmEngine.O_TAKE + k] = engine.drawn[me * SqmEngine.MAXDRAWN + k];
+                if (!engine.CheckDiscard(act)) return -1;
+                return EncodeAct(act);
+            }
+            if (engine.pendKind == SqmEngine.PEND_CALLS && autoNoCall)
+            {
+                bool mine = false;
+                for (int i = 0; i < engine.pendN; i++) if (engine.pendSeats[i] == me) mine = true;
+                if (!mine) return -1;
+                int n = engine.BuildLegal(me), pass = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    int ty = engine.legal[i * SqmEngine.OPT + SqmEngine.O_TYPE];
+                    if (ty == SqmEngine.A_RON) return -1;
+                    if (ty == SqmEngine.A_PASS) pass = i;
+                }
+                if (pass < 0) return -1;
+                for (int k = 0; k < SqmEngine.OPT; k++) act[k] = engine.legal[pass * SqmEngine.OPT + k];
+                act[SqmEngine.O_SEAT] = me;
+                return EncodeAct(act);
+            }
+            return -1;
+        }
+
+        /// <summary>普通の麻雀: ツモ切り・鳴き無しで送る操作(無ければ -1)</summary>
+        private int AutoCodeStd()
+        {
+            SqmStdEngine e = stdEngine;
+            int es = StdEngineSeat(humanSeat);
+            if (es < 0) return -1;
+            if (e.pendKind == SqmStdEngine.PEND_TURN && e.turn == es)
+            {
+                if (!autoTsumogiri || e.riichiOn[es] || e.afterCall || e.drawnCode[es] < 0) return -1;
+                int n = e.BuildLegal(es), disc = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    int b = i * SqmStdEngine.OPT;
+                    int ty = e.legal[b + SqmStdEngine.O_TYPE];
+                    if (ty == SqmStdEngine.A_TSUMO) return -1;
+                    if (ty == SqmStdEngine.A_DISCARD && e.legal[b + SqmStdEngine.O_TILE] == e.drawnCode[es] && e.legal[b + SqmStdEngine.O_RIICHI] == 0) disc = i;
+                }
+                return disc < 0 ? -1 : es | (disc << 3);
+            }
+            if (e.pendKind == SqmStdEngine.PEND_CALLS && autoNoCall)
+            {
+                bool mine = false;
+                for (int i = 0; i < e.pendN; i++) if (e.pendSeats[i] == es) mine = true;
+                if (!mine) return -1;
+                int n = e.BuildLegal(es), pass = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    int ty = e.legal[i * SqmStdEngine.OPT + SqmStdEngine.O_TYPE];
+                    if (ty == SqmStdEngine.A_RON) return -1;
+                    if (ty == SqmStdEngine.A_PASS) pass = i;
+                }
+                return pass < 0 ? -1 : es | (pass << 3);
+            }
+            return -1;
         }
 
         // ================================================================ デバッグ
