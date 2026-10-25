@@ -536,7 +536,7 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         static Material mpSurfBtn() { return PM("BtnOff", P_SURF, QP_BTN); }
 
         // ---- 卓の上の空中ボタン(自分の席の前に1組。位置と中身は SqmPad.RefreshDesk が決める) ----
-        // いちばん右 = 確定/スキップ/確認、その左に鳴き・和了・リーチなど。パッドと同じ六角形のボタンで、VRChat のビームでも押せる
+        // いちばん右 = 確定/スキップ/確認、その左に鳴き・和了・リーチなど。パッドと同じ六角形のボタン。手を伸ばして USE で押す(ビームの UI にはしない)
         static void BuildDesk(GameObject root, SqmTable table)
         {
             SqmPad pad = table.pad;
@@ -560,7 +560,8 @@ namespace MonakaLabo.SquareMahjong.EditorTools
                 TableKey(pad.deskBtns[i], table, "Desk" + i);
                 pad.deskBtns[i].SetActive(false);
             }
-            foreach (var b in desk.GetComponentsInChildren<SqmButton>(true)) UiButton(b.gameObject, b);
+            // USE の当たり判定は、押しやすいよう少し厚めに
+            foreach (var col in desk.GetComponentsInChildren<BoxCollider>(true)) col.size = new Vector3(col.size.x, col.size.y, 0.03f);
             desk.SetActive(false);
         }
 
