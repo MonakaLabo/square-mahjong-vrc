@@ -2935,6 +2935,22 @@ namespace MonakaLabo.SquareMahjong
         public int OptType(int k) { if (Std()) return stdView.OptType(k); return optBuf[k * SqmEngine.OPT + SqmEngine.O_TYPE]; }
         public int OptMode(int k) { return optBuf[k * SqmEngine.OPT + SqmEngine.O_MODE]; }
         public void PadOption(int k) { ClickOption(k); }
+
+        /// <summary>自分がリーチしているか</summary>
+        public bool MyRiichi()
+        {
+            if (humanSeat < 0 || lMatch == 0) return false;
+            if (Std()) { int es = StdEngineSeat(humanSeat); return es >= 0 && stdEngine.riichiOn[es]; }
+            return engine.riichiOn[humanSeat];
+        }
+
+        // 卓の上の空中ボタン(SqmButton から呼ぶ。中身はパッドが決める)
+        public void DeskMain() { if (pad != null) pad.PressDesk(-1); }
+        public void Desk0() { if (pad != null) pad.PressDesk(0); }
+        public void Desk1() { if (pad != null) pad.PressDesk(1); }
+        public void Desk2() { if (pad != null) pad.PressDesk(2); }
+        public void Desk3() { if (pad != null) pad.PressDesk(3); }
+        public void Desk4() { if (pad != null) pad.PressDesk(4); }
         public void KickSeat(int s) { RequestKick(s); }
 
         /// <summary>パッドの INFORMATION の1行</summary>

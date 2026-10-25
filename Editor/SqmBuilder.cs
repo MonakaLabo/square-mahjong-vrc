@@ -392,19 +392,12 @@ namespace MonakaLabo.SquareMahjong.EditorTools
             Button(center, "resync", "Resync", table, "Resync", new Vector3(-0.016f, cy, 0), faceUp, new Vector3(TW, TH, TT), out _);
             Button(center, "reset", "Reset", table, "ResetMatch", new Vector3(0.016f, cy, 0), faceUp, new Vector3(TW, TH, TT), out _);
 
-            // ---- 卓の上の「確定」(打牌の確定。自分の番だけ、自分の席に出る) ----
-            table.discardButtons = new GameObject[8];
-            var discards = Group(root, "DiscardButtons");
-            for (int s = 0; s < 8; s++)
-            {
-                Vector3 u = U(s), r = R(s);
-                table.discardButtons[s] = Button(discards, "discard_" + s, "確定", table, "Discard",
-                    u * SqmTable.R_LABEL + r * 0.43f + Vector3.up * (TOP + SqmTable.RIM_H + 0.008f), Quaternion.AngleAxis(-LABEL_TILT, r) * Quaternion.LookRotation(Vector3.down, -u), new Vector3(0.07f, 0.045f, 0.016f), out _);
-                table.discardButtons[s].SetActive(false);
-            }
+            // 縁の上の「確定」は、空中ボタン(BuildDesk)に移した
+            table.discardButtons = new GameObject[0];
 
             // ---- 手元のパッド(席ごとの板 + 中身1組)。席に着く・試合を始める・打つ・鳴く・確認はパッドで ----
             BuildPads(root, table);
+            BuildDesk(root, table);
 
             // 見た目の部品は、プレイヤーパネルのカメラに映さないレイヤーへ(VRChat のカメラ・ふつうの視点には映る)
             SetVisualLayer(root);
@@ -541,6 +534,43 @@ namespace MonakaLabo.SquareMahjong.EditorTools
         }
 
         static Material mpSurfBtn() { return PM("BtnOff", P_SURF, QP_BTN); }
+
+        // ---- 卓の上の空中ボタン(自分の席の前に1組。位置と中身は SqmPad.RefreshDesk が決める) ----
+        // いちばん右 = 確定/スキップ/確認、その左に鳴き・和了・リーチなど。パッドと同じ六角形のボタンで、VRChat のビームでも押せる
+        static void BuildDesk(GameObject root, SqmTable table)
+        {
+            SqmPad pad = table.pad;
+            var desk = Group(root, "DeskButtons");
+            pad.deskRoot = desk.transform;
+            var mainSize = new Vector2(SqmPad.DESK_MAIN_W, 0.05f);
+            pad.deskMain = HexBtn(desk, "main", "確定", Vector2.zero, mainSize, 0.13f, mbStyleFill[0], mbStyleLine[0], mbStyleText[0], true, true,
+                out pad.deskMainLabel, out pad.deskMainFill, out pad.deskMainBorder);
+            DeskLabel(pad.deskMainLabel, 0.13f);
+            TableKey(pad.deskMain, table, "DeskMain");
+            pad.deskBtns = new GameObject[5];
+            pad.deskLabels = new TextMeshPro[5];
+            pad.deskFills = new MeshRenderer[5];
+            pad.deskBorders = new MeshRenderer[5];
+            var size = new Vector2(SqmPad.DESK_W, 0.045f);
+            for (int i = 0; i < 5; i++)
+            {
+                pad.deskBtns[i] = HexBtn(desk, "opt_" + i, "", new Vector2(-(SqmPad.DESK_MAIN_W / 2 + SqmPad.DESK_GAP + SqmPad.DESK_W / 2) - i * (SqmPad.DESK_W + SqmPad.DESK_GAP), 0), size, 0.11f,
+                    mbStyleFill[0], mbStyleLine[0], mbStyleText[0], true, true, out pad.deskLabels[i], out pad.deskFills[i], out pad.deskBorders[i]);
+                DeskLabel(pad.deskLabels[i], 0.11f);
+                TableKey(pad.deskBtns[i], table, "Desk" + i);
+                pad.deskBtns[i].SetActive(false);
+            }
+            foreach (var b in desk.GetComponentsInChildren<SqmButton>(true)) UiButton(b.gameObject, b);
+            desk.SetActive(false);
+        }
+
+        /// <summary>空中ボタンの文字: 長い候補(片ロンの牌と点数など)は縮める</summary>
+        static void DeskLabel(TextMeshPro t, float size)
+        {
+            t.enableAutoSizing = true;
+            t.fontSizeMax = size * 1.12f;
+            t.fontSizeMin = 0.02f;
+        }
 
         // ---- 上の帯(タブ・局と残り)と下の帯(・INFO・とお知らせ・表とグラフの切り替え) ----
         static void PadBars(GameObject content, SqmPad pad)

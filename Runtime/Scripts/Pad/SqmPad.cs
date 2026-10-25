@@ -79,6 +79,18 @@ namespace MonakaLabo.SquareMahjong
         public MeshRenderer[] setupFills, setupBorders;
         public TextMeshPro[] setupLabels;
 
+        // ---- 卓の上の空中ボタン(自分の席の前。パッドと同じ操作を、卓を見たまま押せるように) ----
+        // いちばん右(縁の上の今までの「確定」の真上)に 確定/スキップ/確認、その左に鳴き・和了・リーチなどを右から並べる
+        public Transform deskRoot;           // 卓の子。自分の席の前へ動かす
+        public GameObject deskMain;
+        public TextMeshPro deskMainLabel;
+        public MeshRenderer deskMainFill, deskMainBorder;
+        public GameObject[] deskBtns;        // 5
+        public TextMeshPro[] deskLabels;
+        public MeshRenderer[] deskFills, deskBorders;
+        public const float DESK_R = 1.08f, DESK_X = 0.43f, DESK_H = 0.15f, DESK_TILT = 35f;   // 置き場所(卓の中心から席の方へ・右へ・天板から上へ)と、座った人の方へ起こす角度
+        public const float DESK_MAIN_W = 0.12f, DESK_W = 0.11f, DESK_GAP = 0.01f;
+
         // ---- 点数 ----
         public GameObject scoreRoot;
         public GameObject scoreBoxes;        // 8席の箱(試合中)
@@ -141,7 +153,11 @@ namespace MonakaLabo.SquareMahjong
 
         // 操作ボタンの中身
         private const int ACT_NONE = 0, ACT_DISCARD = 1, ACT_RIICHI = 2, ACT_GROUP = 3, ACT_CAND = 4, ACT_CANCEL = 5, ACT_MORE = 6;
-        private int[] slotAct, slotArg;
+        private int[] slotAct, slotArg, slotStyle;
+        private int slotN;
+        private int[] deskSlot;              // 空中ボタン → 操作ボタンの番号
+        private const int DESK_NONE = 0, DESK_DISCARD = 1, DESK_PASS = 2, DESK_CONFIRM = 3;
+        private int deskMainAct, deskPassK = -1;
         private int tab;
         private int candGroup = -1, candPage;   // 候補を出している鳴きの種類と、その何ページ目か
         private int listTop;
@@ -160,7 +176,8 @@ namespace MonakaLabo.SquareMahjong
         {
             if (ready) return;
             ready = true;
-            slotAct = new int[6]; slotArg = new int[6];
+            slotAct = new int[6]; slotArg = new int[6]; slotStyle = new int[6];
+            deskSlot = new int[5];
             legendOrder = new int[8];
         }
 
@@ -256,7 +273,7 @@ namespace MonakaLabo.SquareMahjong
             int me = table.humanSeat;
             bool show = me >= 0;
             if (content != null && content.activeSelf != show) content.SetActive(show);
-            if (!show) { candGroup = -1; return; }
+            if (!show) { candGroup = -1; if (deskRoot != null) SetActive(deskRoot.gameObject, false); return; }
             if (table.padBodies != null && me < table.padBodies.Length && table.padBodies[me] != null)
             {
                 Transform anchor = table.padBodies[me].contentAnchor;
@@ -267,6 +284,8 @@ namespace MonakaLabo.SquareMahjong
             wasOver = over;
             bool dbg = table.debugEnabled;
             if (tab == TAB_DEBUG && !dbg) tab = TAB_SETTING;
+            slotN = BuildSlots();
+            RefreshDesk();
 
             RefreshTabs(dbg);
             RefreshBars();
@@ -397,7 +416,23 @@ namespace MonakaLabo.SquareMahjong
             SetActive(callLabel, anyCall && n <= mainN);
             RefreshWaits(live, std);
 
-            // 操作ボタン
+            SetActive(confirmRoot, confirm);
+            RefreshSetup(!live);
+            int s = slotN;
+            // 右下に右寄せで並べる(ボタンはひとつずつ独立した六角形)
+            for (int i = 0; i < 6; i++)
+            {
+                bool on = i < s;
+                SetActive(btnRoots[i], on);
+                if (on) btnRoots[i].transform.localPosition = new Vector3(0.192f - BTN_W / 2 - (s - 1 - i) * BTN_STEP, BTN_Y, 0);
+            }
+        }
+
+        /// <summary>操作ボタン(パッドの右下と、卓の上の空中ボタン)の中身を決める。並べる数を返す</summary>
+        private int BuildSlots()
+        {
+            bool live = table.IsLive();
+            bool confirm = table.padConfirm;
             for (int i = 0; i < 6; i++) { slotAct[i] = ACT_NONE; slotArg[i] = 0; }
             // 候補を出している鳴きが、もうできなくなっていたら閉じる
             if (candGroup >= 0)
@@ -406,14 +441,15 @@ namespace MonakaLabo.SquareMahjong
                 for (int k = 0; k < table.optN; k++) if (GroupOf(k) == candGroup) still = true;
                 if (!still) candGroup = -1;
             }
-            SetActive(confirmRoot, confirm);
-            RefreshSetup(!live);
             int s = 0;
             if (!confirm && live)
             {
                 if (candGroup >= 0)
                 {
-                    // 候補(1ページ 4 つ + 次へ + やめる)
+                    // 候補(1ページ 4 つ + 次へ + やめる)。ページが候補の数を超えたら最初へ
+                    int total = 0;
+                    for (int k = 0; k < table.optN; k++) if (GroupOf(k) == candGroup) total++;
+                    if (candPage * 4 >= total) candPage = 0;
                     int idx = 0, shown = 0, more = 0;
                     for (int k = 0; k < table.optN; k++)
                     {
@@ -422,7 +458,6 @@ namespace MonakaLabo.SquareMahjong
                         else if (idx >= candPage * 4 + 4) more++;
                         idx++;
                     }
-                    if (shown == 0 && candPage > 0) { candPage = 0; RefreshGame(); return; }
                     if (more > 0) Slot(s++, ACT_MORE, 0, "次へ", BTN_OTHER);
                     Slot(s++, ACT_CANCEL, 0, "やめる", BTN_PASS);
                 }
@@ -439,13 +474,7 @@ namespace MonakaLabo.SquareMahjong
                     if (table.padDiscardOk) Slot(s++, ACT_DISCARD, 0, "確定", BTN_DISCARD);
                 }
             }
-            // 右下に右寄せで並べる(ボタンはひとつずつ独立した六角形)
-            for (int i = 0; i < 6; i++)
-            {
-                bool on = i < s;
-                SetActive(btnRoots[i], on);
-                if (on) btnRoots[i].transform.localPosition = new Vector3(0.192f - BTN_W / 2 - (s - 1 - i) * BTN_STEP, BTN_Y, 0);
-            }
+            return s;
         }
 
         /// <summary>ゲーム前設定の表示: 選んでいるものは水色。平方のときは局数を選べない色に。NEW GAME はホストだけ(ホストがいなければ、だれでも)</summary>
@@ -607,7 +636,7 @@ namespace MonakaLabo.SquareMahjong
         private void Slot(int i, int act, int arg, string label, int style)
         {
             if (i >= 6) return;
-            slotAct[i] = act; slotArg[i] = arg;
+            slotAct[i] = act; slotArg[i] = arg; slotStyle[i] = style;
             btnLabels[i].text = label;
             if (style < btnFills.Length)
             {
@@ -664,6 +693,80 @@ namespace MonakaLabo.SquareMahjong
             if (g == 5) return BTN_KAN;
             if (g == 8) return BTN_PASS;
             return BTN_OTHER;
+        }
+
+        // ---------------------------------------------------------------- 卓の上の空中ボタン
+        private void RefreshDesk()
+        {
+            if (deskRoot == null) return;
+            int me = table.humanSeat;
+            deskMainAct = DESK_NONE; deskPassK = -1;
+            string main = "";
+            int mainStyle = BTN_DISCARD;
+            if (table.padConfirm) { deskMainAct = DESK_CONFIRM; main = "確認"; }
+            else if (table.padDiscardOk)
+            {
+                // リーチ中に出るのは、ツモ和了・槓を見送ってツモ切りするとき
+                bool riichi = table.MyRiichi();
+                deskMainAct = DESK_DISCARD; main = riichi ? "スキップ" : "確定";
+                if (riichi) mainStyle = BTN_PASS;
+            }
+            else if (table.IsLive())
+            {
+                for (int k = 0; k < table.optN; k++) if (GroupOf(k) == 8) deskPassK = k;
+                if (deskPassK >= 0) { deskMainAct = DESK_PASS; main = "スキップ"; mainStyle = BTN_PASS; }
+            }
+            // 操作ボタンを右から(確定とパスは、いちばん右のボタンが受け持つ)
+            int n = 0;
+            for (int i = slotN - 1; i >= 0 && n < deskBtns.Length; i--)
+            {
+                int a = slotAct[i];
+                if (a == ACT_NONE || a == ACT_DISCARD || (a == ACT_GROUP && slotArg[i] == 8)) continue;
+                deskSlot[n] = i;
+                deskLabels[n].text = btnLabels[i].text;
+                DeskStyle(deskFills[n], deskBorders[n], deskLabels[n], slotStyle[i]);
+                n++;
+            }
+            bool any = me >= 0 && (deskMainAct != DESK_NONE || n > 0);
+            SetActive(deskRoot.gameObject, any);
+            if (!any) return;
+            float ang = me * 45f * Mathf.Deg2Rad;
+            Vector3 u = new Vector3(Mathf.Sin(ang), 0, -Mathf.Cos(ang)), r = new Vector3(Mathf.Cos(ang), 0, Mathf.Sin(ang));
+            deskRoot.localPosition = u * DESK_R + r * DESK_X + Vector3.up * (SqmTable.TOP + DESK_H);
+            deskRoot.localRotation = Quaternion.LookRotation(-u, Vector3.up) * Quaternion.Euler(DESK_TILT, 0, 0);
+            SetActive(deskMain, deskMainAct != DESK_NONE);
+            deskMainLabel.text = main;
+            DeskStyle(deskMainFill, deskMainBorder, deskMainLabel, mainStyle);
+            for (int i = 0; i < deskBtns.Length; i++)
+            {
+                bool on = i < n;
+                SetActive(deskBtns[i], on);
+                if (on) deskBtns[i].transform.localPosition = new Vector3(-(DESK_MAIN_W / 2 + DESK_GAP + DESK_W / 2) - i * (DESK_W + DESK_GAP), 0, 0);
+            }
+        }
+
+        private void DeskStyle(MeshRenderer fill, MeshRenderer border, TextMeshPro label, int style)
+        {
+            if (style < 0 || style >= btnFills.Length) return;
+            SetMat(fill, btnFills[style]);
+            SetMat(border, btnBorders[style]);
+            label.color = btnText[style];
+        }
+
+        /// <summary>空中ボタンを押した(-1 = いちばん右の 確定/スキップ/確認)</summary>
+        public void PressDesk(int i)
+        {
+            Init();
+            if (table == null || table.humanSeat < 0) return;
+            table.PlaySfx(SqmTable.SFX_CLICK);
+            if (i < 0)
+            {
+                if (deskMainAct == DESK_CONFIRM) table.Confirm();
+                else if (deskMainAct == DESK_DISCARD) table.Discard();
+                else if (deskMainAct == DESK_PASS && deskPassK >= 0) table.PadOption(deskPassK);
+                return;
+            }
+            if (i < deskBtns.Length) PressSlot(deskSlot[i]);
         }
 
         // ---------------------------------------------------------------- 点数
