@@ -88,7 +88,7 @@ namespace MonakaLabo.SquareMahjong
         public GameObject[] deskBtns;        // 5
         public TextMeshPro[] deskLabels;
         public MeshRenderer[] deskFills, deskBorders;
-        public const float DESK_R = 1.08f, DESK_X = 0.43f, DESK_H = 0.15f, DESK_TILT = 35f;   // 置き場所(卓の中心から席の方へ・右へ・天板から上へ)と、座った人の方へ起こす角度
+        public const float DESK_R = 1.08f, DESK_X = 0.43f, DESK_H = 0.15f;   // 置き場所(卓の中心から席の方へ・右へ・天板から上へ)。面は傾けず、まっすぐ席の方へ向ける
         public const float DESK_MAIN_W = 0.12f, DESK_W = 0.11f, DESK_GAP = 0.01f;
 
         // ---- 点数 ----
@@ -733,7 +733,7 @@ namespace MonakaLabo.SquareMahjong
             float ang = me * 45f * Mathf.Deg2Rad;
             Vector3 u = new Vector3(Mathf.Sin(ang), 0, -Mathf.Cos(ang)), r = new Vector3(Mathf.Cos(ang), 0, Mathf.Sin(ang));
             deskRoot.localPosition = u * DESK_R + r * DESK_X + Vector3.up * (SqmTable.TOP + DESK_H);
-            deskRoot.localRotation = Quaternion.LookRotation(-u, Vector3.up) * Quaternion.Euler(DESK_TILT, 0, 0);
+            deskRoot.localRotation = Quaternion.LookRotation(-u, Vector3.up);
             SetActive(deskMain, deskMainAct != DESK_NONE);
             deskMainLabel.text = main;
             DeskStyle(deskMainFill, deskMainBorder, deskMainLabel, mainStyle);
